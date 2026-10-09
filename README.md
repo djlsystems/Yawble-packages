@@ -6,7 +6,13 @@ Solution packages and plugins for [Yawble](https://github.com/djlsystems/Yawble)
 |---|---|---|
 | [`mail`](packages/mail) | solution | A team that reads, files, watches and drafts or sends your mail, with the `mail` plugin (Go). |
 | [`job-tracker`](packages/job-tracker) | solution | A team that finds job postings, tracks them on a page and drafts cover letters, with the `job-board` plugin (Python). |
+| [`sample-echo`](packages/sample-echo) | plugin | A deterministic stand-in member (.NET) that upper-cases or reverses each instruction: for trying plugin members without a model. |
+| [`sample-echo-go`](packages/sample-echo-go) | plugin | The same stand-in member written in Go. |
 | [`sample-whoami-go`](packages/sample-whoami-go) | plugin | A small Go plugin that reports the Google account bound to it: the end-to-end check for connections. |
+
+Examples that are not packages live under [`docs/examples/`](docs/examples): the
+[triage site](docs/examples/triage), a page over a collection with actions, to copy and publish with
+the `site` tool. A site ships inside a solution package; the build takes no site on its own.
 
 ## Layout
 
@@ -27,6 +33,7 @@ scripts/publish.sh               uploads dist/ as one GitHub Release
 scripts/allowed-hosts.txt        the hosts check.sh accepts, each with why
 scripts/pkgtool/                 the Go helper the scripts use (manifests, zips, catalog, scan)
 docs/catalog.md                  every catalog field, and when the schema number goes up
+docs/examples/<name>/            examples to copy that are not packages (the triage site)
 dist/                            build output, never committed
 ```
 
@@ -43,7 +50,8 @@ build.sh <out>
 lays out one installable version of the plugin in `<out>`: `plugin.json` at its root and every file
 it names - for a Go plugin, a static binary for each of `linux-x64` and `linux-arm64` under `bin/`,
 named in the manifest's `platforms`, and its skills. Nothing else goes in `<out>`: no sources, no
-tests. It must work from any current folder (`cd "$(dirname "$0")"`), and need only Go and sh.
+tests. It must work from any current folder (`cd "$(dirname "$0")"`), and need only Go and sh -
+except `sample-echo`'s, which publishes a .NET project and needs the .NET SDK (10).
 
 ## Build
 
@@ -51,8 +59,8 @@ tests. It must work from any current folder (`cd "$(dirname "$0")"`), and need o
 scripts/build.sh catalog-2026.10.09.1
 ```
 
-needs Go (the version the packages' `go.mod` name; Go fetches it if yours is older) and a POSIX sh,
-nothing else. It empties `dist/` and writes:
+needs Go (the version the packages' `go.mod` name; Go fetches it if yours is older), the .NET SDK
+(10, for `sample-echo` only) and a POSIX sh, nothing else. It empties `dist/` and writes:
 
 - `dist/<id>-<version>.zip` for every package;
   - a **solution** zip's root is the package folder's content - `solution.json` at the root - with
@@ -68,7 +76,8 @@ can come from `CATALOG_TAG` instead. The build refuses a date that is not on the
 `n` of 0 or with a leading zero.
 
 The zips are **reproducible**: the same commit built with the same Go gives byte-identical zips
-(fixed entry times and modes, sorted entries, `-trimpath -buildvcs=false`). `generatedAt` in the
+(fixed entry times and modes, sorted entries, `-trimpath -buildvcs=false`, and a deterministic
+`dotnet publish` with its paths mapped away). `generatedAt` in the
 catalog is the build's time unless `SOURCE_DATE_EPOCH` is set.
 
 ## Check
@@ -103,6 +112,7 @@ Each module's tests can also be run on their own, from its folder:
 (cd packages/mail/plugins/mail && go test ./...)               # the mail plugin's unit tests
 (cd packages/mail/plugins/mail/verification && go test ./...)  # its black-box verification suite
 (cd packages/sample-whoami-go && go test ./...)
+(cd packages/sample-echo-go && go test ./...)                   # builds it; it has no tests
 (cd scripts/pkgtool && go test ./...)                           # the scripts' own helper
 ```
 
@@ -113,8 +123,8 @@ instead, point `MAIL_BIN` at it:
 MAIL_BIN=<unpacked mail zip>/plugins/mail/bin/linux-x64/mail go test -count=1 .
 ```
 
-The `job-board` plugin is a Python script with no tests of its own; Yawble's solution tests exercise
-the sample it comes from.
+The `job-board` plugin is a Python script, and `sample-echo` and `sample-echo-go` are stand-ins, with
+no tests of their own; Yawble's own tests exercise the same code from their test data.
 
 ## Add a package
 

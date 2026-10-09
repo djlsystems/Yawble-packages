@@ -13,8 +13,9 @@
 #   scripts/check.sh --tag catalog-2026.10.09.1       all four, with that tag
 #   scripts/check.sh catalog people                   only those (catalog reads the dist/ there is)
 #
-# It runs every check asked for even after one fails, then exits 1 if any did. Needs Go and sh only;
-# with git, the people check also looks for everyone in the repository's history.
+# It runs every check asked for even after one fails, then exits 1 if any did. Needs Go and sh, and
+# the .NET SDK for sample-echo's build; with git, the people check also looks for everyone in the
+# repository's history.
 set -u
 
 root=$(cd "$(dirname "$0")/.." && pwd)
