@@ -62,6 +62,12 @@ func buildMessage(o outgoing, forSMTP bool) string {
 		domain := o.From[strings.LastIndex(o.From, "@")+1:]
 		b.WriteString(fmt.Sprintf("Message-ID: <%d.mail-plugin@%s>\r\n", now.UnixNano(), domain))
 	}
+	if o.InReplyTo != "" {
+		b.WriteString("In-Reply-To: " + o.InReplyTo + "\r\n")
+	}
+	if o.References != "" {
+		b.WriteString("References: " + o.References + "\r\n")
+	}
 	b.WriteString("MIME-Version: 1.0\r\n")
 
 	if o.HTML == "" {

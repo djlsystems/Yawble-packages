@@ -11,6 +11,7 @@ import (
 	"mime"
 	"mime/quotedprintable"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"net/textproto"
 	"net/url"
@@ -495,8 +496,10 @@ func (b *imapBox) read(ctx context.Context, id string) (*fullMessage, error) {
 		}
 		return nil, err
 	}
+	threading := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, HeaderFields: []string{"Message-ID", "References", "Reply-To"}, Peek: true}
 	msgs, err := b.c.Fetch(imap.UIDSetNum(uid), &imap.FetchOptions{
 		UID: true, Flags: true, Envelope: true, InternalDate: true, BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
+		BodySection: []*imap.FetchItemBodySection{threading},
 	}).Collect()
 	if err != nil {
 		return nil, b.imapFailure("read the message", err)
@@ -514,6 +517,13 @@ func (b *imapBox) read(ctx context.Context, id string) (*fullMessage, error) {
 	full := &fullMessage{ID: s.ID, Thread: s.Thread, From: s.From, Date: s.Date, Subject: s.Subject, Folders: []string{folder}}
 	if m.Envelope != nil {
 		full.To, full.Cc = addressList(m.Envelope.To), addressList(m.Envelope.Cc)
+	}
+	if h, err := mail.ReadMessage(bytes.NewReader(append(m.FindBodySection(threading), "\r\n"...))); err == nil {
+		dec := &mime.WordDecoder{CharsetReader: charset.Reader}
+		full.MessageID, full.References = h.Header.Get("Message-ID"), h.Header.Get("References")
+		if v, err := dec.DecodeHeader(h.Header.Get("Reply-To")); err == nil {
+			full.ReplyTo = v
+		}
 	}
 	for _, sub := range []string{"plain", "html"} {
 		path, part := textPart(m.BodyStructure, sub)

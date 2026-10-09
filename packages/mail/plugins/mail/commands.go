@@ -14,7 +14,8 @@ import (
 const usage = "Commands: `list [folder:<folder>] [unread] [from:<text>] [subject:<text>] [since:<YYYY-MM-DD>] [max:<n>]`, " +
 	"`search <those terms, or the mailbox's own query> [max:<n>]`, `read <id>`, `mark-read <ids>`, `mark-unread <ids>`, " +
 	"`move <folder> <ids>`, `label <label> <ids>`, `draft` or `send` followed by lines To:, optional Cc:, optional Bcc:, " +
-	"Subject:, one blank line, then the body, `ack <ids>`, and `watch`. There is no delete command."
+	"Subject:, one blank line, then the body, `reply <id> [all] [quote] [draft]` followed by the body on the next lines, " +
+	"`ack <ids>`, and `watch`. There is no delete command."
 
 type mailer struct {
 	p        provider
@@ -24,6 +25,8 @@ type mailer struct {
 	publish  func(payload map[string]any)
 	// quiet is false once a command did something a person should see on the card.
 	quiet bool
+	// shown are the ids of the messages this run listed or read: the ones reply may answer.
+	shown map[string]bool
 }
 
 // failure is a run's failure in its own words.
@@ -61,6 +64,8 @@ func (m *mailer) do(ctx context.Context, instruction string) (string, error) {
 			return "", failure("`" + cmd + "` stands alone on its first line; the To:, Cc:, Bcc: and Subject: lines follow it. " + usage)
 		}
 		return m.send(ctx, rest, cmd == "draft")
+	case "reply":
+		return m.reply(ctx, args, rest)
 	case "ack":
 		return m.ack(args)
 	case "watch":
@@ -203,6 +208,11 @@ func (m *mailer) list(ctx context.Context, args []string, search bool) (string, 
 	if len(msgs) == 0 {
 		return "No messages " + where + ".", nil
 	}
+	ids := make([]string, 0, len(msgs))
+	for _, s := range msgs {
+		ids = append(ids, s.ID)
+	}
+	m.show(ids...)
 	var lines []string
 	for _, s := range msgs {
 		read := "read"
@@ -222,6 +232,7 @@ func (m *mailer) read(ctx context.Context, id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	m.show(id, msg.ID)
 	var content strings.Builder
 	for _, h := range [][2]string{{"From", msg.From}, {"To", msg.To}, {"Cc", msg.Cc}, {"Date", msg.Date}, {"Subject", msg.Subject}} {
 		if h[1] != "" || h[0] != "Cc" {
@@ -395,13 +406,8 @@ func (m *mailer) send(ctx context.Context, text string, draft bool) (string, err
 	if !haveSubject {
 		return "", failure("send needs a Subject: line.")
 	}
-	for _, addr := range append(append(append([]string{}, o.To...), o.Cc...), o.Bcc...) {
-		if !plainAddress(addr) {
-			return "", failure("Refused: " + addr + " is not a plain email address; nothing was sent.")
-		}
-		if !m.allowed(addr) {
-			return "", failure("Refused: " + addr + " is not on sendAllowlist; nothing was sent.")
-		}
+	if err := m.checkRecipients(append(append(append([]string{}, o.To...), o.Cc...), o.Bcc...)); err != nil {
+		return "", err
 	}
 	if m.settings.format == "html" {
 		o.HTML = renderHTML(o.Body)
@@ -419,6 +425,20 @@ func (m *mailer) send(ctx context.Context, text string, draft bool) (string, err
 		return out + " The person sends the draft from their mailbox.", nil
 	}
 	return out + " Mail is in draft mode: the person sends the draft from their mailbox.", nil
+}
+
+// checkRecipients refuses the whole email when any recipient is not a plain address on the
+// allowlist, in draft mode too.
+func (m *mailer) checkRecipients(addrs []string) error {
+	for _, addr := range addrs {
+		if !plainAddress(addr) {
+			return failure("Refused: " + addr + " is not a plain email address; nothing was sent.")
+		}
+		if !m.allowed(addr) {
+			return failure("Refused: " + addr + " is not on sendAllowlist; nothing was sent.")
+		}
+	}
+	return nil
 }
 
 func splitAddresses(v string) []string {

@@ -242,7 +242,8 @@ func (g *gmail) read(ctx context.Context, id string) (*fullMessage, error) {
 		names[l.ID] = l.Name
 	}
 	m := &fullMessage{ID: msg.ID, Thread: msg.ThreadID, From: msg.Payload.header("From"), To: msg.Payload.header("To"),
-		Cc: msg.Payload.header("Cc"), Date: msg.Payload.header("Date"), Subject: msg.Payload.header("Subject")}
+		Cc: msg.Payload.header("Cc"), Date: msg.Payload.header("Date"), Subject: msg.Payload.header("Subject"),
+		MessageID: msg.Payload.header("Message-ID"), References: msg.Payload.header("References"), ReplyTo: msg.Payload.header("Reply-To")}
 	for _, l := range msg.LabelIDs {
 		if n := names[l]; n != "" {
 			m.Folders = append(m.Folders, n)
@@ -347,7 +348,12 @@ func (g *gmail) draft(ctx context.Context, o outgoing) (string, error) {
 			ID string `json:"id"`
 		} `json:"message"`
 	}
-	if err := g.api.call(ctx, "POST", "/drafts", nil, map[string]any{"message": map[string]string{"raw": raw}}, &draft); err != nil {
+	message := map[string]string{"raw": raw}
+	if o.Thread != "" {
+		// A reply goes into the original's thread; its subject and References keep it there.
+		message["threadId"] = o.Thread
+	}
+	if err := g.api.call(ctx, "POST", "/drafts", nil, map[string]any{"message": message}, &draft); err != nil {
 		return "", failure(gmailWords.describe(err, scopeCompose, true))
 	}
 	return fmt.Sprintf("Draft %s created (message %s); nothing was sent.", draft.ID, draft.Message.ID), nil
@@ -359,7 +365,11 @@ func (g *gmail) send(ctx context.Context, o outgoing) (string, error) {
 		ID       string `json:"id"`
 		ThreadID string `json:"threadId"`
 	}
-	if err := g.api.call(ctx, "POST", "/messages/send", nil, map[string]string{"raw": raw}, &sent); err != nil {
+	message := map[string]string{"raw": raw}
+	if o.Thread != "" {
+		message["threadId"] = o.Thread
+	}
+	if err := g.api.call(ctx, "POST", "/messages/send", nil, message, &sent); err != nil {
 		return "", failure(gmailWords.describe(err, scopeCompose, true))
 	}
 	return fmt.Sprintf("Sent: message %s, thread %s.", sent.ID, sent.ThreadID), nil

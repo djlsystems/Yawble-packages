@@ -52,6 +52,8 @@ type watchDoc struct {
 type watchStore struct {
 	missing string // why the collection could not be read, when it could not
 	docs    map[string]*watchDoc
+	// seen are the documents of the messages Mailer has shown, one per mailbox (see reply.go).
+	seen    map[string]*seenDoc
 	changed []string
 }
 
@@ -66,7 +68,7 @@ type siteDocs struct {
 }
 
 func loadWatch(sites []siteDocs) *watchStore {
-	s := &watchStore{docs: map[string]*watchDoc{}, missing: "this run was not handed it"}
+	s := &watchStore{docs: map[string]*watchDoc{}, seen: map[string]*seenDoc{}, missing: "this run was not handed it"}
 	for _, sd := range sites {
 		if sd.Site != watchSite || sd.Collection != watchCollection {
 			continue
@@ -77,6 +79,13 @@ func loadWatch(sites []siteDocs) *watchStore {
 		}
 		s.missing = ""
 		for _, d := range sd.Documents {
+			if strings.HasPrefix(d.ID, seenPrefix) {
+				var doc seenDoc
+				if json.Unmarshal(d.Doc, &doc) == nil {
+					s.seen[d.ID] = &doc
+				}
+				continue
+			}
 			var doc watchDoc
 			if json.Unmarshal(d.Doc, &doc) == nil {
 				s.docs[d.ID] = &doc
@@ -96,9 +105,21 @@ func (s *watchStore) usable() error {
 
 func (s *watchStore) put(id string, doc *watchDoc) {
 	s.docs[id] = doc
+	s.change(id)
+}
+
+func (s *watchStore) change(id string) {
 	if !slices.Contains(s.changed, id) {
 		s.changed = append(s.changed, id)
 	}
+}
+
+// doc is the document stored under id, whichever kind it is.
+func (s *watchStore) doc(id string) any {
+	if d, ok := s.seen[id]; ok {
+		return d
+	}
+	return s.docs[id]
 }
 
 // watchID names the document of one mailbox and folder: a hash, so the id holds no address and

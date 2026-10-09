@@ -283,6 +283,7 @@ func run(ctx context.Context, in io.Reader, out io.Writer) int {
 			emit(map[string]any{"t": "publish", "type": "received", "payload": payload})
 		},
 		quiet: true,
+		shown: map[string]bool{},
 	}
 
 	var outputs, failures []string
@@ -295,7 +296,7 @@ func run(ctx context.Context, in io.Reader, out io.Writer) int {
 		// What a command changed in the watch is stored at once, so a later failure in the same
 		// batch does not undo an acknowledgement or a published check.
 		for _, id := range m.watch.changed {
-			emit(map[string]any{"t": "site.put", "site": watchSite, "collection": watchCollection, "id": id, "doc": m.watch.docs[id]})
+			emit(map[string]any{"t": "site.put", "site": watchSite, "collection": watchCollection, "id": id, "doc": m.watch.doc(id)})
 		}
 		m.watch.changed = nil
 		prefix := ""

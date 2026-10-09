@@ -1,8 +1,9 @@
-# Mail 2.0.3
+# Mail 2.0.4
 
 A team that works with your mailbox: a Manager you talk to, and a plugin member, Mailer, that lists,
 searches and reads your mail, files it when you allow that, watches your Inbox for new mail, and
-drafts or sends email: HTML made from the text by default, or plain text with `format: text`.
+drafts or sends email: HTML made from the text by default, or plain text with `format: text`. A reply
+is threaded to the message it answers, so your mail program shows it in that conversation.
 
 ## What install asks you for
 
@@ -42,7 +43,9 @@ once handled. A message nobody acknowledges is listed again by the next 3 checks
 the check's output.
 
 The **Mail** site (Open on the tile) shows where the watch has read up to and what is waiting for an
-acknowledgement. Mailer keeps one record per mailbox and folder there, never one per message.
+acknowledgement. Mailer keeps one record per mailbox and folder there, never one per message, and
+one more per mailbox of the messages it has shown you, as short fingerprints of their ids, so a
+reply answers only a message it listed or read.
 
 The install wakes nobody when new mail arrives. To have the Manager told, add an event trigger on
 `plugin.mail.received` for the Manager in the team's Triggers dialog (with a daily token cap).
@@ -51,8 +54,13 @@ The install wakes nobody when new mail arrives. To have the Manager told, add an
 
 - `list`, `search`, `read` (text body, links listed, attachments listed but never downloaded),
   `mark-read`/`mark-unread` (with `markRead`), `move`/`label` (to `moveTo` only), `draft`, `send`,
-  `ack` and `watch`.
-- No deleting, ever. No replies or forwards with the original quoted, and no attachments.
+  `reply`, `ack` and `watch`.
+- `reply` answers a message Mailer listed or read: "Re: " and its subject, to its Reply-To or
+  sender (to everyone on it only when you ask), and threaded to it - `In-Reply-To` and `References`
+  over IMAP, the same thread on Google, Outlook's own reply on Microsoft. It drafts, or sends in send
+  mode; every recipient must still be on `sendAllowlist`. The original is quoted below the reply
+  only when you ask.
+- No deleting, ever. No forwards, and no attachments.
 
 ## Try it
 
