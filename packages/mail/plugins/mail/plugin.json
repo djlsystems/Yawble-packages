@@ -72,7 +72,7 @@
     "watchSenders": {
       "type": "list",
       "default": [],
-      "description": "When set, watch lists only mail whose sender contains one of these (an address or @domain.com)."
+      "description": "When set, watch lists only mail whose sender contains one of these (an address or @example.com)."
     },
     "watchQuery": {
       "type": "string",

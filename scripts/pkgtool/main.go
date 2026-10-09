@@ -7,6 +7,9 @@
 //	                                         plugins/ (built separately) and dot-files
 //	pkgtool zip <folder> <zip file>          zips the folder's content, the folder itself as the root
 //	pkgtool catalog <tag> <dist folder>      writes <dist>/catalog.json from every <dist>/*.zip
+//	pkgtool verify <tag> <dist> <packages>   checks catalog.json against the zips and the packages
+//	pkgtool scan <root> <allowed hosts> [<people>]
+//	                                         finds real people's addresses, domains and names
 //
 // It uses the standard library only, so a clean clone needs nothing but Go and sh.
 package main
@@ -48,12 +51,35 @@ func run(args []string) error {
 			return err
 		}
 		return writeCatalog(rest[0], rest[1], at)
+	case cmd == "verify" && len(rest) == 3:
+		return report(verifyCatalog(rest[0], rest[1], rest[2]), "catalog problem")
+	case cmd == "scan" && (len(rest) == 2 || len(rest) == 3):
+		people := ""
+		if len(rest) == 3 {
+			people = rest[2]
+		}
+		findings, err := scanTree(rest[0], rest[1], people)
+		if err != nil {
+			return err
+		}
+		return report(findings, "finding")
 	}
 	return usage()
 }
 
 func usage() error {
-	return fmt.Errorf("usage: pkgtool tag <tag> | info <package> | stage <package> <out> | zip <folder> <zip> | catalog <tag> <dist>")
+	return fmt.Errorf("usage: pkgtool tag <tag> | info <package> | stage <package> <out> | zip <folder> <zip> | catalog <tag> <dist> | verify <tag> <dist> <packages> | scan <root> <allowed hosts> [<people>]")
+}
+
+// report prints each problem and fails when there is any.
+func report(problems []string, what string) error {
+	for _, p := range problems {
+		fmt.Println(p)
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("%d %s(s)", len(problems), what)
+	}
+	return nil
 }
 
 // generatedAt is now, or SOURCE_DATE_EPOCH when it is set, so a rebuild can be made byte-identical.
