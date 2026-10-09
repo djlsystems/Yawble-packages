@@ -2,8 +2,8 @@
 
 A solution package: a team that finds job postings, tracks them on a page, drafts a cover letter
 when you press **Apply**, and reviews the drafts each week. It is version 1.1.0 of the worked
-example in Yawble's `docs/solutions.md` (its `samples/solutions/job-tracker` with the 1.1.0 overlay
-applied).
+example in Yawble's `docs/solutions.md`, and lives here, on the marketplace: Yawble's repository
+keeps only test data.
 
 | Part | What it is |
 |---|---|
