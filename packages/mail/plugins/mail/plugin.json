@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "id": "mail",
+  "name": "Mail",
+  "description": "Lists, searches, reads, marks, moves and labels mail, drafts or sends plain text, and watches a folder for new mail, over an IMAP app-password mailbox, Microsoft or Google. Drafts only by default; sends only to a person's allowlist; never deletes.",
+  "version": "2.0.2",
+  "protocol": "harness.member/1",
+  "executable": { "path": "bin/linux-x64/mail", "args": [] },
+  "platforms": {
+    "linux-x64": "bin/linux-x64/mail",
+    "linux-arm64": "bin/linux-arm64/mail"
+  },
+  "timeoutSeconds": 120,
+  "config": {
+    "mode": {
+      "type": "string",
+      "enum": ["draft", "send"],
+      "default": "draft",
+      "setBy": "person",
+      "description": "draft saves a draft the person sends from their mailbox and never sends anything; send sends, and only to addresses on sendAllowlist."
+    },
+    "format": {
+      "type": "string",
+      "enum": ["html", "text"],
+      "default": "html",
+      "description": "html sends the body as written plus an HTML version made from it (Markdown: headings, bold, lists, links; HTML tags in the body are shown as text, never used); text sends plain text only."
+    },
+    "sendAllowlist": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "Who it may draft to or send to: full addresses (person+tag@example.com) or whole domains (@example.com). Case is ignored; a +tag must match exactly as written. Every To, Cc and Bcc recipient must be on it, in draft mode too."
+    },
+    "markRead": {
+      "type": "bool",
+      "default": false,
+      "setBy": "person",
+      "description": "Lets mark-read and mark-unread change whether a message is read. Off: both are refused."
+    },
+    "moveTo": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "The only folders and labels move and label may use (Archive, Receipts). Empty: move and label are refused. Nothing is ever deleted."
+    },
+    "maxResults": {
+      "type": "number",
+      "integer": true,
+      "min": 1,
+      "max": 100,
+      "default": 20,
+      "description": "The most messages one command reads: list and search (a max:<n> may only lower it), the ids one mark, move or label takes, and the new messages one watch check takes."
+    },
+    "maxBodyChars": {
+      "type": "number",
+      "integer": true,
+      "min": 1000,
+      "max": 200000,
+      "default": 20000,
+      "description": "read cuts a message's body to this many characters and says it was cut."
+    },
+    "watchFolder": {
+      "type": "string",
+      "default": "INBOX",
+      "description": "The folder watch checks for new mail."
+    },
+    "watchUnreadOnly": {
+      "type": "bool",
+      "default": true,
+      "description": "watch lists only new mail that is still unread."
+    },
+    "watchSenders": {
+      "type": "list",
+      "default": [],
+      "description": "When set, watch lists only mail whose sender contains one of these (an address or @domain.com)."
+    },
+    "watchQuery": {
+      "type": "string",
+      "default": "",
+      "description": "When set, watch lists only mail matching it: from:<text>, subject:<text>, and words that must appear in the sender, subject or snippet."
+    },
+    "watchLookbackDays": {
+      "type": "number",
+      "integer": true,
+      "min": 0,
+      "max": 30,
+      "default": 0,
+      "description": "How many days back the first check lists mail that is already there. 0: the watch starts from now."
+    }
+  },
+  "connections": {
+    "mailbox": {
+      "description": "The mailbox to read, draft and send from: an IMAP app password (Gmail, iCloud, Yahoo, other), a Microsoft account or a Google account.",
+      "providers": ["imap", "microsoft", "google"],
+      "scopes": {
+        "google": [
+          "https://www.googleapis.com/auth/gmail.readonly",
+          "https://www.googleapis.com/auth/gmail.compose",
+          "https://www.googleapis.com/auth/gmail.modify"
+        ],
+        "microsoft": [
+          "https://graph.microsoft.com/Mail.ReadWrite",
+          "https://graph.microsoft.com/Mail.Send",
+          "offline_access"
+        ]
+      },
+      "required": true
+    }
+  },
+  "reads": [
+    { "site": "mail", "collection": "watch" }
+  ],
+  "events": {
+    "publishes": [
+      {
+        "type": "received",
+        "summary": "One check of the watch found new mail, or mail nobody acknowledged yet: every such message, never a body.",
+        "highVolume": false,
+        "fields": [
+          { "name": "mailbox", "kind": "string", "summary": "The mailbox's address." },
+          { "name": "folder", "kind": "string", "summary": "The folder watched." },
+          { "name": "count", "kind": "number", "summary": "How many messages the event lists." },
+          { "name": "ids", "kind": "string", "summary": "Their ids, comma-separated, as ack takes them." },
+          { "name": "messages", "kind": "list", "summary": "Each message: id, thread, from, subject, date, a short snippet, and listed (how many checks have listed it)." },
+          { "name": "more", "kind": "number", "summary": "How many more did not fit in this event; the next check lists them." }
+        ]
+      }
+    ]
+  },
+  "skills": ["skills/mail.md"]
+}

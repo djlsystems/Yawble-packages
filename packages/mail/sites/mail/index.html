@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Mail watch</title>
+  <link rel="stylesheet" href="site.css">
+  <script src="/sites/_sdk/site.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <h1>Mail watch</h1>
+  <p class="lead">Where Mailer's watch has read up to in each folder it watches, and the mail it has listed that nobody has acknowledged yet. Mailer keeps one record per mailbox and folder; nothing here is the mail itself.</p>
+  <p id="status" class="status"></p>
+  <div id="watches"></div>
+  <template id="watch">
+    <section class="watch">
+      <h2><span class="folder"></span> of <span class="account"></span></h2>
+      <dl>
+        <dt>Way in</dt><dd class="provider"></dd>
+        <dt>Watching since</dt><dd class="started"></dd>
+        <dt>Last check</dt><dd class="last"></dd>
+        <dt>Checks</dt><dd class="checks"></dd>
+        <dt>Position</dt><dd class="position"></dd>
+      </dl>
+      <h3>Waiting for an acknowledgement</h3>
+      <p class="none">Nothing: every message listed has been acknowledged.</p>
+      <table class="pending">
+        <thead><tr><th>Id</th><th>From</th><th>Subject</th><th>Date</th><th>Listed</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </template>
+</body>
+</html>
