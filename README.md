@@ -22,7 +22,10 @@ packages/<id>/                   or a plugin package: one plugin's source,
   plugin.json                      its manifest
   build.sh                         and its build.sh
 scripts/build.sh                 builds every package into dist/ and writes dist/catalog.json
-scripts/pkgtool/                 the Go helper build.sh uses (manifests, zips, catalog)
+scripts/check.sh                 builds, tests, checks the catalog and scans for real people
+scripts/publish.sh               uploads dist/ as one GitHub Release
+scripts/allowed-hosts.txt        the hosts check.sh accepts, each with why
+scripts/pkgtool/                 the Go helper the scripts use (manifests, zips, catalog, scan)
 docs/catalog.md                  every catalog field, and when the schema number goes up
 dist/                            build output, never committed
 ```
@@ -67,15 +70,39 @@ The zips are **reproducible**: the same commit built with the same Go gives byte
 (fixed entry times and modes, sorted entries, `-trimpath -buildvcs=false`). `generatedAt` in the
 catalog is the build's time unless `SOURCE_DATE_EPOCH` is set.
 
-## Test
+## Check
 
-Each plugin's own tests run from its folder:
+```sh
+scripts/check.sh                              # all four checks, tag catalog-<today>.1
+scripts/check.sh --tag catalog-2026.10.09.1   # all four, with that tag
+scripts/check.sh catalog people               # only some: build, tests, catalog, people
+```
+
+runs, in order, and reports `PASS` or `FAIL` for each; it runs every check even after one fails,
+then exits 1 if any did:
+
+| Check | What fails it |
+|---|---|
+| `build` | `scripts/build.sh <tag>` fails for any package. |
+| `tests` | `go test ./...` fails in any Go module under `packages/` or `scripts/` - every plugin's own tests, the mail plugin's unit tests **and** its verification suite, and the helper's. |
+| `catalog` | `dist/catalog.json` does not match `dist/`: a zip's sha256 or size differs, a zip or a package folder is not listed, an entry names a zip that is not there, a download link names another tag, or any other field is not what the zip's manifests say. |
+| `people` | Any text file (tracked or not; not `.git`, binaries or zips) holds a real person's data: an email address at a domain that is not reserved; a host or domain, in a link or bare, that is not reserved, not `github.com/djlsystems`, not a Go module path a `go.mod`/`go.sum` names and not in `scripts/allowed-hosts.txt`; an authorship line (`Copyright`, `Author:`, `Signed-off-by:` ...) that does not name the project; or the name or address of anyone in the repository's git history or of the git user running it. |
+
+Reserved means `example.com`, `example.net`, `example.org` and their subdomains, and anything under
+`.example`, `.test`, `.invalid` or `.localhost`. A service a package really talks to (an API host)
+goes in `scripts/allowed-hosts.txt` with a comment saying why; nothing else does. A program cannot
+tell a real name from a made-up one on its own, so keep to made-up people (see Add a package).
+
+Run `scripts/check.sh` before every release. It builds every package, so on a shared machine take
+the heavy lease first.
+
+Each module's tests can also be run on their own, from its folder:
 
 ```sh
 (cd packages/mail/plugins/mail && go test ./...)               # the mail plugin's unit tests
 (cd packages/mail/plugins/mail/verification && go test ./...)  # its black-box verification suite
 (cd packages/sample-whoami-go && go test ./...)
-(cd scripts/pkgtool && go test ./...)                           # the build's own helper
+(cd scripts/pkgtool && go test ./...)                           # the scripts' own helper
 ```
 
 The verification suite builds the plugin from the folder above it; to check a packaged binary
@@ -102,7 +129,7 @@ the sample it comes from.
 4. Use only made-up people in examples and tests: `person@example.com`, `@example.com`, and other
    reserved names (`example.org`, `example.net`, `*.test`). No real person's name, email address or
    domain.
-5. Run its tests, then `scripts/build.sh <tag>` and check its zip and its catalog entry. Check a
+5. Run `scripts/check.sh`, then look at its zip and its catalog entry in `dist/`. Check a
    solution with Yawble's own check too: `yawble solution check <unpacked zip>`.
 
 To release a new version of a package, raise `version` in its manifest (and in each plugin's
@@ -110,15 +137,29 @@ To release a new version of a package, raise `version` in its manifest (and in e
 
 ## Publish
 
-`scripts/publish.sh <tag>` uploads every zip in `dist/` and `catalog.json` as one GitHub Release
-named by the tag, marked the latest, so
+`scripts/publish.sh <tag>` uploads every zip in `dist/` and `dist/catalog.json` as one GitHub
+Release named by the tag, cut from `HEAD` and marked the latest release, so
 `https://github.com/djlsystems/Yawble-packages/releases/latest/download/catalog.json` is always the
-current catalog. Build with the same tag first:
+current catalog. The catalog's download links name the tag `scripts/build.sh` was given, so build,
+check and publish with the same tag:
 
 ```sh
 scripts/build.sh catalog-2026.10.09.1
-scripts/publish.sh --dry-run catalog-2026.10.09.1   # prints what it would upload
-scripts/publish.sh catalog-2026.10.09.1
+scripts/check.sh --tag catalog-2026.10.09.1
+scripts/publish.sh --dry-run catalog-2026.10.09.1   # prints the tag and every asset, does nothing
+scripts/publish.sh catalog-2026.10.09.1             # publishes
 ```
 
-It refuses a dirty working tree and a tag that already exists. Publishing is a person's step.
+The tag is `catalog-<yyyy.mm.dd>.<n>`: the UTC date and a number from 1, raised for a second release
+the same day. Publishing needs `gh`, signed in with the right to make releases in
+`djlsystems/Yawble-packages`. Whether it is a dry run or not, it refuses:
+
+- a tag not shaped `catalog-<yyyy.mm.dd>.<n>`;
+- a working tree with any change or untracked file (`git status` must be empty), since the release
+  is cut from `HEAD`;
+- a tag that already exists, here or on the remote (`origin`, or `PUBLISH_REMOTE`), or a remote it
+  cannot ask;
+- a `dist/` with no catalog, or whose catalog does not match its zips, misses a package or links to
+  another tag (the same check as `scripts/check.sh catalog`).
+
+Publishing is a person's step; the team only dry-runs it.
