@@ -13,6 +13,9 @@ function render(docs) {
   const holder = document.getElementById('watches');
   const tpl = document.getElementById('watch');
   const sections = [];
+  // The collection also holds Mailer's record of the messages it has shown (ids starting seen-),
+  // which a reply checks against; it is not a watch.
+  docs = docs.filter((item) => !String(item.id || '').startsWith('seen-') && !(item.doc && item.doc.shown));
   for (const item of docs) {
     const d = item.doc || {};
     const node = tpl.content.cloneNode(true);

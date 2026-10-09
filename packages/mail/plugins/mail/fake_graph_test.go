@@ -38,12 +38,16 @@ type fakeGraph struct {
 
 type gMsg struct {
 	ID, Conv, From, FromName, Subject, Body, BodyType, Folder string
-	To                                                        []string
+	To, Cc, ReplyTo                                           []string
 	Received                                                  time.Time
 	IsRead, IsDraft                                           bool
 	Categories                                                []string
 	Atts                                                      []attachment
 	seq                                                       int
+	// ReplyOf is the message a draft made by createReply or createReplyAll answers; All is
+	// createReplyAll. Sent is a draft sent with /send.
+	ReplyOf   string
+	All, Sent bool
 }
 
 func newFakeGraph(t *testing.T) *fakeGraph {
@@ -125,8 +129,28 @@ func (m *gMsg) json(full bool) map[string]any {
 			to = append(to, map[string]any{"emailAddress": map[string]string{"name": "", "address": a}})
 		}
 		out["toRecipients"] = to
-		out["ccRecipients"] = []any{}
+		out["ccRecipients"] = graphAddrs(m.Cc)
+		out["replyTo"] = graphAddrs(m.ReplyTo)
 		out["body"] = map[string]string{"contentType": m.BodyType, "content": m.Body}
+	}
+	return out
+}
+
+func graphAddrs(list []string) []any {
+	out := []any{}
+	for _, a := range list {
+		out = append(out, map[string]any{"emailAddress": map[string]string{"name": "", "address": a}})
+	}
+	return out
+}
+
+// recipients reads a toRecipients or ccRecipients list a PATCH sets.
+func recipients(raw json.RawMessage) []string {
+	var list []graphAddress
+	_ = json.Unmarshal(raw, &list)
+	var out []string
+	for _, a := range list {
+		out = append(out, a.EmailAddress.Address)
 	}
 	return out
 }
@@ -271,9 +295,42 @@ func (f *fakeGraph) serve(w http.ResponseWriter, r *http.Request) {
 			if v, ok := p["categories"]; ok {
 				_ = json.Unmarshal(v, &m.Categories)
 			}
+			if v, ok := p["subject"]; ok {
+				_ = json.Unmarshal(v, &m.Subject)
+			}
+			if v, ok := p["body"]; ok {
+				var b struct{ ContentType, Content string }
+				_ = json.Unmarshal(v, &b)
+				m.BodyType, m.Body = strings.ToLower(b.ContentType), b.Content
+			}
+			if v, ok := p["toRecipients"]; ok {
+				m.To = recipients(v)
+			}
+			if v, ok := p["ccRecipients"]; ok {
+				m.Cc = recipients(v)
+			}
 			f.seq++
 			m.seq = f.seq
 			writeJSON(w, 200, m.json(false))
+		case r.Method == "POST" && len(parts) == 4 && (parts[3] == "createReply" || parts[3] == "createReplyAll"):
+			// As Outlook does: a draft in the original's conversation, to its sender (and, for
+			// all, its other recipients), with the original quoted in the body.
+			f.nextID++
+			d := &gMsg{ID: fmt.Sprintf("AAMkREPLY%04d=", f.nextID), Conv: m.Conv, Subject: "RE: " + m.Subject, Folder: "drafts",
+				IsDraft: true, IsRead: true, Received: time.Now().UTC(), BodyType: "html", Body: "<p>Original:</p>" + m.Body,
+				To: []string{m.From}, ReplyOf: m.ID, All: parts[3] == "createReplyAll"}
+			if d.All {
+				d.Cc = append(slices.Clone(m.To), m.Cc...)
+			}
+			f.msgs = append(f.msgs, d)
+			writeJSON(w, 201, d.json(true))
+		case r.Method == "POST" && len(parts) == 4 && parts[3] == "send":
+			if !m.IsDraft {
+				writeJSON(w, 400, map[string]any{"error": map[string]string{"code": "ErrorInvalidRequest", "message": "only a draft can be sent"}})
+				return
+			}
+			m.Sent, m.IsDraft, m.Folder = true, false, "sentitems"
+			w.WriteHeader(202)
 		case r.Method == "POST" && len(parts) == 4 && parts[3] == "move":
 			var p struct {
 				DestinationID string `json:"destinationId"`

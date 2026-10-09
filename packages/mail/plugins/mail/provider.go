@@ -53,6 +53,9 @@ type fullMessage struct {
 	Text                        string // the text/plain body, when there is one
 	HTML                        string // the text/html body, used when there is no text one
 	Attachments                 []attachment
+	// The headers a reply threads by, as the message carries them: its Message-ID, References
+	// and Reply-To. Graph, which threads a reply itself, fills only ReplyTo.
+	MessageID, References, ReplyTo string
 }
 
 // query is the portable query list and search take. Raw, when set, is the provider's own query
@@ -72,11 +75,19 @@ type query struct {
 
 // outgoing is one email, every recipient already checked against the allowlist: Body is the
 // text as written, HTML the part made from it when the format is html ("" for text only).
+//
+// A reply also carries what threads it: InReplyTo and References for the message's headers,
+// Thread for the Gmail API's threadId, and ReplyOf (with ReplyAll) for Graph's createReply.
 type outgoing struct {
 	From          string
 	To, Cc, Bcc   []string
 	Subject, Body string
 	HTML          string
+
+	InReplyTo, References string
+	Thread                string
+	ReplyOf               string
+	ReplyAll              bool
 }
 
 // watchSpec is what one check of the watch looks at.

@@ -11,8 +11,9 @@ import (
 )
 
 type manifest struct {
-	Version string `json:"version"`
-	Config  map[string]struct {
+	Version     string `json:"version"`
+	Description string `json:"description"`
+	Config      map[string]struct {
 		Type    string          `json:"type"`
 		Default json.RawMessage `json:"default"`
 		SetBy   string          `json:"setBy"`
@@ -47,8 +48,8 @@ func readManifest(t *testing.T) manifest {
 
 func TestTheManifestKeepsTheSafetySettingsThePersonsAndOff(t *testing.T) {
 	m := readManifest(t)
-	if m.Version != "2.0.3" {
-		t.Fatalf("want version 2.0.3, got %s", m.Version)
+	if m.Version != "2.0.4" {
+		t.Fatalf("want version 2.0.4, got %s", m.Version)
 	}
 	off := map[string]string{"mode": `"draft"`, "sendAllowlist": `[]`, "markRead": `false`, "moveTo": `[]`}
 	for name, def := range off {
@@ -123,5 +124,29 @@ func TestTheManifestDeclaresTheEventWithTheFieldsItCarries(t *testing.T) {
 	sort.Strings(carried)
 	if !slices.Equal(declared, carried) {
 		t.Fatalf("event fields declared %v, carried %v", declared, carried)
+	}
+}
+
+// The plugin and the solution say the same version, so an installed 2.0.3 sees the update, and both
+// say a reply is threaded.
+func TestTheSolutionShipsThisVersionAndSaysAReplyIsThreaded(t *testing.T) {
+	m := readManifest(t)
+	b, err := os.ReadFile("../../solution.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sol struct {
+		Version, Description string
+	}
+	if err := json.Unmarshal(b, &sol); err != nil {
+		t.Fatalf("solution.json: %v", err)
+	}
+	if sol.Version != m.Version {
+		t.Fatalf("the solution is %s, the plugin %s", sol.Version, m.Version)
+	}
+	for what, text := range map[string]string{"plugin.json": m.Description, "solution.json": sol.Description} {
+		if !strings.Contains(text, "reply") || !strings.Contains(text, "threaded") {
+			t.Fatalf("%s's description must say a reply is threaded: %q", what, text)
+		}
 	}
 }

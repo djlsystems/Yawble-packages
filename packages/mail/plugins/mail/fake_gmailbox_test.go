@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -42,6 +43,8 @@ type gbMsg struct {
 	ID, Thread, From, Subject, Body string
 	Labels                          []string
 	Received                        time.Time
+	// Headers are more headers the message carries: Message-ID, References, Reply-To.
+	Headers map[string]string
 }
 
 type gbHist struct {
@@ -115,6 +118,9 @@ func (g *gmailBox) called(method, prefix string) []call {
 func (m *gbMsg) json(full bool) map[string]any {
 	headers := []map[string]string{{"name": "From", "value": m.From}, {"name": "Subject", "value": m.Subject},
 		{"name": "Date", "value": m.Received.Format(time.RFC1123Z)}, {"name": "To", "value": "person@example.test"}}
+	for _, k := range slices.Sorted(maps.Keys(m.Headers)) {
+		headers = append(headers, map[string]string{"name": k, "value": m.Headers[k]})
+	}
 	payload := map[string]any{"mimeType": "text/plain", "headers": headers}
 	if full {
 		payload["body"] = map[string]any{"data": b64(m.Body), "size": len(m.Body)}

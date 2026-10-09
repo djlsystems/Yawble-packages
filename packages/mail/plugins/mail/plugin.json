@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "mail",
   "name": "Mail",
-  "description": "Lists, searches, reads, marks, moves and labels mail, drafts or sends email - as HTML made from the text by default, or as plain text with format: text - and watches a folder for new mail, over an IMAP app-password mailbox, Microsoft or Google. Drafts only by default; sends only to a person's allowlist; never deletes.",
-  "version": "2.0.3",
+  "description": "Lists, searches, reads, marks, moves and labels mail, drafts or sends email - as HTML made from the text by default, or as plain text with format: text - drafts or sends a reply threaded to the message it answers, and watches a folder for new mail, over an IMAP app-password mailbox, Microsoft or Google. Drafts only by default; sends only to a person's allowlist; never deletes.",
+  "version": "2.0.4",
   "protocol": "harness.member/1",
   "executable": { "path": "bin/linux-x64/mail", "args": [] },
   "platforms": {

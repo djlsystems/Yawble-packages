@@ -113,6 +113,7 @@ type graphMessage struct {
 	From             *graphAddress  `json:"from"`
 	ToRecipients     []graphAddress `json:"toRecipients"`
 	CcRecipients     []graphAddress `json:"ccRecipients"`
+	ReplyTo          []graphAddress `json:"replyTo"`
 	Subject          string         `json:"subject"`
 	ReceivedDateTime time.Time      `json:"receivedDateTime"`
 	IsRead           bool           `json:"isRead"`
@@ -198,7 +199,7 @@ func (g *graph) list(ctx context.Context, q query) ([]summary, string, error) {
 
 func (g *graph) read(ctx context.Context, id string) (*fullMessage, error) {
 	var m graphMessage
-	params := url.Values{"$select": {"id,conversationId,from,toRecipients,ccRecipients,subject,receivedDateTime,isRead,body,parentFolderId,categories"}}
+	params := url.Values{"$select": {"id,conversationId,from,toRecipients,ccRecipients,replyTo,subject,receivedDateTime,isRead,body,parentFolderId,categories"}}
 	if err := g.api.call(ctx, "GET", "/me/messages/"+url.PathEscape(id), params, nil, &m); err != nil {
 		if isStatus(err, 404) || isStatus(err, 400) {
 			return nil, failure("No message " + id + " in this mailbox.")
@@ -206,7 +207,7 @@ func (g *graph) read(ctx context.Context, id string) (*fullMessage, error) {
 		return nil, failure(graphWords.describe(err, scopeGraphReadWrite, false))
 	}
 	full := &fullMessage{ID: m.ID, Thread: m.ConversationID, From: m.From.String(), To: graphAddresses(m.ToRecipients),
-		Cc: graphAddresses(m.CcRecipients), Date: fmtTime(m.ReceivedDateTime), Subject: m.Subject}
+		Cc: graphAddresses(m.CcRecipients), ReplyTo: graphAddresses(m.ReplyTo), Date: fmtTime(m.ReceivedDateTime), Subject: m.Subject}
 	if m.ParentFolderID != "" {
 		full.Folders = append(full.Folders, g.folderName(ctx, m.ParentFolderID))
 	}
@@ -326,7 +327,37 @@ func graphOutgoing(o outgoing) map[string]any {
 	}
 }
 
+// reply makes a reply draft as Outlook does, with createReply (createReplyAll when the person
+// asked for all), so Graph threads it into the original's conversation; then sets its recipients
+// to the ones checked against the allowlist, and its subject and body to the reply's: the body
+// replaces the quote Outlook puts in the draft.
+func (g *graph) reply(ctx context.Context, o outgoing) (string, error) {
+	action := "/createReply"
+	if o.ReplyAll {
+		action = "/createReplyAll"
+	}
+	var d graphMessage
+	if err := g.api.call(ctx, "POST", "/me/messages/"+url.PathEscape(o.ReplyOf)+action, nil, map[string]any{}, &d); err != nil {
+		if isStatus(err, 404) {
+			return "", failure("No message " + o.ReplyOf + " in this mailbox; nothing was sent.")
+		}
+		return "", failure(graphWords.describe(err, scopeGraphReadWrite, true))
+	}
+	if err := g.api.call(ctx, "PATCH", "/me/messages/"+url.PathEscape(d.ID), nil, graphOutgoing(o), nil); err != nil {
+		return "", failure(strings.TrimSuffix(graphWords.describe(err, scopeGraphReadWrite, false), ".") +
+			"; nothing was sent, and the unfinished reply " + d.ID + " is left in Drafts.")
+	}
+	return d.ID, nil
+}
+
 func (g *graph) draft(ctx context.Context, o outgoing) (string, error) {
+	if o.ReplyOf != "" {
+		id, err := g.reply(ctx, o)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Draft %s created in Drafts, in the original's conversation; nothing was sent.", id), nil
+	}
 	var m graphMessage
 	if err := g.api.call(ctx, "POST", "/me/messages", nil, graphOutgoing(o), &m); err != nil {
 		return "", failure(graphWords.describe(err, scopeGraphReadWrite, true))
@@ -335,6 +366,16 @@ func (g *graph) draft(ctx context.Context, o outgoing) (string, error) {
 }
 
 func (g *graph) send(ctx context.Context, o outgoing) (string, error) {
+	if o.ReplyOf != "" {
+		id, err := g.reply(ctx, o)
+		if err != nil {
+			return "", err
+		}
+		if err := g.api.call(ctx, "POST", "/me/messages/"+url.PathEscape(id)+"/send", nil, nil, nil); err != nil {
+			return "", failure(strings.TrimSuffix(graphWords.describe(err, scopeGraphSend, false), ".") + "; nothing was sent, and the reply is left as draft " + id + ".")
+		}
+		return "Sent: Microsoft Graph sent the reply in the original's conversation; a copy is in Sent Items.", nil
+	}
 	body := map[string]any{"message": graphOutgoing(o), "saveToSentItems": true}
 	if err := g.api.call(ctx, "POST", "/me/sendMail", nil, body, nil); err != nil {
 		return "", failure(graphWords.describe(err, scopeGraphSend, true))
