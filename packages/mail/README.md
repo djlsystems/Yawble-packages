@@ -1,8 +1,8 @@
-# Mail 2.0.2
+# Mail 2.0.3
 
 A team that works with your mailbox: a Manager you talk to, and a plugin member, Mailer, that lists,
 searches and reads your mail, files it when you allow that, watches your Inbox for new mail, and
-drafts or sends plain-text email.
+drafts or sends email: HTML made from the text by default, or plain text with `format: text`.
 
 ## What install asks you for
 

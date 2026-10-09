@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -66,8 +67,9 @@ type connectionNeed struct {
 }
 
 type secretNeed struct {
-	Key string `json:"key"`
-	Why string `json:"why"`
+	Key  string `json:"key"`
+	Why  string `json:"why"`
+	When string `json:"when,omitempty"`
 }
 
 type inputNeed struct {
@@ -271,7 +273,11 @@ func pluginEntry(files zipFiles) (entry, error) {
 		return entry{}, fmt.Errorf("plugin.json secrets: %v", err)
 	}
 	for _, f := range fields {
-		e.Needs.Secrets = append(e.Needs.Secrets, secretNeed{f, secrets[f].Description})
+		when, err := secretWhen(f, secrets[f].When, m.Config)
+		if err != nil {
+			return entry{}, fmt.Errorf("plugin.json %v", err)
+		}
+		e.Needs.Secrets = append(e.Needs.Secrets, secretNeed{f, secrets[f].Description, when})
 	}
 	settings, config, err := orderedObject[configField](m.Config)
 	if err != nil {
@@ -355,7 +361,7 @@ func solutionEntry(files zipFiles) (entry, error) {
 		e.Needs.Connections = append(e.Needs.Connections, connectionNeed{c.Slot, nonNil(slot.Providers), c.Required, c.Description})
 	}
 
-	keys := map[string]bool{}
+	keys := map[string]int{}
 	for _, m := range s.Members {
 		if m.PluginID == "" {
 			continue
@@ -373,9 +379,23 @@ func solutionEntry(files zipFiles) (entry, error) {
 			if !ok {
 				return entry{}, fmt.Errorf("solution.json member %s binds secret %s, which plugin %s does not declare", m.Name, f, m.PluginID)
 			}
-			if key := bound[f]; !keys[key] {
-				keys[key] = true
-				e.Needs.Secrets = append(e.Needs.Secrets, secretNeed{key, d.Description})
+			when, err := secretWhen(f, d.When, plugins[m.PluginID].manifest.Config)
+			if err != nil {
+				return entry{}, fmt.Errorf("plugin %s %v", m.PluginID, err)
+			}
+			key := bound[f]
+			i, seen := keys[key]
+			if !seen {
+				keys[key] = len(e.Needs.Secrets)
+				e.Needs.Secrets = append(e.Needs.Secrets, secretNeed{key, d.Description, when})
+				continue
+			}
+			// A key bound more than once is needed whenever any binding needs it: always, when one
+			// binding always needs it.
+			if had := e.Needs.Secrets[i].When; had == "" || when == "" {
+				e.Needs.Secrets[i].When = ""
+			} else if had != when {
+				e.Needs.Secrets[i].When = had + ", or " + when
 			}
 		}
 	}
@@ -387,6 +407,44 @@ func solutionEntry(files zipFiles) (entry, error) {
 		e.Needs.Inputs = append(e.Needs.Inputs, inputNeed{st.Setting, "setting", st.Required, st.Description})
 	}
 	return e, nil
+}
+
+// secretWhen puts a plugin secret's when - {"<setting>": "<value>"}, one pair - in plain words:
+// "when the sources setting includes adzuna" for a list setting, "when the mode setting is send" for
+// a choice. No when is "": the secret is always needed. A when the Host would not accept is refused
+// rather than guessed at.
+func secretWhen(field string, raw, config json.RawMessage) (string, error) {
+	if t := bytes.TrimSpace(raw); len(t) == 0 || string(t) == "null" {
+		return "", nil
+	}
+	var when map[string]string
+	if err := json.Unmarshal(raw, &when); err != nil {
+		return "", fmt.Errorf("secret %s: when: %v", field, err)
+	}
+	if len(when) != 1 {
+		return "", fmt.Errorf("secret %s: when must name exactly one setting", field)
+	}
+	_, settings, err := orderedObject[configField](config)
+	if err != nil {
+		return "", fmt.Errorf("config: %v", err)
+	}
+	for name, value := range when {
+		s, ok := settings[name]
+		if !ok {
+			return "", fmt.Errorf("secret %s: when names %s, which is not a setting", field, name)
+		}
+		if !slices.Contains(s.Enum, value) {
+			return "", fmt.Errorf("secret %s: when %s is %s, which is not one of its values", field, name, value)
+		}
+		switch s.Type {
+		case "list":
+			return "when the " + name + " setting includes " + value, nil
+		case "string":
+			return "when the " + name + " setting is " + value, nil
+		}
+		return "", fmt.Errorf("secret %s: when names %s, which is not a list or choice setting", field, name)
+	}
+	return "", nil
 }
 
 // firstSentence is the description up to its first sentence's end: the catalog's summary.

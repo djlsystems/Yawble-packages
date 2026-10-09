@@ -67,13 +67,16 @@ type pluginManifest struct {
 }
 
 type configField struct {
-	SetBy       string `json:"setBy"`
-	Required    bool   `json:"required"`
-	Description string `json:"description"`
+	Type        string   `json:"type"`
+	Enum        []string `json:"enum"`
+	SetBy       string   `json:"setBy"`
+	Required    bool     `json:"required"`
+	Description string   `json:"description"`
 }
 
 type secretField struct {
-	Description string `json:"description"`
+	Description string          `json:"description"`
+	When        json.RawMessage `json:"when"`
 }
 
 type connectionSlot struct {

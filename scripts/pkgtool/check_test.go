@@ -226,3 +226,46 @@ func TestTheCatalogListsPackagesOrderedById(t *testing.T) {
 	})
 	wantProblem(t, verifyCatalog(tag, dist, packages), "not ordered by id")
 }
+
+// secretWhens edits the needs.secrets of the catalog's only package by key.
+func secretWhens(t *testing.T, dist string, edit func(secrets map[string]map[string]any)) {
+	t.Helper()
+	editCatalog(t, dist, func(c map[string]any) {
+		bykey := map[string]map[string]any{}
+		for _, s := range c["packages"].([]any)[0].(map[string]any)["needs"].(map[string]any)["secrets"].([]any) {
+			bykey[s.(map[string]any)["key"].(string)] = s.(map[string]any)
+		}
+		edit(bykey)
+	})
+}
+
+func TestASecretsWhenMustBeWhatItsManifestSays(t *testing.T) {
+	built := func() (string, string) {
+		root := t.TempDir()
+		dist, packages := filepath.Join(root, "dist"), filepath.Join(root, "packages")
+		write(t, filepath.Join(packages, "board"), map[string]string{"plugin.json": boardWithWhen, "build.sh": "#!/bin/sh\n"})
+		if err := os.MkdirAll(dist, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		buildZip(t, dist, "board-0.2.0.zip", map[string]string{"plugin.json": boardWithWhen, "board*": ""})
+		if err := writeCatalog(tag, dist, at); err != nil {
+			t.Fatal(err)
+		}
+		return dist, packages
+	}
+	dist, packages := built()
+	if problems := verifyCatalog(tag, dist, packages); len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	for name, edit := range map[string]func(map[string]map[string]any){
+		"a wrong when":   func(s map[string]map[string]any) { s["apiKey"]["when"] = "when the sources setting includes sample" },
+		"a missing when": func(s map[string]map[string]any) { delete(s["writeKey"], "when") },
+		"an extra when":  func(s map[string]map[string]any) { s["apiId"]["when"] = "when the mode setting is write" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			dist, packages := built()
+			secretWhens(t, dist, edit)
+			wantProblem(t, verifyCatalog(tag, dist, packages), "board-0.2.0.zip: its catalog entry differs from what its manifests say (needs)")
+		})
+	}
+}

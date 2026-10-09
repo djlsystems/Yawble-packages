@@ -211,7 +211,7 @@ func TestAPluginZipsEntryIsReadFromItsManifestAndTheZip(t *testing.T) {
 		Summary: "Says hello.", Description: "Says hello. It never sends anything.",
 		Needs: needs{
 			Connections: []connectionNeed{{"account", []string{"google", "microsoft"}, true, "The account to greet from."}},
-			Secrets:     []secretNeed{{"token", "The service token."}},
+			Secrets:     []secretNeed{{Key: "token", Why: "The service token."}},
 			Inputs:      []inputNeed{{"allow", "setting", false, "Who it may greet."}},
 			Runtimes:    []string{},
 		},
@@ -252,7 +252,7 @@ func TestASolutionZipsEntryReadsItsPluginsAndWhatOnlyAPersonProvides(t *testing.
 	wantNeeds := needs{
 		Connections: []connectionNeed{{"account", []string{"google", "microsoft"}, true, "Your account."}},
 		Secrets: []secretNeed{
-			{"HELLO_TOKEN", "The service token."}, {"BOARD_KEY", "The board's key."}, {"BOARD_ID", "The board's id."},
+			{Key: "HELLO_TOKEN", Why: "The service token."}, {Key: "BOARD_KEY", Why: "The board's key."}, {Key: "BOARD_ID", Why: "The board's id."},
 		},
 		Inputs: []inputNeed{
 			{"Resume", "documents", true, "Your resume."}, {"allow", "setting", false, "Who may be greeted."},
@@ -268,6 +268,79 @@ func TestASolutionZipsEntryReadsItsPluginsAndWhatOnlyAPersonProvides(t *testing.
 	// The script plugin has no platforms and narrows nothing.
 	if want := []string{"linux-x64", "linux-arm64"}; !reflect.DeepEqual(e.Platforms, want) {
 		t.Fatalf("platforms %v", e.Platforms)
+	}
+}
+
+// boardWithWhen is the board plugin with secrets needed only under a setting: apiKey while the
+// sources list holds remote, writeKey while mode is write. apiId is always needed.
+var boardWithWhen = strings.Replace(scriptPlugin,
+	`"secrets": { "apiId": { "description": "The board's id." }, "apiKey": { "description": "The board's key." } }`,
+	`"config": {
+    "sources": { "type": "list", "enum": ["sample", "remote"], "default": [], "setBy": "person", "description": "The boards it reads." },
+    "mode": { "type": "string", "enum": ["read", "write"], "default": "read", "description": "Whether it may post." }
+  },
+  "secrets": {
+    "apiId": { "description": "The board's id." },
+    "apiKey": { "description": "The board's key.", "when": { "sources": "remote" } },
+    "writeKey": { "description": "The board's write key.", "when": { "mode": "write" } }
+  }`, 1)
+
+// secretsOf answers each secret of a catalog entry as written: key -> its "when", or "<none>" when
+// the entry has no "when".
+func secretsOf(t *testing.T, raw map[string]any, id string) map[string]string {
+	t.Helper()
+	for _, p := range raw["packages"].([]any) {
+		e := p.(map[string]any)
+		if e["id"] != id {
+			continue
+		}
+		got := map[string]string{}
+		for _, s := range e["needs"].(map[string]any)["secrets"].([]any) {
+			sec := s.(map[string]any)
+			w, ok := sec["when"]
+			if !ok {
+				w = "<none>"
+			}
+			got[sec["key"].(string)] = w.(string)
+		}
+		return got
+	}
+	t.Fatalf("no package %s in the catalog", id)
+	return nil
+}
+
+func TestASecretSaysWhenItIsNeededFromItsManifestsWhen(t *testing.T) {
+	dist := t.TempDir()
+	buildZip(t, dist, "board-0.2.0.zip", map[string]string{"plugin.json": boardWithWhen, "board*": ""})
+	buildZip(t, dist, "team-2.0.0.zip", map[string]string{
+		"solution.json":                        solution,
+		"plugins/hello/plugin.json":            goPlugin,
+		"plugins/hello/bin/linux-x64/hello*":   "x64",
+		"plugins/hello/bin/linux-arm64/hello*": "arm64",
+		"plugins/board/plugin.json":            boardWithWhen,
+		"plugins/board/board*":                 "",
+	})
+	if err := writeCatalog(tag, dist, at); err != nil {
+		t.Fatal(err)
+	}
+	_, raw := readCatalog(t, dist)
+	plugin := map[string]string{
+		"apiId":    "<none>",
+		"apiKey":   "when the sources setting includes remote",
+		"writeKey": "when the mode setting is write",
+	}
+	if got := secretsOf(t, raw, "board"); !reflect.DeepEqual(got, plugin) {
+		t.Errorf("plugin secrets\n got %v\nwant %v", got, plugin)
+	}
+	// A solution carries the when of the plugin field each key is bound to; a key with none is
+	// always needed.
+	sol := map[string]string{
+		"HELLO_TOKEN": "<none>",
+		"BOARD_KEY":   "when the sources setting includes remote",
+		"BOARD_ID":    "<none>",
+	}
+	if got := secretsOf(t, raw, "team"); !reflect.DeepEqual(got, sol) {
+		t.Errorf("solution secrets\n got %v\nwant %v", got, sol)
 	}
 }
 
@@ -303,6 +376,12 @@ func TestTheCatalogRefusesWhatItCannotReadTruthfully(t *testing.T) {
 			map[string]string{"plugin.json": scriptPlugin, "board*": ""}, "v1", "is not catalog-"},
 		{"a plugin member whose plugin is not shipped", "team-2.0.0.zip",
 			map[string]string{"solution.json": solution, "plugins/board/plugin.json": scriptPlugin, "plugins/board/board*": ""}, tag, "plugin hello, which the zip does not hold"},
+		{"a when naming a setting the plugin does not declare", "board-0.2.0.zip",
+			map[string]string{"plugin.json": strings.Replace(boardWithWhen, `{ "sources": "remote" }`, `{ "region": "remote" }`, 1), "board*": ""}, tag, "secret apiKey: when names region, which is not a setting"},
+		{"a when with a value its setting does not offer", "board-0.2.0.zip",
+			map[string]string{"plugin.json": strings.Replace(boardWithWhen, `{ "sources": "remote" }`, `{ "sources": "elsewhere" }`, 1), "board*": ""}, tag, "secret apiKey: when sources is elsewhere, which is not one of its values"},
+		{"a when of more than one setting", "board-0.2.0.zip",
+			map[string]string{"plugin.json": strings.Replace(boardWithWhen, `{ "sources": "remote" }`, `{ "sources": "remote", "mode": "write" }`, 1), "board*": ""}, tag, "secret apiKey: when must name exactly one setting"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -331,5 +410,32 @@ func TestTheSummaryIsTheDescriptionsFirstSentence(t *testing.T) {
 		if got := firstSentence(in); got != want {
 			t.Errorf("firstSentence(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestAKeyBoundMoreThanOnceIsNeededWheneverAnyBindingNeedsIt(t *testing.T) {
+	team := func(members string) map[string]string {
+		dist := t.TempDir()
+		buildZip(t, dist, "team-2.0.0.zip", map[string]string{
+			"solution.json": `{ "format": 1, "id": "team", "name": "Team", "version": "2.0.0", "description": "Reads a board.",
+  "members": [ { "name": "Boss", "role": "manager" }, ` + members + ` ] }`,
+			"plugins/board/plugin.json": boardWithWhen,
+			"plugins/board/board*":      "",
+		})
+		if err := writeCatalog(tag, dist, at); err != nil {
+			t.Fatal(err)
+		}
+		_, raw := readCatalog(t, dist)
+		return secretsOf(t, raw, "team")
+	}
+	got := team(`{ "name": "Reader", "pluginId": "board", "secrets": { "apiKey": "KEY" } },
+    { "name": "Poster", "pluginId": "board", "secrets": { "writeKey": "KEY" } }`)
+	if want := "when the sources setting includes remote, or when the mode setting is write"; got["KEY"] != want {
+		t.Errorf("two conditions: got %q, want %q", got["KEY"], want)
+	}
+	got = team(`{ "name": "Reader", "pluginId": "board", "secrets": { "apiKey": "KEY" } },
+    { "name": "Keeper", "pluginId": "board", "secrets": { "apiId": "KEY" } }`)
+	if got["KEY"] != "<none>" {
+		t.Errorf("one binding always needs it: got %q, want no when", got["KEY"])
 	}
 }

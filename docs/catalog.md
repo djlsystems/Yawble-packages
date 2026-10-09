@@ -24,17 +24,17 @@ never `null` and never filled with a guess.
   "packages": [
     {
       "id": "mail", "kind": "solution",
-      "name": "Mail", "version": "2.0.2",
+      "name": "Mail", "version": "2.0.3",
       "summary": "...", "description": "...",
       "needs": {
         "connections": [{ "slot": "mailbox", "providers": ["imap", "microsoft", "google"], "required": true, "why": "..." }],
-        "secrets": [{ "key": "KEY_NAME", "why": "..." }],
+        "secrets": [{ "key": "KEY_NAME", "why": "...", "when": "when the sources setting includes adzuna" }],
         "inputs": [{ "name": "Resume", "kind": "documents", "required": true, "why": "..." }],
         "runtimes": ["python3"]
       },
-      "plugins": [{ "id": "mail", "version": "2.0.2" }],
+      "plugins": [{ "id": "mail", "version": "2.0.3" }],
       "platforms": ["linux-x64", "linux-arm64"],
-      "download": { "url": "https://github.com/djlsystems/Yawble-packages/releases/download/<tag>/mail-2.0.2.zip", "sha256": "<hex>", "bytes": 8097525 },
+      "download": { "url": "https://github.com/djlsystems/Yawble-packages/releases/download/<tag>/mail-2.0.3.zip", "sha256": "<hex>", "bytes": 8097525 },
       "source": "https://github.com/djlsystems/Yawble-packages/tree/main/packages/mail"
     }
   ]
@@ -64,7 +64,7 @@ the package" is each `plugins/<id>/plugin.json` in a solution zip, or the plugin
 | `summary` | The first sentence of the manifest's `description`: up to the first `.`, `!` or `?` followed by a space and a capital letter, or all of its first paragraph when there is no such end. Plain text, on one line. |
 | `description` | The manifest's `description`, as written: plain text, paragraphs separated by blank lines. Never HTML: the build refuses a description holding an HTML tag. |
 | `needs.connections` | Each account a person connects. Solution: each `inputs.connections` entry - `slot`, `required` and `why` (its `description`) - with `providers` read from that member's plugin's `connections.<slot>.providers`. Plugin: each slot of the manifest's `connections`, with its `providers`, `required` and `description` as `why`. In the order written. |
-| `needs.secrets` | Each secret the operator sets on the Host (`yawble secret set <KEY>`). Solution: each key a plugin member's `secrets` binds, once, with `why` from the plugin's `secrets.<field>.description`. Plugin: each field of the manifest's `secrets`, by field name (a plugin package binds no key name: a person binds the field to a key of their choosing at hire), with its `description` as `why`. |
+| `needs.secrets` | Each secret the operator sets on the Host (`yawble secret set <KEY>`). Solution: each key a plugin member's `secrets` binds, once, with `why` from the plugin's `secrets.<field>.description`. Plugin: each field of the manifest's `secrets`, by field name (a plugin package binds no key name: a person binds the field to a key of their choosing at hire), with its `description` as `why`. `when`, only on a secret needed under a setting: the plugin's `secrets.<field>.when` (`{"<setting>": "<value>"}`) in plain words - "when the sources setting includes adzuna" for a list setting, "when the mode setting is send" for a choice. A secret always needed has no `when`. A solution key bound by more than one member is needed whenever any of them needs it: no `when` if one always does, otherwise each condition, joined by ", or ". The build refuses a `when` that names more than one setting, a setting the plugin does not declare, or a value that setting does not offer. |
 | `needs.inputs` | What else only a person provides at install. Solution: each `inputs.documents` entry (`name` is the folder, `kind` `documents`), then each `inputs.settings` entry (`name` is the setting, `kind` `setting`), with `required` and `description` as `why`. Plugin: each `config` setting with `"setBy": "person"` (`kind` `setting`, `required` from the setting, default false). |
 | `needs.runtimes` | Every runtime a plugin of the package `requires` from the image (`dotnet`, `node`, `python3`), each once, sorted. |
 | `plugins` | Each plugin of the package, `{ id, version }`, by id. A plugin package lists itself. |
