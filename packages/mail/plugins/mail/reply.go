@@ -19,7 +19,8 @@ import (
 const (
 	// The messages Mailer has shown - listed, searched or read - are remembered in the watch's
 	// collection, one document per mailbox, so a reply in a later run can answer one of them.
-	// The document holds short hashes of the ids, never an id, an address or any content.
+	// The document holds short hashes of the ids and the mailbox's own address, as the watch's
+	// documents do; never a message id, a sender or any content.
 	seenPrefix = "seen-"
 	seenLimit  = 500
 )
