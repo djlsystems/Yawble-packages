@@ -10,7 +10,8 @@
 #
 # A solution zip's root is the package folder's content (solution.json at the root) with each
 # plugins/<id>/ replaced by the version its build.sh builds. A plugin zip's root is the version the
-# package's build.sh builds (plugin.json and what it names). Needs Go and sh only.
+# package's build.sh builds (plugin.json and what it names). Needs Go and sh, and the .NET SDK
+# for sample-echo.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
