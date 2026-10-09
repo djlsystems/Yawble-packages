@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,12 +11,14 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 )
 
 // verifyCatalog checks <dist>/catalog.json against the zips beside it and the package folders under
-// <packages>: every package is listed once, every zip is listed, each entry's download names the tag
-// and carries its zip's sha256 and size, and every other field is what the zip's manifests say. It
-// returns every problem it finds, not only the first.
+// <packages>: it holds only the fields docs/catalog.md names, generatedAt is UTC to the second, the
+// packages are ordered by id, every package is listed once, every zip is listed, each entry's
+// download names the tag and carries its zip's sha256 and size, and every other field is what the
+// zip's manifests say. It returns every problem it finds, not only the first.
 func verifyCatalog(tag, dist, packages string) []string {
 	var problems []string
 	fail := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
@@ -28,11 +31,21 @@ func verifyCatalog(tag, dist, packages string) []string {
 		return []string{fmt.Sprintf("no catalog: %v", err)}
 	}
 	var c catalog
-	if err := json.Unmarshal(data, &c); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&c); err != nil {
 		return []string{fmt.Sprintf("catalog.json: %v", err)}
 	}
 	if c.Schema != schema {
 		fail("catalog.json is schema %d; this build writes schema %d", c.Schema, schema)
+	}
+	if t, err := time.Parse(generatedAtLayout, c.GeneratedAt); err != nil || t.Format(generatedAtLayout) != c.GeneratedAt {
+		fail("catalog.json: generatedAt %q is not UTC ISO 8601 to the second, such as 2026-10-09T08:00:00Z", c.GeneratedAt)
+	}
+	for i := 1; i < len(c.Packages); i++ {
+		if c.Packages[i-1].ID >= c.Packages[i].ID {
+			fail("catalog.json: packages are not ordered by id (%s before %s)", c.Packages[i-1].ID, c.Packages[i].ID)
+		}
 	}
 
 	listed := map[string]bool{}

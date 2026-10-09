@@ -64,7 +64,8 @@ nothing else. It empties `dist/` and writes:
 
 The argument is the GitHub Release tag the zips will be published under, because every download
 link in the catalog names it: `catalog-<yyyy.mm.dd>.<n>`, today's UTC date and a number from 1. It
-can come from `CATALOG_TAG` instead.
+can come from `CATALOG_TAG` instead. The build refuses a date that is not on the calendar and an
+`n` of 0 or with a leading zero.
 
 The zips are **reproducible**: the same commit built with the same Go gives byte-identical zips
 (fixed entry times and modes, sorted entries, `-trimpath -buildvcs=false`). `generatedAt` in the
@@ -85,7 +86,7 @@ then exits 1 if any did:
 |---|---|
 | `build` | `scripts/build.sh <tag>` fails for any package. |
 | `tests` | `go test ./...` fails in any Go module under `packages/` or `scripts/` - every plugin's own tests, the mail plugin's unit tests **and** its verification suite, and the helper's. |
-| `catalog` | `dist/catalog.json` does not match `dist/`: a zip's sha256 or size differs, a zip or a package folder is not listed, an entry names a zip that is not there, a download link names another tag, or any other field is not what the zip's manifests say. |
+| `catalog` | `dist/catalog.json` does not match `dist/` or [docs/catalog.md](docs/catalog.md): a field the page does not name, a `generatedAt` that is not UTC to the second, packages not ordered by id, a zip's sha256 or size differs, a zip or a package folder is not listed, an entry names a zip that is not there, a download link names another tag, or any other field is not what the zip's manifests say. |
 | `people` | Any text file (tracked or not; not `.git`, binaries or zips) holds a real person's data: an email address at a domain that is not reserved; a host or domain, in a link or bare, that is not reserved, not `github.com/djlsystems`, not a Go module path a `go.mod`/`go.sum` names and not in `scripts/allowed-hosts.txt`; an authorship line (`Copyright`, `Author:`, `Signed-off-by:` ...) that does not name the project; or the name or address of anyone in the repository's git history or of the git user running it. |
 
 Reserved means `example.com`, `example.net`, `example.org` and their subdomains, and anything under
@@ -140,10 +141,13 @@ To release a new version of a package, raise `version` in its manifest (and in e
 `scripts/publish.sh <tag>` uploads every zip in `dist/` and `dist/catalog.json` as one GitHub
 Release named by the tag, cut from `HEAD` and marked the latest release, so
 `https://github.com/djlsystems/Yawble-packages/releases/latest/download/catalog.json` is always the
-current catalog. The catalog's download links name the tag `scripts/build.sh` was given, so build,
-check and publish with the same tag:
+current catalog. The release is cut from `HEAD`, and the catalog's `source` links point at `main`,
+so **push or merge your commit to `main` first** and publish from a checkout of it. The catalog's
+download links name the tag `scripts/build.sh` was given, so build, check and publish with the same
+tag:
 
 ```sh
+git switch main && git pull                     # HEAD is what is on origin's main
 scripts/build.sh catalog-2026.10.09.1
 scripts/check.sh --tag catalog-2026.10.09.1
 scripts/publish.sh --dry-run catalog-2026.10.09.1   # prints the tag and every asset, does nothing
@@ -154,11 +158,14 @@ The tag is `catalog-<yyyy.mm.dd>.<n>`: the UTC date and a number from 1, raised 
 the same day. Publishing needs `gh`, signed in with the right to make releases in
 `djlsystems/Yawble-packages`. Whether it is a dry run or not, it refuses:
 
-- a tag not shaped `catalog-<yyyy.mm.dd>.<n>`;
+- a tag not shaped `catalog-<yyyy.mm.dd>.<n>`, with a date not on the calendar, or with an `n` of 0
+  or with a leading zero (the build's own rule: both ask `pkgtool tag`);
 - a working tree with any change or untracked file (`git status` must be empty), since the release
   is cut from `HEAD`;
 - a tag that already exists, here or on the remote (`origin`, or `PUBLISH_REMOTE`), or a remote it
   cannot ask;
+- a `HEAD` that is not on the remote's `main` (it reads `main` with `git ls-remote`, fetches that
+  commit if it is missing here, moving no ref, and never pushes);
 - a `dist/` with no catalog, or whose catalog does not match its zips, misses a package or links to
   another tag (the same check as `scripts/check.sh catalog`).
 

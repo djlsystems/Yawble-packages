@@ -79,15 +79,18 @@ the package" is each `plugins/<id>/plugin.json` in a solution zip, or the plugin
 `scripts/build.sh` takes the release tag as its argument (or `CATALOG_TAG`), because every
 `download.url` names it. It is `catalog-<yyyy.mm.dd>.<n>`: the UTC date of the release and a number
 starting at 1 for that day (`catalog-2026.10.09.1`, then `catalog-2026.10.09.2`). The build refuses
-anything else. Build with the tag you will publish under: `scripts/publish.sh <tag>` publishes the
+anything else: a date that is not on the calendar (`catalog-2026.02.30.1`), an `n` of 0 or with a
+leading zero (`catalog-2026.10.09.01`). `scripts/publish.sh` applies the same rule, through the same
+code (`pkgtool tag`). Build with the tag you will publish under: `scripts/publish.sh <tag>` publishes the
 zips and catalog that tag was built with, and refuses a `dist/` whose download links name another
 tag, so the links in a published catalog always carry the tag of the release that holds the zips.
 
 ## How it is checked
 
 `scripts/check.sh catalog` (and `scripts/publish.sh`, before it uploads anything) reads
-`dist/catalog.json` back and fails unless every zip in `dist/` and every folder in `packages/` is
-listed once, each listed zip exists with the `download.sha256` and `download.bytes` given, each
+`dist/catalog.json` back and fails unless it holds only the fields this page names, `generatedAt`
+is UTC ISO 8601 to the second, the packages are ordered by id, every zip in `dist/` and every folder
+in `packages/` is listed once, each listed zip exists with the `download.sha256` and `download.bytes` given, each
 `download.url` names the tag, and every other field is what the zip's manifests say.
 
 ## The schema number

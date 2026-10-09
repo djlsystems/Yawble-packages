@@ -155,3 +155,74 @@ func TestTheScanFindsRealAddressesDomainsAuthorsAndThePeopleWhoWorkHere(t *testi
 		t.Fatalf("want both links to somebody else's account found, got %q", findings)
 	}
 }
+
+func TestATagMustNameARealDateAndANumberFromOne(t *testing.T) {
+	for _, good := range []string{"catalog-2026.10.09.1", "catalog-2028.02.29.1", "catalog-2026.12.31.10"} {
+		if err := checkTag(good); err != nil {
+			t.Errorf("checkTag(%q) = %v, want nil", good, err)
+		}
+	}
+	for _, bad := range []string{
+		"catalog-2026.13.45.0", "catalog-2026.02.30.1", "catalog-2027.02.29.1", "catalog-0000.00.00.1",
+		"catalog-2026.00.09.1", "catalog-2026.10.00.1", "catalog-2026.10.09.0", "catalog-2026.10.09.01",
+		"catalog-2026.10.9.1", "catalog-2026.10.09", "catalog-2026.10.09.1 ", "v1",
+	} {
+		if err := checkTag(bad); err == nil {
+			t.Errorf("checkTag(%q) = nil, want a refusal", bad)
+		}
+	}
+}
+
+// editCatalog rewrites dist/catalog.json through its generic JSON form, so a test can add what the
+// catalog type has no field for.
+func editCatalog(t *testing.T, dist string, edit func(c map[string]any)) {
+	t.Helper()
+	_, raw := readCatalog(t, dist)
+	edit(raw)
+	data, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dist, "catalog.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestACatalogMayHoldOnlyTheFieldsItsSchemaNames(t *testing.T) {
+	dist, packages := builtRepo(t)
+	editCatalog(t, dist, func(c map[string]any) {
+		c["packages"].([]any)[0].(map[string]any)["pricing"] = "free"
+	})
+	wantProblem(t, verifyCatalog(tag, dist, packages), `unknown field "pricing"`)
+
+	dist, packages = builtRepo(t)
+	editCatalog(t, dist, func(c map[string]any) {
+		c["packages"].([]any)[0].(map[string]any)["download"].(map[string]any)["mirror"] = "none"
+	})
+	wantProblem(t, verifyCatalog(tag, dist, packages), `unknown field "mirror"`)
+}
+
+func TestGeneratedAtIsUTCToTheSecond(t *testing.T) {
+	for _, bad := range []string{"yesterday", "2026-10-09T10:00:00+02:00", "2026-10-09T08:00:00.5Z", "2026-10-09 08:00:00Z", "2026-10-09", "2026-13-09T08:00:00Z", ""} {
+		dist, packages := builtRepo(t)
+		editCatalog(t, dist, func(c map[string]any) { c["generatedAt"] = bad })
+		wantProblem(t, verifyCatalog(tag, dist, packages), "generatedAt")
+	}
+}
+
+func TestTheCatalogListsPackagesOrderedById(t *testing.T) {
+	dist, packages := builtRepo(t)
+	write(t, filepath.Join(packages, "board"), map[string]string{"plugin.json": scriptPlugin, "build.sh": "#!/bin/sh\n"})
+	buildZip(t, dist, "board-0.2.0.zip", map[string]string{"plugin.json": scriptPlugin, "board*": ""})
+	if err := writeCatalog(tag, dist, at); err != nil {
+		t.Fatal(err)
+	}
+	if problems := verifyCatalog(tag, dist, packages); len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	editCatalog(t, dist, func(c map[string]any) {
+		p := c["packages"].([]any)
+		p[0], p[1] = p[1], p[0]
+	})
+	wantProblem(t, verifyCatalog(tag, dist, packages), "not ordered by id")
+}

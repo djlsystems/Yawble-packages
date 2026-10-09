@@ -8,9 +8,12 @@
 #   scripts/publish.sh catalog-2026.10.09.1            publishes (needs gh, signed in)
 #
 # It refuses, dry run or not:
-#   - a tag that is not catalog-<yyyy.mm.dd>.<n>;
+#   - a tag that is not catalog-<yyyy.mm.dd>.<n> with a real date and n from 1 (pkgtool tag, the
+#     same rule scripts/build.sh applies);
 #   - a working tree with changes (git status shows anything), since the release is cut from HEAD;
 #   - a tag that already exists, here or on the remote (PUBLISH_REMOTE, origin by default);
+#   - a HEAD that is not on the remote's main branch, which the release and the catalog's source
+#     links point at: push or merge to main first;
 #   - a dist/ whose catalog does not match its zips, misses a package, or links to another tag.
 set -eu
 
@@ -38,8 +41,13 @@ refuse() {
   exit 1
 }
 
-if ! printf '%s\n' "$tag" | grep -Eq '^catalog-[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]+$'; then
-  refuse "tag $tag is not catalog-<yyyy.mm.dd>.<n>, such as catalog-2026.10.09.1"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT INT TERM
+(cd "$root/scripts/pkgtool" && go build -o "$work/pkgtool" .)
+pkgtool=$work/pkgtool
+
+if ! "$pkgtool" tag "$tag"; then
+  refuse "tag $tag is not catalog-<yyyy.mm.dd>.<n> with a real date and n from 1, such as catalog-2026.10.09.1"
 fi
 
 cd "$root"
@@ -58,11 +66,22 @@ if [ -n "$remote_tags" ]; then
   refuse "tag $tag already exists on $remote; take the next number"
 fi
 
+# The release is cut from HEAD and the catalog's source links point at main, so HEAD must already be
+# on the remote's main. Fetch main's commit only when it is not here yet; the empty refmap keeps the
+# fetch from moving any ref (only FETCH_HEAD is written), and nothing is pushed.
+if ! main=$(git ls-remote --heads "$remote" refs/heads/main) || [ -z "$main" ]; then
+  refuse "cannot read main on $remote"
+fi
+main=${main%%[[:space:]]*}
+if ! git cat-file -e "$main^{commit}" 2>/dev/null; then
+  git fetch -q --no-tags --refmap= "$remote" refs/heads/main || refuse "cannot fetch main from $remote"
+fi
+if ! git merge-base --is-ancestor HEAD "$main"; then
+  refuse "HEAD $(git rev-parse --short HEAD) is not on $remote's main ($(git rev-parse --short "$main")); push or merge it to main first"
+fi
+
 [ -f "$dist/catalog.json" ] || refuse "no dist/catalog.json; run scripts/build.sh $tag first"
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT INT TERM
-(cd "$root/scripts/pkgtool" && go build -o "$work/pkgtool" .)
-if ! "$work/pkgtool" verify "$tag" "$dist" "$root/packages" >&2; then
+if ! "$pkgtool" verify "$tag" "$dist" "$root/packages" >&2; then
   refuse "dist/ is not a build of every package with tag $tag; run scripts/build.sh $tag"
 fi
 

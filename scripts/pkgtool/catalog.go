@@ -24,7 +24,8 @@ const schema = 1
 const repository = "https://github.com/djlsystems/Yawble-packages"
 
 var (
-	tagPattern  = regexp.MustCompile(`^catalog-[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]+$`)
+	// The date part is checked again as a calendar date; n counts from 1 with no leading zero.
+	tagPattern  = regexp.MustCompile(`^catalog-([0-9]{4}\.[0-9]{2}\.[0-9]{2})\.[1-9][0-9]*$`)
 	htmlPattern = regexp.MustCompile(`<[A-Za-z/!]`)
 	// A sentence ends at . ! or ? followed by a space and a capital letter, or at the end.
 	sentenceEnd = regexp.MustCompile(`[.!?]\s+[A-Z]`)
@@ -102,7 +103,7 @@ func writeCatalog(tag, dist string, at time.Time) error {
 		return fmt.Errorf("%s holds no zips; build the packages first", dist)
 	}
 	sort.Strings(zips)
-	c := catalog{Schema: schema, GeneratedAt: at.UTC().Format("2006-01-02T15:04:05Z"), Packages: []entry{}}
+	c := catalog{Schema: schema, GeneratedAt: at.UTC().Format(generatedAtLayout), Packages: []entry{}}
 	seen := map[string]string{}
 	for _, z := range zips {
 		e, err := readEntry(z, tag)
@@ -115,6 +116,7 @@ func writeCatalog(tag, dist string, at time.Time) error {
 		seen[e.ID] = filepath.Base(z)
 		c.Packages = append(c.Packages, e)
 	}
+	sort.Slice(c.Packages, func(i, j int) bool { return c.Packages[i].ID < c.Packages[j].ID })
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
@@ -122,10 +124,18 @@ func writeCatalog(tag, dist string, at time.Time) error {
 	return os.WriteFile(filepath.Join(dist, "catalog.json"), append(data, '\n'), 0o644)
 }
 
-// checkTag refuses a release tag that is not catalog-<yyyy.mm.dd>.<n>.
+// generatedAtLayout is how the catalog writes generatedAt: UTC, ISO 8601, to the second.
+const generatedAtLayout = "2006-01-02T15:04:05Z"
+
+// checkTag refuses a release tag that is not catalog-<yyyy.mm.dd>.<n> with a real calendar date and
+// n a number from 1 with no leading zero. scripts/build.sh and scripts/publish.sh both ask this.
 func checkTag(tag string) error {
-	if !tagPattern.MatchString(tag) {
-		return fmt.Errorf("tag %q is not catalog-<yyyy.mm.dd>.<n>, such as catalog-2026.10.08.1", tag)
+	m := tagPattern.FindStringSubmatch(tag)
+	if m == nil {
+		return fmt.Errorf("tag %q is not catalog-<yyyy.mm.dd>.<n> with n from 1, such as catalog-2026.10.08.1", tag)
+	}
+	if d, err := time.Parse("2006.01.02", m[1]); err != nil || d.Year() < 1 {
+		return fmt.Errorf("tag %q: %s is not a calendar date", tag, m[1])
 	}
 	return nil
 }

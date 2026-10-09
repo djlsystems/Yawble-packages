@@ -37,7 +37,9 @@ mkdir -p "$dist"
 
 for dir in "$root"/packages/*/; do
   dir=${dir%/}
-  set -- $("$pkgtool" info "$dir")
+  # pkgtool has said why when it refuses a folder; stop there rather than split an empty answer.
+  info=$("$pkgtool" info "$dir") || exit 1
+  set -- $info
   kind=$1 id=$2 version=$3
   out=$work/stage/$id
   echo "building $id $version ($kind)"
