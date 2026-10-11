@@ -1,4 +1,4 @@
-# Twilio SMS/MMS 1.3.0
+# Twilio SMS/MMS 1.4.0
 
 A team that texts through your Twilio account. The **Texting Assistant** guides you through
 Twilio setup, writes texts for you and sends them through the **twilio** plugin member, and tells
@@ -15,7 +15,7 @@ It also offers **messagePrefix**: your business name as it starts each text (`Ac
 the name your campaign registered. It can be left empty and set later; `check` reminds you.
 
 The member's settings show the everyday ones first: `mode`, `sendAllowlist`, `fromNumber`,
-`messagePrefix` and the three auto-reply settings. Every other setting is under **Advanced settings**, and its default is safe to
+`messagePrefix`, the three auto-reply settings and the three owner command settings. Every other setting is under **Advanced settings**, and its default is safe to
 leave. Each setting's explanation is behind its info icon.
 
 With an A2P 10DLC campaign approved, set `messagingServiceSid` (Advanced) to the Messaging Service
@@ -55,6 +55,34 @@ text not answered is counted in one progress line per poll, by reason, without n
 The twilio page shows each auto-reply exactly as sent, with an `auto-reply` tag beside it. The
 Texting Assistant still tells you about the texts and never sends a second reply to one twilio
 answered.
+
+## Owner commands
+
+You can text a keyword such as `summary` from your own phone, and the Texting Assistant answers
+with a short text back to you, within one poll. Your text is never an instruction to an agent:
+twilio matches the keyword itself and publishes `plugin.twilio.command` naming only the keyword,
+the number it came from, when, and the text's SID. Three settings, on the solution's panel:
+
+- `ownerCommands` (off): turns it on. Off, every text is an ordinary received text.
+- `ownerNumbers` (empty, up to 20 numbers): the numbers that may send commands. Empty means the
+  numbers on `sendAllowlist`.
+- `ownerKeywords` (`summary, status, updates`): the keywords, separated by commas; at most 20,
+  each 1 to 32 letters, digits and spaces. Any other value is refused as a settings problem.
+
+A text is a command when it comes from an owner number and its whole body, trimmed, in any case,
+with a trailing `?`, `!` or `.` removed, is one of the keywords: `Summary?` is the command
+`summary`; `summary please`, or `summary` from any other number, is an ordinary received text.
+STOP, START, HELP and the other opt-out, opt-in and help keywords keep their meaning and are never
+commands, even when listed. A command is not also published as a received text, and auto-reply
+never answers it.
+
+The **Owner command** trigger sends each command to the Texting Assistant with the instruction
+"The owner asked for {event.command}. Answer with a short text to {event.from}." It fires only
+while `ownerCommands` is on, since nothing publishes the event otherwise. A poll whose only news
+is commands finishes quietly; the event wakes its trigger.
+
+A text's sender can be spoofed. A spoofed command can at worst make the team text the owner's own
+number with an answer meant for the owner.
 
 ## Set up: talk to the Texting Assistant
 

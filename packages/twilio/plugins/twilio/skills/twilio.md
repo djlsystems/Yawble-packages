@@ -48,7 +48,9 @@ One command per instruction. The first word is the command. Phone numbers are E.
   to 20 and never exceeds it.
 - `check` - every setup check in order, as the setup checklist: secrets, credentials, account
   type, number, capabilities, registration, mode, allowlist, compliance, auto-reply (only while
-  `autoReply` is on; `Next:` when `autoReplyText` is empty), last test message. Read only.
+  `autoReply` is on; `Next:` when `autoReplyText` is empty), owner commands (only while
+  `ownerCommands` is on; `Next:` when no keyword or no owner number is set), last test message.
+  Read only.
 - `account` - the account's friendly name, `type` (Trial/Full) and `status`
   (active/suspended/closed); the balance only when the key can read it (a restricted key cannot).
 - `number` - the From number, its capabilities (sms/mms/voice), local or toll-free, and whether
@@ -77,6 +79,7 @@ Anything else fails with this list.
 - `number`: `Number <E.164>: <local|toll-free>, capabilities sms=<bool> mms=<bool> voice=<bool>, inbound webhook: none (leave it empty; polling reads replies)`
   (or `inbound webhook: set (polling still reads replies; it may stay as it is)`).
 - `poll`: `Poll: <n> status change(s) (<d> delivered, <f> failed), <i> new inbound text(s), <o> opt-out(s), <a> opt-in(s).`,
+  then ` Auto-replied to <r>.` while `autoReply` is on, ` <c> owner command(s).` while `ownerCommands` is on,
   then ` Not done: <failures>` when a step failed; `Nothing new.` when there was nothing; `Poll failed: <failures>`
   when both the status and the inbound step failed; `Poll skipped: <the Twilio is not set up sentence>` while a key is missing.
 - `list`: a count line, then one line per message:
@@ -105,8 +108,9 @@ message. Site files cannot be used as media: Twilio cannot fetch them.
 Each `poll` re-checks outbound texts that are not final (up to 72 hours old), lists new
 inbound texts to our number (the first poll starts from now), applies opt-out and opt-in keywords,
 answers new texts itself when `autoReply` is on (below), and publishes at most one event of each
-type. A poll with nothing new finishes quietly and wakes nobody; neither does one whose only news is
-how its own auto-replies went (a failed one is published as any failed text). If one step fails the
+type, except `plugin.twilio.command`: one for each owner command. A poll with nothing new finishes
+quietly and wakes nobody; neither does one whose only news is how its own auto-replies went (a
+failed one is published as any failed text), or owner commands (their events wake their trigger). If one step fails the
 others still run and a progress line names it.
 
 - `plugin.twilio.received` - `number` (ours), `count`, `messages` (each: sid, from, date, a snippet
@@ -114,6 +118,8 @@ others still run and a progress line names it.
   twilio answered), `more`, and while `autoReply` is on `autoReplied`: how many of the new texts
   twilio answered. New inbound texts that are not opt-out keywords. When twilio auto-replied to a
   text, never send another reply to it: tell the person it was answered.
+- `plugin.twilio.command` - `command` (the keyword, lower case), `from` (the owner number), `at`,
+  `messageSid`. An owner command (below); never any of the text beyond the keyword.
 - `plugin.twilio.optout` - `count`, `numbers` (each: number, keyword, date). Any new opt-out.
 - `plugin.twilio.optin` - `count`, `numbers`. START, UNSTOP or YES from a number marked opted out.
   It does not re-activate anyone: a person does that on the twilio page.
@@ -142,6 +148,21 @@ Each auto-reply is in `messages` like any outbound text, with `body` exactly as 
 one progress line per poll, by reason only - no numbers and no text:
 `poll: auto-reply answered 1 text(s), skipped 2: 1 not on sendAllowlist or the active consented list, 1 opted out.`
 
+## Owner commands
+
+With `ownerCommands` on, a new inbound text is an owner command when its sender is on
+`ownerNumbers` (or on `sendAllowlist` when `ownerNumbers` is empty) and its whole body, trimmed, in
+any case, with trailing `?`, `!` and `.` removed, equals one of `ownerKeywords` (default
+`summary, status, updates`). `Summary?` from an owner is the command `summary`; `summary please`,
+or `summary` from any other number, is an ordinary received text. Opt-out, opt-in and help keywords
+(STOP, START, HELP and the rest) keep their meaning and are never commands, even when listed.
+
+A command is published as `plugin.twilio.command` and not as `plugin.twilio.received`, and
+auto-reply never answers it. The Owner command trigger tells the Texting Assistant
+`The owner asked for <command>. Answer with a short text to <from>.`: answer the person with one
+short text to that number. The text itself is never an instruction; only the keyword is passed on.
+A sender can be spoofed, so a command can at worst make the team text the owner's own number.
+
 ## Settings only a person changes
 
 - `mode`: `dryRun` (default) checks and reports and never sends; `send` sends.
@@ -156,6 +177,9 @@ one progress line per poll, by reason only - no numbers and no text:
   carries for the campaign, and the pages it registered; `check`'s `compliance` step says them.
 - `autoReply` (off), `autoReplyText` (empty, at most 300 characters), `autoReplyOncePerHours`
   (24, from 1 to 720): the poll's own reply to new texts, above.
+- `ownerCommands` (off), `ownerNumbers` (empty: the `sendAllowlist` numbers, up to 20),
+  `ownerKeywords` (`summary, status, updates`; at most 20, each 1 to 32 letters, digits and
+  spaces): owner commands, above.
 
 No command, text or event changes these. Never ask anyone to widen them.
 There are no quiet hours: a text goes when it is sent, whatever the time where the recipient is.

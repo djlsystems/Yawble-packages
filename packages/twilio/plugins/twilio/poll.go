@@ -157,7 +157,19 @@ func (p *plugin) setupSteps() []step {
 		}
 	}
 
-	// 11. The first real message to the person's own phone.
+	// 11. Owner commands, when they are on.
+	if p.cfg.OwnerCommands {
+		switch {
+		case len(p.cfg.OwnerKeywords) == 0:
+			add("owner commands", "Next", "owner commands — ownerCommands is on but ownerKeywords is empty, so no text is a command; a person sets ownerKeywords in this member's settings")
+		case len(p.cfg.owners()) == 0:
+			add("owner commands", "Next", "owner commands — ownerCommands is on but ownerNumbers and sendAllowlist are both empty, so no text is a command; a person sets ownerNumbers in this member's settings")
+		default:
+			add("owner commands", "Done", fmt.Sprintf("owner commands — on: a text from %s that is only %s publishes plugin.twilio.command with that keyword", strings.Join(p.cfg.owners(), ", "), strings.Join(p.cfg.OwnerKeywords, ", ")))
+		}
+	}
+
+	// 12. The first real message to the person's own phone.
 	state, text = p.firstMessageStep()
 	add("first message", state, text)
 
@@ -289,7 +301,7 @@ func (p *plugin) poll() outcome {
 	}
 
 	// 2-3. New inbound texts, with the opt-out and opt-in keywords.
-	var received, optouts, optins []map[string]any
+	var received, optouts, optins, commands []map[string]any
 	var answerable []message
 	replied := map[string]bool{}
 	inboundOK := true
@@ -333,6 +345,7 @@ func (p *plugin) poll() outcome {
 			p.recordStatus(m)
 			at, _ := twilioTime(m.date())
 			word := strings.ToUpper(strings.TrimSpace(m.Body))
+			command := p.ownerCommand(m)
 			switch {
 			case optOutKeywords[word]:
 				if p.st.markOptedOut(p, m.From, word, at) {
@@ -350,6 +363,9 @@ func (p *plugin) poll() outcome {
 				} else {
 					received = append(received, inboundItem(m))
 				}
+			case command != "":
+				// The event names the keyword only, never the rest of the text.
+				commands = append(commands, map[string]any{"command": command, "from": m.From, "at": m.date(), "messageSid": m.Sid})
 			default:
 				received = append(received, inboundItem(m))
 				// HELP and INFO are Twilio's to answer, like STOP and START.
@@ -407,6 +423,11 @@ func (p *plugin) poll() outcome {
 		p.publish("optin", map[string]any{"count": len(optins), "numbers": items})
 		published = true
 	}
+	// One event per owner command. It wakes its own trigger, so a poll whose only news is commands
+	// stays quiet.
+	for _, c := range commands {
+		p.publish("command", c)
+	}
 	if len(failed) > 0 || testDelivered {
 		items, _ := fit(failed, func(items []map[string]any) map[string]any {
 			return map[string]any{"delivered": delivered, "failed": items}
@@ -434,12 +455,15 @@ func (p *plugin) poll() outcome {
 	if p.cfg.AutoReply {
 		text += fmt.Sprintf(" Auto-replied to %d.", len(replied))
 	}
+	if p.cfg.OwnerCommands {
+		text += fmt.Sprintf(" %d owner command(s).", len(commands))
+	}
 	if len(failures) > 0 {
 		text += " Not done: " + strings.Join(failures, " ")
 	}
-	// A poll whose only news is how its own auto-replies went stays quiet.
-	quiet := !published && changes-autoChanges == 0 && newInbound == 0 && len(failures) == 0
-	if quiet {
+	// A poll whose only news is how its own auto-replies went, or owner commands, stays quiet.
+	quiet := !published && changes-autoChanges == 0 && newInbound-len(commands) == 0 && len(failures) == 0
+	if quiet && len(commands) == 0 {
 		text = "Nothing new."
 	}
 	return outcome{text: text, quiet: quiet}
@@ -500,6 +524,25 @@ func (p *plugin) autoReply(texts []message, now time.Time) map[string]bool {
 	}
 	p.progress(line + ".")
 	return replied
+}
+
+// ownerCommand is the keyword an inbound text is, or "": with ownerCommands on, from an owner
+// number, the whole body trimmed, in any case and without trailing ? ! or ., equal to one of
+// ownerKeywords. An opt-out, opt-in or help keyword is never a command.
+func (p *plugin) ownerCommand(m message) string {
+	if !p.cfg.OwnerCommands || !p.cfg.isOwner(m.From) {
+		return ""
+	}
+	word := strings.ToLower(strings.TrimSpace(strings.TrimRight(strings.TrimSpace(m.Body), "?!.")))
+	if up := strings.ToUpper(word); optOutKeywords[up] || optInKeywords[up] || helpKeywords[up] {
+		return ""
+	}
+	for _, k := range p.cfg.OwnerKeywords {
+		if word == k {
+			return k
+		}
+	}
+	return ""
 }
 
 func inboundItem(m message) map[string]any {
