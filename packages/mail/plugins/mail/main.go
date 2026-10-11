@@ -7,8 +7,8 @@
 //	{ mailbox: { kind: "imap", account, username, password, imap, smtp } or { provider,
 //	accessToken, scopes, ... } }, sites: [ the watch's collection ], ... }.
 //
-// Out: JSON Lines on stdout - progress, then any publish and site.put records, then exactly one
-// result.
+// Out: JSON Lines on stdout - progress, then any publish, site.put and site.delete records, then
+// exactly one result.
 //
 // The password and the access token go only to the mail server: the IMAP and SMTP sign-in, or
 // the Authorization header. They are never written to stdout or stderr: every string this plugin
@@ -70,6 +70,9 @@ type request struct {
 		WatchSenders      []string `json:"watchSenders"`
 		WatchQuery        string   `json:"watchQuery"`
 		WatchLookbackDays *float64 `json:"watchLookbackDays"`
+		FollowQuietStart  string   `json:"followQuietStart"`
+		FollowQuietEnd    string   `json:"followQuietEnd"`
+		FollowTimeZone    string   `json:"followTimeZone"`
 	} `json:"config"`
 	Connections map[string]connection `json:"connections"`
 	Sites       []siteDocs            `json:"sites"`
@@ -96,7 +99,10 @@ type settings struct {
 	watchSenders      []string
 	watchQuery        *watchQuery
 	watchLookbackDays int
-	account           string
+	// Quiet hours for follow reminders, as written (HH:MM, "" for none), and their time zone.
+	followQuietStart, followQuietEnd string
+	followTimeZone                   string
+	account                          string
 }
 
 func readSettings(req request) settings {
@@ -153,6 +159,11 @@ func readSettings(req request) settings {
 	}
 	if v := c.WatchLookbackDays; v != nil {
 		s.watchLookbackDays = clamp(int(*v), 0, 30)
+	}
+	s.followQuietStart, s.followQuietEnd = strings.TrimSpace(c.FollowQuietStart), strings.TrimSpace(c.FollowQuietEnd)
+	s.followTimeZone = strings.TrimSpace(c.FollowTimeZone)
+	if s.followTimeZone == "" {
+		s.followTimeZone = "UTC"
 	}
 	return s
 }
@@ -279,8 +290,8 @@ func run(ctx context.Context, in io.Reader, out io.Writer) int {
 		settings: s,
 		progress: func(status string) { emit(map[string]any{"t": "progress", "status": status}) },
 		watch:    loadWatch(req.Sites),
-		publish: func(payload map[string]any) {
-			emit(map[string]any{"t": "publish", "type": "received", "payload": payload})
+		publish: func(kind string, payload map[string]any) {
+			emit(map[string]any{"t": "publish", "type": kind, "payload": payload})
 		},
 		quiet: true,
 		shown: map[string]bool{},
@@ -299,6 +310,13 @@ func run(ctx context.Context, in io.Reader, out io.Writer) int {
 			emit(map[string]any{"t": "site.put", "site": watchSite, "collection": watchCollection, "id": id, "doc": m.watch.doc(id)})
 		}
 		m.watch.changed = nil
+		for _, id := range m.watch.followsChanged {
+			emit(map[string]any{"t": "site.put", "site": watchSite, "collection": followsCollection, "id": id, "doc": m.watch.follows[id]})
+		}
+		for _, id := range m.watch.followsDeleted {
+			emit(map[string]any{"t": "site.delete", "site": watchSite, "collection": followsCollection, "id": id})
+		}
+		m.watch.followsChanged, m.watch.followsDeleted = nil, nil
 		prefix := ""
 		if len(req.Work) > 1 {
 			prefix = "Instruction " + strconv.Itoa(i+1) + ": "

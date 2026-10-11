@@ -55,6 +55,11 @@ type watchStore struct {
 	// seen are the documents of the messages Mailer has shown, one per mailbox (see reply.go).
 	seen    map[string]*seenDoc
 	changed []string
+
+	// follows are the follows collection's documents (see follow.go): one per followed message.
+	followsMissing                 string
+	follows                        map[string]*followDoc
+	followsChanged, followsDeleted []string
 }
 
 type siteDocs struct {
@@ -68,8 +73,13 @@ type siteDocs struct {
 }
 
 func loadWatch(sites []siteDocs) *watchStore {
-	s := &watchStore{docs: map[string]*watchDoc{}, seen: map[string]*seenDoc{}, missing: "this run was not handed it"}
+	s := &watchStore{docs: map[string]*watchDoc{}, seen: map[string]*seenDoc{}, missing: "this run was not handed it",
+		follows: map[string]*followDoc{}, followsMissing: "this run was not handed it"}
 	for _, sd := range sites {
+		if sd.Site == watchSite && sd.Collection == followsCollection {
+			s.loadFollows(sd)
+			continue
+		}
 		if sd.Site != watchSite || sd.Collection != watchCollection {
 			continue
 		}
@@ -238,7 +248,7 @@ func (m *mailer) check(ctx context.Context) (string, error) {
 		}
 	}
 	if inEvent > 0 {
-		m.publish(eventPayload(doc, list[:inEvent], len(list)-inEvent, eventSnippet(doc, list[:inEvent])))
+		m.publish("received", eventPayload(doc, list[:inEvent], len(list)-inEvent, eventSnippet(doc, list[:inEvent])))
 	}
 
 	doc.Pending = list
@@ -278,6 +288,7 @@ func (m *mailer) check(ctx context.Context) (string, error) {
 	if len(notes) > 0 || len(gaveUp) > 0 {
 		m.quiet = false
 	}
+	out = append(out, m.checkFollows(ctx)...)
 	return strings.Join(out, "\n"), nil
 }
 

@@ -2,8 +2,8 @@ body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 70rem; color
 h1 { margin-bottom: 0.25rem; }
 .lead { color: #555; }
 .status { color: #555; font-size: 0.9rem; }
-.watch { border: 1px solid #ddd; border-radius: 6px; padding: 1rem 1.25rem; margin: 1rem 0; }
-.watch h2 { margin-top: 0; font-size: 1.15rem; }
+.follows, .watch { border: 1px solid #ddd; border-radius: 6px; padding: 1rem 1.25rem; margin: 1rem 0; }
+.follows h2, .watch h2 { margin-top: 0; font-size: 1.15rem; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
 dt { color: #555; }
 dd { margin: 0; }

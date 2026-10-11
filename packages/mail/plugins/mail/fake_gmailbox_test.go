@@ -94,6 +94,21 @@ func (g *gmailBox) add(from, subject, body string, received time.Time, read bool
 	return m.ID
 }
 
+// sentIn puts a message the person sent in a thread ("" for a new one), labelled SENT, and
+// answers its id.
+func (g *gmailBox) sentIn(thread, subject string, when time.Time) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.nextID++
+	if thread == "" {
+		thread = fmt.Sprintf("19t%05x", g.nextID)
+	}
+	m := &gbMsg{ID: fmt.Sprintf("19a%05x", g.nextID), Thread: thread, From: "person@example.test", Subject: subject, Body: "Sent text",
+		Labels: []string{"SENT"}, Received: when}
+	g.msgs = append(g.msgs, m)
+	return m.ID
+}
+
 func (g *gmailBox) byID(id string) *gbMsg {
 	for _, m := range g.msgs {
 		if m.ID == id {
@@ -129,7 +144,8 @@ func (m *gbMsg) json(full bool) map[string]any {
 	if len(snippet) > 50 {
 		snippet = snippet[:50]
 	}
-	return map[string]any{"id": m.ID, "threadId": m.Thread, "labelIds": m.Labels, "snippet": snippet, "payload": payload}
+	return map[string]any{"id": m.ID, "threadId": m.Thread, "labelIds": m.Labels, "snippet": snippet, "payload": payload,
+		"internalDate": strconv.FormatInt(m.Received.UnixMilli(), 10)}
 }
 
 // gbMatches applies the few search terms the plugin writes.
@@ -217,6 +233,18 @@ func (g *gmailBox) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 200, m.json(q.Get("format") == "full"))
+	case r.Method == "GET" && len(parts) == 2 && parts[0] == "threads":
+		var v []any
+		for _, m := range g.msgs {
+			if m.Thread == parts[1] {
+				v = append(v, m.json(false))
+			}
+		}
+		if v == nil {
+			notFound()
+			return
+		}
+		writeJSON(w, 200, map[string]any{"id": parts[1], "messages": v})
 	case r.Method == "POST" && len(parts) == 3 && parts[0] == "messages" && parts[2] == "modify":
 		m := g.byID(parts[1])
 		if m == nil {

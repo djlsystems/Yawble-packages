@@ -15,14 +15,15 @@ const usage = "Commands: `list [folder:<folder>] [unread] [from:<text>] [subject
 	"`search <those terms, or the mailbox's own query> [max:<n>]`, `read <id>`, `mark-read <ids>`, `mark-unread <ids>`, " +
 	"`move <folder> <ids>`, `label <label> <ids>`, `draft` or `send` followed by lines To:, optional Cc:, optional Bcc:, " +
 	"Subject:, one blank line, then the body, `reply <id> [all] [quote] [draft]` followed by the body on the next lines, " +
-	"`ack <ids>`, and `watch`. There is no delete command."
+	"`ack <ids>`, `replied <id>`, `follow <id> [every:<hours>h]`, `unfollow <id>`, and `watch`. There is no delete command."
 
 type mailer struct {
 	p        provider
 	settings settings
 	progress func(string)
 	watch    *watchStore
-	publish  func(payload map[string]any)
+	// publish publishes one event: received, unanswered or answered.
+	publish func(kind string, payload map[string]any)
 	// quiet is false once a command did something a person should see on the card.
 	quiet bool
 	// shown are the ids of the messages this run listed or read: the ones reply may answer.
@@ -68,6 +69,12 @@ func (m *mailer) do(ctx context.Context, instruction string) (string, error) {
 		return m.reply(ctx, args, rest)
 	case "ack":
 		return m.ack(args)
+	case "replied":
+		return m.repliedCmd(ctx, args)
+	case "follow":
+		return m.follow(ctx, args)
+	case "unfollow":
+		return m.unfollow(ctx, args)
 	case "watch":
 		if len(args) != 0 {
 			return "", failure("watch takes nothing: its folder and filters are this member's settings.")
@@ -353,6 +360,8 @@ func (m *mailer) move(ctx context.Context, cmd string, args []string) (string, e
 	}
 	m.progress(fmt.Sprintf("moving %d messages", len(ids)))
 	moved, err := m.p.move(ctx, ids, target)
+	// A followed message that moved keeps its follow: the follow takes its new id.
+	m.followMoved(moved)
 	if err != nil {
 		return "", err
 	}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"net/mail"
 	"net/url"
 	"os"
 	"slices"
@@ -106,11 +107,22 @@ type gmailPart struct {
 }
 
 type gmailMessage struct {
-	ID       string    `json:"id"`
-	ThreadID string    `json:"threadId"`
-	LabelIDs []string  `json:"labelIds"`
-	Snippet  string    `json:"snippet"`
-	Payload  gmailPart `json:"payload"`
+	ID           string    `json:"id"`
+	ThreadID     string    `json:"threadId"`
+	InternalDate string    `json:"internalDate"`
+	LabelIDs     []string  `json:"labelIds"`
+	Snippet      string    `json:"snippet"`
+	Payload      gmailPart `json:"payload"`
+}
+
+// when is the message's internalDate, Gmail's time of arrival (or of sending, for a message sent
+// from the mailbox), else its Date header.
+func (m gmailMessage) when() time.Time {
+	if ms, err := strconv.ParseInt(m.InternalDate, 10, 64); err == nil && ms > 0 {
+		return time.UnixMilli(ms).UTC()
+	}
+	t, _ := mail.ParseDate(m.Payload.header("Date"))
+	return t
 }
 
 func (p gmailPart) header(name string) string {
@@ -243,7 +255,8 @@ func (g *gmail) read(ctx context.Context, id string) (*fullMessage, error) {
 	}
 	m := &fullMessage{ID: msg.ID, Thread: msg.ThreadID, From: msg.Payload.header("From"), To: msg.Payload.header("To"),
 		Cc: msg.Payload.header("Cc"), Date: msg.Payload.header("Date"), Subject: msg.Payload.header("Subject"),
-		MessageID: msg.Payload.header("Message-ID"), References: msg.Payload.header("References"), ReplyTo: msg.Payload.header("Reply-To")}
+		MessageID: msg.Payload.header("Message-ID"), References: msg.Payload.header("References"), ReplyTo: msg.Payload.header("Reply-To"),
+		Arrived: msg.when()}
 	for _, l := range msg.LabelIDs {
 		if n := names[l]; n != "" {
 			m.Folders = append(m.Folders, n)
@@ -487,4 +500,33 @@ func (g *gmail) watchNext(ctx context.Context, w watchSpec, pos position) (posit
 	}
 	msgs, err := g.summaries(ctx, ids)
 	return position{Gmail: &gmailPosition{HistoryID: next}}, msgs, "", err
+}
+
+// replied looks in the original's thread for a message labelled SENT, dated after the original.
+func (g *gmail) replied(ctx context.Context, o original) (*sentReply, error) {
+	if o.Thread == "" {
+		return nil, failure("The message has no thread, so Mailer cannot tell whether it was replied to.")
+	}
+	var th struct {
+		Messages []gmailMessage `json:"messages"`
+	}
+	params := url.Values{"format": {"metadata"}, "metadataHeaders": {"Subject", "Date"}}
+	if err := g.api.call(ctx, "GET", "/threads/"+url.PathEscape(o.Thread), params, nil, &th); err != nil {
+		if isStatus(err, 404) {
+			return nil, failure("No thread " + o.Thread + " in this mailbox: the message is gone, so Mailer cannot tell whether it was replied to.")
+		}
+		return nil, failure(gmailWords.describe(err, scopeReadonly, false))
+	}
+	var first *sentReply
+	for _, m := range th.Messages {
+		if !slices.Contains(m.LabelIDs, "SENT") || slices.Contains(m.LabelIDs, "DRAFT") {
+			continue
+		}
+		when := m.when()
+		if !when.After(o.Arrived) || (first != nil && !when.Before(first.Sent)) {
+			continue
+		}
+		first = &sentReply{ID: m.ID, Subject: m.Payload.header("Subject"), Sent: when}
+	}
+	return first, nil
 }

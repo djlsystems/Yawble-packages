@@ -43,39 +43,54 @@ func eachProvider(t *testing.T, test func(t *testing.T, box watchBox)) {
 	t.Run("gmail", func(t *testing.T) { test(t, gmailWatchBox{newGmailBox(t)}) })
 }
 
-// siteStore is the Host's side of the watch's site collection: it keeps what a run writes with
-// site.put and hands it to the next run, as a restart does. Nothing else carries over.
+// siteStore is the Host's side of the mail site's collections: it keeps what a run writes with
+// site.put and site.delete and hands it to the next run, as a restart does. Nothing else carries
+// over. docs is the watch collection, follows the follows collection.
 type siteStore struct {
-	docs map[string]json.RawMessage
-	puts []string // the id of every site.put, in order
+	docs    map[string]json.RawMessage
+	follows map[string]json.RawMessage
+	puts    []string // the id of every site.put to the watch, in order
 }
 
-func newSiteStore() *siteStore { return &siteStore{docs: map[string]json.RawMessage{}} }
+func newSiteStore() *siteStore {
+	return &siteStore{docs: map[string]json.RawMessage{}, follows: map[string]json.RawMessage{}}
+}
+
+func collection(name string, docs map[string]json.RawMessage) map[string]any {
+	list := []any{}
+	for id, d := range docs {
+		list = append(list, map[string]any{"id": id, "doc": d, "updatedAt": "2026-10-07T12:00:00Z", "updatedBy": "Mail/Mailer"})
+	}
+	return map[string]any{"site": "mail", "collection": name, "documents": list, "total": len(list), "cut": nil, "missing": nil}
+}
 
 func (s *siteStore) sites() []any {
-	var docs []any
-	for id, d := range s.docs {
-		docs = append(docs, map[string]any{"id": id, "doc": d, "updatedAt": "2026-10-07T12:00:00Z", "updatedBy": "Mail/Mailer"})
-	}
-	if docs == nil {
-		docs = []any{}
-	}
-	return []any{map[string]any{"site": "mail", "collection": "watch", "documents": docs, "total": len(docs), "cut": nil, "missing": nil}}
+	return []any{collection("watch", s.docs), collection("follows", s.follows)}
 }
 
 func (s *siteStore) apply(t *testing.T, o outcome) {
 	t.Helper()
-	for _, r := range o.of("site.put") {
-		if r["site"] != "mail" || r["collection"] != "watch" {
-			t.Fatalf("a site.put outside the watch's collection: %v", r)
+	for _, r := range o.records {
+		if r["t"] != "site.put" && r["t"] != "site.delete" {
+			continue
+		}
+		into := map[any]map[string]json.RawMessage{"watch": s.docs, "follows": s.follows}[r["collection"]]
+		if r["site"] != "mail" || into == nil {
+			t.Fatalf("a %s outside the mail site's watch and follows collections: %v", r["t"], r)
 		}
 		id, _ := r["id"].(string)
+		if r["t"] == "site.delete" {
+			delete(into, id)
+			continue
+		}
 		b, _ := json.Marshal(r["doc"])
 		if len(b) > 64<<10 {
-			t.Fatalf("a watch document over the site's 64 KB: %d bytes", len(b))
+			t.Fatalf("a document over the site's 64 KB: %d bytes", len(b))
 		}
-		s.docs[id] = b
-		s.puts = append(s.puts, id)
+		into[id] = b
+		if r["collection"] == "watch" {
+			s.puts = append(s.puts, id)
+		}
 	}
 }
 

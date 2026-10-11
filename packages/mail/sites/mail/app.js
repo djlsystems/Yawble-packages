@@ -1,4 +1,5 @@
-// The watch documents Mailer writes: one per mailbox and folder (see the plugin's watch).
+// The watch documents Mailer writes: one per mailbox and folder (see the plugin's watch), and the
+// follows: one per followed message (see the plugin's follow).
 // Every field may hold text from an email, so it is only ever set with textContent.
 
 function describePosition(p) {
@@ -49,9 +50,36 @@ function render(docs) {
     : 'Read ' + new Date().toLocaleTimeString() + '.';
 }
 
+function when(text) {
+  if (!text) return '';
+  const d = new Date(text);
+  return isNaN(d) ? text : d.toLocaleString();
+}
+
+function renderFollows(docs) {
+  const body = document.getElementById('follows');
+  const rows = [];
+  docs = docs.map((item) => item.doc || {}).sort((a, b) => String(a.since || '').localeCompare(String(b.since || '')));
+  for (const f of docs) {
+    const tr = document.createElement('tr');
+    const cells = [f.from, f.subject, when(f.since), f.lastReminded ? when(f.lastReminded) : 'Not yet', 'Every ' + (f.every || 1) + ' h'];
+    for (const text of cells) {
+      const td = document.createElement('td');
+      td.textContent = text || '';
+      tr.append(td);
+    }
+    rows.push(tr);
+  }
+  body.replaceChildren(...rows);
+  document.getElementById('follows-none').classList.toggle('hidden', rows.length > 0);
+  document.getElementById('follows-table').classList.toggle('hidden', rows.length === 0);
+}
+
 async function refresh() {
   try {
-    render(await site.data.list('watch'));
+    const [watches, follows] = await Promise.all([site.data.list('watch'), site.data.list('follows')]);
+    render(watches);
+    renderFollows(follows);
   } catch (err) {
     document.getElementById('status').textContent = err.message;
   }

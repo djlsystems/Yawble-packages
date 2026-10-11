@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "mail",
   "name": "Mail",
-  "description": "Lists, searches, reads, marks, moves and labels mail, drafts or sends email - as HTML made from the text by default, or as plain text with format: text - drafts or sends a reply threaded to the message it answers, and watches a folder for new mail, over an IMAP app-password mailbox, Microsoft or Google. Drafts only by default; sends only to a person's allowlist; never deletes.",
-  "version": "2.0.4",
+  "description": "Lists, searches, reads, marks, moves and labels mail, drafts or sends email - as HTML made from the text by default, or as plain text with format: text - drafts or sends a reply threaded to the message it answers, says whether a message was replied to, follows a message until it is, and watches a folder for new mail, over an IMAP app-password mailbox, Microsoft or Google. Drafts only by default; sends only to a person's allowlist; never deletes.",
+  "version": "2.1.0",
   "protocol": "harness.member/1",
   "executable": { "path": "bin/linux-x64/mail", "args": [] },
   "platforms": {
@@ -86,6 +86,24 @@
       "max": 30,
       "default": 0,
       "description": "How many days back the first check lists mail that is already there. 0: the watch starts from now."
+    },
+    "followQuietStart": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "description": "When follow reminders stop each day, as HH:MM in followTimeZone (22:00). Empty, or followQuietEnd empty: no quiet hours. In quiet hours the watch lists no followed message as unanswered; the first check after lists each one due, once."
+    },
+    "followQuietEnd": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "description": "When follow reminders start again each day, as HH:MM in followTimeZone (07:00). Empty, or followQuietStart empty: no quiet hours."
+    },
+    "followTimeZone": {
+      "type": "string",
+      "default": "UTC",
+      "setBy": "person",
+      "description": "The IANA time zone quiet hours are in (Europe/London, America/New_York). Default UTC."
     }
   },
   "connections": {
@@ -108,7 +126,8 @@
     }
   },
   "reads": [
-    { "site": "mail", "collection": "watch" }
+    { "site": "mail", "collection": "watch" },
+    { "site": "mail", "collection": "follows" }
   ],
   "events": {
     "publishes": [
@@ -123,6 +142,28 @@
           { "name": "ids", "kind": "string", "summary": "Their ids, comma-separated, as ack takes them." },
           { "name": "messages", "kind": "list", "summary": "Each message: id, thread, from, subject, date, a short snippet, and listed (how many checks have listed it)." },
           { "name": "more", "kind": "number", "summary": "How many more did not fit in this event; the next check lists them." }
+        ]
+      },
+      {
+        "type": "unanswered",
+        "summary": "One check of the watch found followed messages with no reply yet whose reminder interval has passed, outside quiet hours: every such message, never a body. Published only when at least one is due.",
+        "highVolume": false,
+        "fields": [
+          { "name": "mailbox", "kind": "string", "summary": "The mailbox's address." },
+          { "name": "count", "kind": "number", "summary": "How many followed messages the event lists." },
+          { "name": "ids", "kind": "string", "summary": "Their ids, comma-separated." },
+          { "name": "messages", "kind": "list", "summary": "Each message: id, from, subject, since (when it arrived) and hoursWaiting." }
+        ]
+      },
+      {
+        "type": "answered",
+        "summary": "One check of the watch found followed messages with a reply from this mailbox in Sent: every such message, no longer followed, never a body.",
+        "highVolume": false,
+        "fields": [
+          { "name": "mailbox", "kind": "string", "summary": "The mailbox's address." },
+          { "name": "count", "kind": "number", "summary": "How many followed messages the event lists." },
+          { "name": "ids", "kind": "string", "summary": "Their ids, comma-separated." },
+          { "name": "messages", "kind": "list", "summary": "Each message: id, from, subject, since (when it arrived) and repliedAt (when the reply was sent)." }
         ]
       }
     ]

@@ -48,8 +48,8 @@ func readManifest(t *testing.T) manifest {
 
 func TestTheManifestKeepsTheSafetySettingsThePersonsAndOff(t *testing.T) {
 	m := readManifest(t)
-	if m.Version != "2.0.4" {
-		t.Fatalf("want version 2.0.4, got %s", m.Version)
+	if m.Version != "2.1.0" {
+		t.Fatalf("want version 2.1.0, got %s", m.Version)
 	}
 	off := map[string]string{"mode": `"draft"`, "sendAllowlist": `[]`, "markRead": `false`, "moveTo": `[]`}
 	for name, def := range off {
@@ -58,9 +58,19 @@ func TestTheManifestKeepsTheSafetySettingsThePersonsAndOff(t *testing.T) {
 			t.Fatalf("%s must be setBy person with default %s, got %+v", name, def, f)
 		}
 	}
+	// The follow quiet hours are the person's too: nobody on the team moves a person's quiet hours.
+	quiet := map[string]string{"followQuietStart": `""`, "followQuietEnd": `""`, "followTimeZone": `"UTC"`}
+	for name, def := range quiet {
+		f, ok := m.Config[name]
+		if !ok || f.SetBy != "person" || string(f.Default) != def {
+			t.Fatalf("%s must be setBy person with default %s, got %+v", name, def, f)
+		}
+	}
 	for name, f := range m.Config {
-		if _, safety := off[name]; !safety && f.SetBy == "person" {
-			t.Fatalf("only the safety settings are a person's; %s is too", name)
+		_, safety := off[name]
+		_, hours := quiet[name]
+		if !safety && !hours && f.SetBy == "person" {
+			t.Fatalf("only the safety settings and the quiet hours are a person's; %s is too", name)
 		}
 	}
 }
@@ -83,7 +93,7 @@ func TestTheManifestDeclaresEverySettingTheCodeReadsAndNoOther(t *testing.T) {
 	}
 }
 
-func TestTheManifestTakesAllThreeWaysInAndReadsTheWatchCollection(t *testing.T) {
+func TestTheManifestTakesAllThreeWaysInAndReadsTheWatchAndFollowsCollections(t *testing.T) {
 	m := readManifest(t)
 	slot, ok := m.Connections[slot]
 	if !ok || !slices.Equal(slot.Providers, []string{"imap", "microsoft", "google"}) {
@@ -102,28 +112,35 @@ func TestTheManifestTakesAllThreeWaysInAndReadsTheWatchCollection(t *testing.T) 
 			t.Fatalf("microsoft needs %s", s)
 		}
 	}
-	if len(m.Reads) != 1 || m.Reads[0].Site != watchSite || m.Reads[0].Collection != watchCollection {
-		t.Fatalf("want reads of %s/%s, got %+v", watchSite, watchCollection, m.Reads)
+	if len(m.Reads) != 2 || m.Reads[0].Site != watchSite || m.Reads[0].Collection != watchCollection ||
+		m.Reads[1].Site != watchSite || m.Reads[1].Collection != followsCollection {
+		t.Fatalf("want reads of %s/%s and %s/%s, got %+v", watchSite, watchCollection, watchSite, followsCollection, m.Reads)
 	}
 }
 
-func TestTheManifestDeclaresTheEventWithTheFieldsItCarries(t *testing.T) {
+func TestTheManifestDeclaresTheEventsWithTheFieldsTheyCarry(t *testing.T) {
 	m := readManifest(t)
-	if len(m.Events.Publishes) != 1 || m.Events.Publishes[0].Type != "received" {
-		t.Fatalf("want one event, received, got %+v", m.Events.Publishes)
+	follow := followPayload("", nil, nil)
+	payloads := map[string]map[string]any{"received": eventPayload(&watchDoc{}, nil, 0, 0), "unanswered": follow, "answered": follow}
+	var types []string
+	for _, e := range m.Events.Publishes {
+		types = append(types, e.Type)
+		var declared []string
+		for _, f := range e.Fields {
+			declared = append(declared, f.Name)
+		}
+		var carried []string
+		for k := range payloads[e.Type] {
+			carried = append(carried, k)
+		}
+		sort.Strings(declared)
+		sort.Strings(carried)
+		if !slices.Equal(declared, carried) {
+			t.Fatalf("%s: event fields declared %v, carried %v", e.Type, declared, carried)
+		}
 	}
-	var declared []string
-	for _, f := range m.Events.Publishes[0].Fields {
-		declared = append(declared, f.Name)
-	}
-	var carried []string
-	for k := range eventPayload(&watchDoc{}, nil, 0, 0) {
-		carried = append(carried, k)
-	}
-	sort.Strings(declared)
-	sort.Strings(carried)
-	if !slices.Equal(declared, carried) {
-		t.Fatalf("event fields declared %v, carried %v", declared, carried)
+	if !slices.Equal(types, []string{"received", "unanswered", "answered"}) {
+		t.Fatalf("want the events received, unanswered and answered, got %v", types)
 	}
 }
 
