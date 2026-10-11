@@ -227,13 +227,28 @@ func (p *plugin) account() (account, error) {
 	return a, nil
 }
 
-// send runs the outward-action rule (§7.1) in order, failing at the first refusal, then either
-// reports the dry run or POSTs.
+// skip is a refusal that also says, in a few words, why: the poll counts auto-replies it did not
+// send by that reason and never repeats the sentence, which names the number.
+type skip struct {
+	refusal
+	why string
+}
+
+func refusedFor(why, sentence string) error { return skip{refusal(sentence), why} }
+
+// send runs the outward-action rule (§7.1) for an sms or mms command.
 func (p *plugin) send(kind, text string) (string, error) {
 	req, err := parseSend(kind, text)
 	if err != nil {
 		return "", err
 	}
+	return p.deliver(req, "")
+}
+
+// deliver runs the outward-action rule (§7.1) in order, failing at the first refusal, then either
+// reports the dry run or POSTs. replyTo is the inbound SID an auto-reply answers, empty for a
+// command: an auto-reply is recorded with the tag auto-reply, and in dry run as the dry run it is.
+func (p *plugin) deliver(req sendRequest, replyTo string) (string, error) {
 	if err := p.needSite(); err != nil {
 		return "", err
 	}
@@ -253,7 +268,7 @@ func (p *plugin) send(kind, text string) (string, error) {
 		return "", refusal(fmt.Sprintf("Refused: %s is not a phone number in +country format (E.164); nothing was sent.", req.to))
 	}
 	if c := country(to); !p.cfg.countryAllowed(c) {
-		return "", refusal(fmt.Sprintf("Refused: %s is in %s, which is not on allowedCountries; nothing was sent.", to, c))
+		return "", refusedFor("country not on allowedCountries", fmt.Sprintf("Refused: %s is in %s, which is not on allowedCountries; nothing was sent.", to, c))
 	}
 
 	// 3. On sendAllowlist, or an active consented entry (send mode, allowConsentedRecipients on).
@@ -282,7 +297,7 @@ func (p *plugin) send(kind, text string) (string, error) {
 			}
 		}
 		if consented == nil {
-			return "", refusal(fmt.Sprintf("Refused: %s is not on sendAllowlist or the active consented list; nothing was sent.", to))
+			return "", refusedFor("not on sendAllowlist or the active consented list", fmt.Sprintf("Refused: %s is not on sendAllowlist or the active consented list; nothing was sent.", to))
 		}
 	}
 
@@ -292,16 +307,16 @@ func (p *plugin) send(kind, text string) (string, error) {
 		if t, err := time.Parse(time.RFC3339, m.At); err == nil {
 			date = t.Format("2006-01-02")
 		}
-		return "", refusal(fmt.Sprintf("Refused: %s opted out (%s on %s); nothing was sent.", to, m.Keyword, date))
+		return "", refusedFor("opted out", fmt.Sprintf("Refused: %s opted out (%s on %s); nothing was sent.", to, m.Keyword, date))
 	}
 
 	// 5. Today's caps. Dry runs do not count.
 	p.st.rollDay(p.now())
 	if p.st.poll.SentToday >= p.cfg.DailySendCap {
-		return "", refusal(fmt.Sprintf("Refused: today's sends reached dailySendCap (%d); nothing was sent.", p.cfg.DailySendCap))
+		return "", refusedFor("dailySendCap reached", fmt.Sprintf("Refused: today's sends reached dailySendCap (%d); nothing was sent.", p.cfg.DailySendCap))
 	}
 	if p.st.poll.SentTodayByNumber[to] >= p.cfg.PerRecipientDailyCap {
-		return "", refusal(fmt.Sprintf("Refused: today's sends to %s reached perRecipientDailyCap (%d); nothing was sent.", to, p.cfg.PerRecipientDailyCap))
+		return "", refusedFor("perRecipientDailyCap reached", fmt.Sprintf("Refused: today's sends to %s reached perRecipientDailyCap (%d); nothing was sent.", to, p.cfg.PerRecipientDailyCap))
 	}
 
 	// 7. MMS media: hosts, then what each URL answers to HEAD.
@@ -322,7 +337,7 @@ func (p *plugin) send(kind, text string) (string, error) {
 	// 9. Body length, segments and encoding.
 	body, footer := p.compliant(req.body, to)
 	if n := utf8.RuneCountInString(body); n > maxBodyChars {
-		return "", refusal(fmt.Sprintf("Refused: the body is %d characters, over 1600; nothing was sent.", n))
+		return "", refusedFor("over 1600 characters", fmt.Sprintf("Refused: the body is %d characters, over 1600; nothing was sent.", n))
 	}
 	segs, encoding := segments(body, isTollFree(snd.from))
 
@@ -332,6 +347,13 @@ func (p *plugin) send(kind, text string) (string, error) {
 		what = fmt.Sprintf("MMS with %d media", len(req.media))
 	}
 	if p.cfg.Mode != "send" {
+		if replyTo != "" {
+			stamp := p.now().UTC().Format(time.RFC3339)
+			p.st.putMessage(p, &messageDoc{
+				Sid: "dryrun-" + replyTo, Direction: "out", To: to, From: snd.label(), Status: "dry run", Segments: segs,
+				Snippet: snippet(body, 80), Body: body, Tag: autoReplyTag, DryRun: true, Created: stamp, Updated: stamp,
+			})
+		}
 		return fmt.Sprintf("Dry run: would send %s to %s from %s, %d segment(s), %s; nothing was sent.", what, to, snd.label(), segs, encoding) + asSent(req.body, body), nil
 	}
 
@@ -369,7 +391,10 @@ func (p *plugin) send(kind, text string) (string, error) {
 	doc := &messageDoc{
 		Sid: m.Sid, Direction: "out", To: to, From: from, Status: m.Status, Segments: segs,
 		Snippet: snippet(body, 80), Body: body, Media: len(req.media), Created: stamp, Updated: stamp,
-		Test: allowlisted && p.st.setup["firstDelivered"] == nil,
+		Test: allowlisted && p.st.setup["firstDelivered"] == nil && replyTo == "",
+	}
+	if replyTo != "" {
+		doc.Tag = autoReplyTag
 	}
 	p.st.putMessage(p, doc)
 	status := m.Status

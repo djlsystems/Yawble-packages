@@ -1,4 +1,4 @@
-# Twilio SMS/MMS 1.2.2
+# Twilio SMS/MMS 1.3.0
 
 A team that texts through your Twilio account. The **Texting Assistant** guides you through
 Twilio setup, writes texts for you and sends them through the **twilio** plugin member, and tells
@@ -14,8 +14,8 @@ number twilio may text until you add others. Everything else starts at a safe de
 It also offers **messagePrefix**: your business name as it starts each text (`Acme Plumbing: `),
 the name your campaign registered. It can be left empty and set later; `check` reminds you.
 
-The member's settings show the everyday ones first: `mode`, `sendAllowlist`, `fromNumber` and
-`messagePrefix`. Every other setting is under **Advanced settings**, and its default is safe to
+The member's settings show the everyday ones first: `mode`, `sendAllowlist`, `fromNumber`,
+`messagePrefix` and the three auto-reply settings. Every other setting is under **Advanced settings**, and its default is safe to
 leave. Each setting's explanation is behind its info icon.
 
 With an A2P 10DLC campaign approved, set `messagingServiceSid` (Advanced) to the Messaging Service
@@ -32,6 +32,29 @@ pages you registered (`privacyUrl`, `termsUrl`).
 
 There are no quiet hours: a text goes when it is sent. A queued text waits at most 4 hours, `list`
 shows 20 texts, and the poll re-checks sent texts for 72 hours; none of these is a setting.
+
+## Auto-reply
+
+twilio can answer new texts by itself, with a fixed text you set, at the poll that reads them: no
+agent run and no tokens, and nothing in a text changes what is sent. Three settings, on the
+solution's panel:
+
+- `autoReply` (off): turns it on. Off, twilio sends nothing by itself.
+- `autoReplyText` (empty, at most 300 characters): the reply. On with an empty text, nothing is
+  sent and `check` shows it as a `Next:` step.
+- `autoReplyOncePerHours` (24, from 1 to 720): at most one auto-reply to a number in this many
+  hours. The time of each number's last auto-reply is kept on the twilio site, so a restart does
+  not reset it.
+
+An auto-reply goes through every check a text has: in dry run it is recorded and not sent; it goes
+only to `sendAllowlist` numbers and active consented recipients, never to an opted-out number; the
+countries, the caps and the 1600-character limit apply; `messagePrefix` and the opt-out line are
+added. A STOP, START, HELP or other keyword text is never answered: Twilio answers those itself. A
+text not answered is counted in one progress line per poll, by reason, without numbers or text.
+
+The twilio page shows each auto-reply exactly as sent, with an `auto-reply` tag beside it. The
+Texting Assistant still tells you about the texts and never sends a second reply to one twilio
+answered.
 
 ## Set up: talk to the Texting Assistant
 

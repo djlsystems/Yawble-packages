@@ -18,6 +18,7 @@ const (
 	maxResults      = 20
 	pollLookback    = 72 * time.Hour
 	maxPrefixChars  = 40
+	maxReplyChars   = 300
 )
 
 // settings are the manifest's config, with the manifest's defaults applied again here so a request
@@ -38,6 +39,9 @@ type settings struct {
 	TermsURL                 string
 	MediaURLHosts            []string
 	AllowedCountries         []string
+	AutoReply                bool
+	AutoReplyText            string
+	AutoReplyOncePerHours    int
 }
 
 type secrets struct {
@@ -56,6 +60,7 @@ func parseSettings(raw map[string]json.RawMessage) (settings, string) {
 		PerRecipientDailyCap:   50,
 		OptOutFooter:           "every",
 		AllowedCountries:       []string{"US"},
+		AutoReplyOncePerHours:  24,
 	}
 
 	var problems []string
@@ -120,6 +125,9 @@ func parseSettings(raw map[string]json.RawMessage) (settings, string) {
 	str("termsUrl", &s.TermsURL)
 	list("mediaUrlHosts", &s.MediaURLHosts)
 	list("allowedCountries", &s.AllowedCountries)
+	boolean("autoReply", &s.AutoReply)
+	str("autoReplyText", &s.AutoReplyText)
+	integer("autoReplyOncePerHours", &s.AutoReplyOncePerHours, 1, 720)
 
 	if strings.TrimSpace(s.MessagePrefix) == "" {
 		s.MessagePrefix = ""
@@ -128,6 +136,9 @@ func parseSettings(raw map[string]json.RawMessage) (settings, string) {
 		if strings.ContainsAny(s.MessagePrefix, "\r\n") || utf8.RuneCountInString(s.MessagePrefix) > maxPrefixChars {
 			problems = append(problems, fmt.Sprintf("`messagePrefix` must be one line of at most %d characters", maxPrefixChars))
 		}
+	}
+	if utf8.RuneCountInString(s.AutoReplyText) > maxReplyChars {
+		problems = append(problems, fmt.Sprintf("`autoReplyText` must be at most %d characters", maxReplyChars))
 	}
 	if s.OptOutFooter != "every" && s.OptOutFooter != "first" && s.OptOutFooter != "off" {
 		problems = append(problems, "`optOutFooter` must be every, first or off")
