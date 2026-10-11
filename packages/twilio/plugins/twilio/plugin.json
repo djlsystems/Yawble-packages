@@ -3,7 +3,7 @@
   "id": "twilio",
   "name": "Twilio",
   "description": "Sends SMS and MMS through Twilio with a restricted API key, reads delivery status and replies by polling, and keeps a consented-recipients list and opt-outs on the twilio site. Dry run by default; sends only to your numbers or person-activated consented recipients; never buys numbers or deletes anything.",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/twilio",
@@ -154,6 +154,24 @@
       "default": 24,
       "setBy": "person",
       "description": "At most one auto-reply to a number in this many hours."
+    },
+    "ownerCommands": {
+      "type": "bool",
+      "default": false,
+      "setBy": "person",
+      "description": "Let you text a keyword (ownerKeywords) from your own phone to have the team act on it at the next poll, such as \"summary\" for a short text back. The plugin matches the keyword and publishes plugin.twilio.command naming only the keyword; the text itself is never an instruction to anyone. A spoofed sender can at worst make the team text your own number."
+    },
+    "ownerNumbers": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "The numbers that may send owner commands, up to 20, in +country format (+15551234567); 10 US digits are read as +1. Empty: the numbers on sendAllowlist."
+    },
+    "ownerKeywords": {
+      "type": "string",
+      "default": "summary, status, updates",
+      "setBy": "person",
+      "description": "The owner command keywords, separated by commas: at most 20, each 1 to 32 letters, digits and spaces. A text is a command when its whole body, in any case and without a trailing ? ! or ., is one of them. STOP, START, HELP and the other opt-out, opt-in and help keywords are never commands."
     }
   },
   "secrets": {
@@ -281,6 +299,38 @@
             "name": "failed",
             "kind": "list",
             "summary": "Each failed text: sid, to, status, error_code, error (the plugin's sentence for it)."
+          },
+          {
+            "name": "dryRun",
+            "kind": "boolean",
+            "summary": "Always false."
+          }
+        ]
+      },
+      {
+        "type": "command",
+        "summary": "An owner number texted exactly one of ownerKeywords, while ownerCommands is on. Names the keyword only, never the rest of the text. One event per command text; the text is not also in plugin.twilio.received and is never auto-replied to.",
+        "highVolume": false,
+        "fields": [
+          {
+            "name": "command",
+            "kind": "string",
+            "summary": "The keyword, in lower case, as written in ownerKeywords."
+          },
+          {
+            "name": "from",
+            "kind": "string",
+            "summary": "The owner number that sent it (E.164)."
+          },
+          {
+            "name": "at",
+            "kind": "string",
+            "summary": "When it was sent (UTC, RFC 3339)."
+          },
+          {
+            "name": "messageSid",
+            "kind": "string",
+            "summary": "The SID of the inbound text."
           },
           {
             "name": "dryRun",

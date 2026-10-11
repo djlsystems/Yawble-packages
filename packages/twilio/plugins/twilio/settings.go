@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -19,7 +20,11 @@ const (
 	pollLookback    = 72 * time.Hour
 	maxPrefixChars  = 40
 	maxReplyChars   = 300
+	maxKeywordChars = 32
+	maxKeywords     = 20
 )
+
+const defaultOwnerKeywords = "summary, status, updates"
 
 // settings are the manifest's config, with the manifest's defaults applied again here so a request
 // that leaves a field out still gets the safe value. A field the manifest no longer has (quiet hours,
@@ -42,6 +47,9 @@ type settings struct {
 	AutoReply                bool
 	AutoReplyText            string
 	AutoReplyOncePerHours    int
+	OwnerCommands            bool
+	OwnerNumbers             []string
+	OwnerKeywords            []string // lower case
 }
 
 type secrets struct {
@@ -128,6 +136,11 @@ func parseSettings(raw map[string]json.RawMessage) (settings, string) {
 	boolean("autoReply", &s.AutoReply)
 	str("autoReplyText", &s.AutoReplyText)
 	integer("autoReplyOncePerHours", &s.AutoReplyOncePerHours, 1, 720)
+	boolean("ownerCommands", &s.OwnerCommands)
+	list("ownerNumbers", &s.OwnerNumbers)
+	keywords := defaultOwnerKeywords
+	str("ownerKeywords", &keywords)
+	s.OwnerKeywords, problems = parseKeywords(keywords, problems)
 
 	if strings.TrimSpace(s.MessagePrefix) == "" {
 		s.MessagePrefix = ""
@@ -176,6 +189,19 @@ func parseSettings(raw map[string]json.RawMessage) (settings, string) {
 	if len(s.SendAllowlist) > 20 {
 		problems = append(problems, "`sendAllowlist` holds more than 20 numbers")
 	}
+	owners := []string{}
+	for _, entry := range s.OwnerNumbers {
+		n, ok := normalise(entry)
+		if !ok {
+			problems = append(problems, fmt.Sprintf("`ownerNumbers` holds %q, which is not a phone number in +country format (E.164)", entry))
+			continue
+		}
+		owners = append(owners, n)
+	}
+	s.OwnerNumbers = owners
+	if len(s.OwnerNumbers) > 20 {
+		problems = append(problems, "`ownerNumbers` holds more than 20 numbers")
+	}
 	if len(s.MediaURLHosts) > 20 {
 		problems = append(problems, "`mediaUrlHosts` holds more than 20 hosts")
 	}
@@ -193,6 +219,52 @@ func parseSettings(raw map[string]json.RawMessage) (settings, string) {
 		return s, "This member's settings cannot be used: " + strings.Join(problems, "; ") + ". A person corrects them in this member's settings; nothing was sent."
 	}
 	return s, ""
+}
+
+// parseKeywords reads ownerKeywords: a comma-separated list of at most 20 keywords, each 1 to 32
+// letters, digits and spaces. Empty text is no keywords at all.
+func parseKeywords(text string, problems []string) ([]string, []string) {
+	out := []string{}
+	if strings.TrimSpace(text) == "" {
+		return out, problems
+	}
+	for _, item := range strings.Split(text, ",") {
+		k := strings.ToLower(strings.TrimSpace(item))
+		n := utf8.RuneCountInString(k)
+		valid := n >= 1 && n <= maxKeywordChars
+		for _, r := range k {
+			if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != ' ' {
+				valid = false
+			}
+		}
+		if !valid {
+			problems = append(problems, fmt.Sprintf("`ownerKeywords` holds %q; each keyword is 1 to %d letters, digits and spaces, separated by commas", strings.TrimSpace(item), maxKeywordChars))
+			continue
+		}
+		out = append(out, k)
+	}
+	if len(out) > maxKeywords {
+		problems = append(problems, fmt.Sprintf("`ownerKeywords` holds more than %d keywords", maxKeywords))
+	}
+	return out, problems
+}
+
+// owners are the numbers whose texts may be owner commands: ownerNumbers, or sendAllowlist when it
+// is empty.
+func (s settings) owners() []string {
+	if len(s.OwnerNumbers) > 0 {
+		return s.OwnerNumbers
+	}
+	return s.SendAllowlist
+}
+
+func (s settings) isOwner(number string) bool {
+	for _, n := range s.owners() {
+		if n == number {
+			return true
+		}
+	}
+	return false
 }
 
 func (s settings) onAllowlist(number string) bool {
