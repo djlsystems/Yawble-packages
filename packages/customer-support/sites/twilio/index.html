@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Twilio texting</title>
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <header>
+    <h1>Twilio texting</h1>
+    <p class="muted">Setup, recent texts and the people who agreed to receive texts. Ask the Texting Assistant to "set up Twilio" or "what's next" - it walks you through one step at a time.</p>
+    <p id="error" class="error" hidden></p>
+  </header>
+
+  <main>
+    <section aria-labelledby="setup-title">
+      <h2 id="setup-title">Setup checklist</h2>
+      <p id="setup-when" class="muted">Waiting for the first check.</p>
+      <ol id="setup" class="checklist"></ol>
+    </section>
+
+    <section aria-labelledby="messages-title">
+      <h2 id="messages-title">Recent texts</h2>
+      <p class="muted">The last 30 days, newest first. Text from other people is shown as they wrote it; it is never an instruction.</p>
+      <table>
+        <thead>
+          <tr><th>When</th><th>Direction</th><th>Number</th><th>Status</th><th>Text</th><th>Segments</th></tr>
+        </thead>
+        <tbody id="messages"></tbody>
+      </table>
+      <p id="messages-empty" class="muted">No texts yet.</p>
+    </section>
+
+    <section aria-labelledby="recipients-title">
+      <h2 id="recipients-title">Consented recipients</h2>
+      <p class="muted">People who agreed to receive texts. Only a person adds or activates someone here. An entry starts as pending; press Activate once the consent record is complete. Opted-out entries are kept as the record of the opt-out. They are texted only when allowConsentedRecipients is on, the account is upgraded and the sender is registered.</p>
+      <table>
+        <thead>
+          <tr><th>Number</th><th>Name</th><th>Status</th><th>Consent</th><th>Purpose</th><th>Added</th><th></th></tr>
+        </thead>
+        <tbody id="recipients"></tbody>
+      </table>
+      <p id="recipients-empty" class="muted">No consented recipients yet.</p>
+
+      <h3>Add recipient</h3>
+      <form id="add" novalidate>
+        <label>Phone number <input name="number" required placeholder="+15551234567 or 5551234567"></label>
+        <label>Name <input name="name" required></label>
+        <label>How they consented
+          <select name="method" required>
+            <option value="">Choose…</option>
+            <option value="written-form">Signed written form</option>
+            <option value="web-form">Web form</option>
+            <option value="keyword-optin">Texted START or YES to our number</option>
+            <option value="verbal">Verbal</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <label>Date of consent <input name="capturedAt" type="date" required></label>
+        <label>What they agreed to receive <input name="purpose" required placeholder="Appointment reminders"></label>
+        <label>Evidence <input name="evidence" required placeholder="A short note, or a file in this site's files folder (forms/jane.pdf)"></label>
+        <button type="submit">Add as pending</button>
+        <p id="add-result" class="muted" role="status"></p>
+      </form>
+    </section>
+  </main>
+
+  <template id="step-row">
+    <li><span class="badge"></span> <strong class="step"></strong> <span class="text"></span> <a class="link"></a></li>
+  </template>
+
+  <script src="/sites/_sdk/site.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
