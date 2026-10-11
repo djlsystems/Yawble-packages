@@ -1,4 +1,4 @@
-# Twilio SMS/MMS 1.2.0
+# Twilio SMS/MMS 1.2.1
 
 A team that texts through your Twilio account. The **Texting Assistant** guides you through
 Twilio setup, writes texts for you and sends them through the **twilio** plugin member, and tells
