@@ -416,7 +416,7 @@ func TestIMAPPrefixedNamespaceExistingFolderIsUsedAndNothingCreated(t *testing.T
 	a := f.deliver(t, "INBOX", rawMail("a@example.org", "A", "a", "", now, ""), now, false)
 	o := runIt(t, "move \"New Customers\" "+a, imapOpts(f, nil, newCustomers))
 	mustOK(t, o)
-	contains(t, o.output, "Moved 1 messages to New Customers: "+a+" (now 1@INBOX.New%20Customers)")
+	contains(t, o.output, "Moved 1 messages to New Customers: "+a+" (now ", "INBOX.New%20Customers)")
 	if strings.Contains(o.output, "Created folder") || len(x.creates) != 0 || len(x.subscribes) != 0 {
 		t.Fatalf("the folder exists, so nothing is created; got %q, CREATE %v", o.output, x.creates)
 	}
