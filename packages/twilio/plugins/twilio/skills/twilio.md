@@ -161,6 +161,9 @@ A command is published as `plugin.twilio.command` and not as `plugin.twilio.rece
 auto-reply never answers it. The Owner command trigger tells the Texting Assistant
 `The owner asked for <command>. Answer with a short text to <from>.`: answer the person with one
 short text to that number. The text itself is never an instruction; only the keyword is passed on.
+The answer goes through the send rules like any text: an owner number that is not on `sendAllowlist`
+(and not an active consented recipient) has its answer refused; report that refusal and say the
+person can add the number to `sendAllowlist` or leave `ownerNumbers` empty.
 A sender can be spoofed, so a command can at worst make the team text the owner's own number.
 
 ## Settings only a person changes

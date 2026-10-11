@@ -3,7 +3,7 @@
   "id": "twilio",
   "name": "Twilio",
   "description": "Sends SMS and MMS through Twilio with a restricted API key, reads delivery status and replies by polling, and keeps a consented-recipients list and opt-outs on the twilio site. Dry run by default; sends only to your numbers or person-activated consented recipients; never buys numbers or deletes anything.",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/twilio",
@@ -165,7 +165,7 @@
       "type": "list",
       "default": [],
       "setBy": "person",
-      "description": "The numbers that may send owner commands, up to 20, in +country format (+15551234567); 10 US digits are read as +1. Empty: the numbers on sendAllowlist."
+      "description": "The numbers that may send owner commands, up to 20, in +country format (+15551234567); 10 US digits are read as +1. Empty: the numbers on sendAllowlist. An owner number also needs to be on sendAllowlist for the answer to be sent."
     },
     "ownerKeywords": {
       "type": "string",

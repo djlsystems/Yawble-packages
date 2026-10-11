@@ -1,4 +1,4 @@
-# Twilio SMS/MMS 1.4.0
+# Twilio SMS/MMS 1.4.1
 
 A team that texts through your Twilio account. The **Texting Assistant** guides you through
 Twilio setup, writes texts for you and sends them through the **twilio** plugin member, and tells
@@ -65,7 +65,9 @@ the number it came from, when, and the text's SID. Three settings, on the soluti
 
 - `ownerCommands` (off): turns it on. Off, every text is an ordinary received text.
 - `ownerNumbers` (empty, up to 20 numbers): the numbers that may send commands. Empty means the
-  numbers on `sendAllowlist`.
+  numbers on `sendAllowlist`. The answer is a text like any other, so an owner number also needs
+  to be on `sendAllowlist` (or an active consented recipient) for the answer to be sent; one that
+  is not has its command accepted and its answer refused.
 - `ownerKeywords` (`summary, status, updates`): the keywords, separated by commas; at most 20,
   each 1 to 32 letters, digits and spaces. Any other value is refused as a settings problem.
 
