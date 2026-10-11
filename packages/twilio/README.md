@@ -1,0 +1,81 @@
+# Twilio SMS/MMS 1.2.0
+
+A team that texts through your Twilio account. The **Texting Assistant** guides you through
+Twilio setup, writes texts for you and sends them through the **twilio** plugin member, and tells
+you about replies, opt-outs and failed texts.
+
+## Install asks for one thing, and offers a second
+
+Your **cell phone number** (10 US digits or `+15551234567`). It goes on `sendAllowlist`, the only
+number twilio may text until you add others. Everything else starts at a safe default: **dry run**
+(nothing is sent), your cell only, US only, the sender found from your Twilio account, a poll every
+5 minutes. Turning on real sending is one change: `mode` to `send` on the solution's panel.
+
+It also offers **messagePrefix**: your business name as it starts each text (`Acme Plumbing: `),
+the name your campaign registered. It can be left empty and set later; `check` reminds you.
+
+The member's settings show the everyday ones first: `mode`, `sendAllowlist`, `fromNumber` and
+`messagePrefix`. Every other setting is under **Advanced settings**, and its default is safe to
+leave. Each setting's explanation is behind its info icon.
+
+With an A2P 10DLC campaign approved, set `messagingServiceSid` (Advanced) to the Messaging Service
+the campaign is registered on, so `registration` reads the campaign and texts go through it.
+
+## What every text carries
+
+The plugin adds what carriers expect of every text, so no message can leave it out:
+`messagePrefix` in front (unless the text already starts with that name) and
+`Reply STOP to opt out.` at the end (`optOutFooter`: `every` by default, or `first`, or `off`), to
+every number, yours included. They count towards the text's length and segments, and `check` has a
+`compliance` step saying what every text carries, the characters it adds and the privacy and terms
+pages you registered (`privacyUrl`, `termsUrl`).
+
+There are no quiet hours: a text goes when it is sent. A queued text waits at most 4 hours, `list`
+shows 20 texts, and the poll re-checks sent texts for 72 hours; none of these is a setting.
+
+## Set up: talk to the Texting Assistant
+
+Say "set up Twilio" (or "what's next"). It goes one step at a time, links to the right Twilio
+Console page and runs `check` after each step. The only manual step is the three secrets, run on
+the machine that runs the platform (each command asks for the value; never paste one into chat, a
+page or settings):
+
+```
+yawble secret set TWILIO_ACCOUNT_SID      # value: <AC... Account SID>   from https://console.twilio.com/
+yawble secret set TWILIO_API_KEY_SID      # value: <SK... key SID>       from a Restricted API key:
+yawble secret set TWILIO_API_KEY_SECRET   # value: <the key's secret>    https://console.twilio.com/us1/account/keys-credentials/api-keys
+yawble up
+```
+
+Twilio has two Consoles. The links above are the legacy Console's. In the new Twilio Console:
+
+- the Account SID is on the home page: https://1console.twilio.com/
+- API keys are under Settings > Account settings > API keys & auth tokens:
+  https://1console.twilio.com/go?to=/account/__account__/settings/us1/api-keys/list
+
+### The API key's permissions
+
+Press **Create API key**, choose key type **Restricted**, and tick only these:
+
+- Messaging: `/twilio/messaging/messages/create`, `/twilio/messaging/messages/read`,
+  `/twilio/messaging/messages/list`, `/twilio/messaging/services/read`, and the
+  `services.usa2p-campaign` read and list permissions (only needed for 10DLC);
+- Phone numbers: `/twilio/phone-numbers/active-numbers/read` and `.../list`;
+- IAM: `/twilio/iam/accounts/read`;
+- toll-free verification read, if the list offers it.
+
+The key's secret is shown only once, when the key is created; if it is lost, make a new key.
+
+## The twilio page
+
+**Open** on the solution's tile shows the setup checklist (Done / Next / Waiting, with Console
+links), recent texts, and the consented-recipients list where only you add and activate people.
+The first poll runs at install, so the checklist fills straight away. Until the three secrets are
+set, the 5-minute poll answers "Poll skipped: Twilio is not set up …" quietly and wakes nobody.
+
+## The last setup step: the live test
+
+With your real Twilio account, after setup: `check` shows every step done; one real SMS reaches
+your cell and the next poll reports it `delivered`; your reply appears as a received text; and
+`STOP` from your phone is reported as an opt-out (text `START` afterwards). The Texting Assistant
+walks you through it.

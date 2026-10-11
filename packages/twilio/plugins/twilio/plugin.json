@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 1,
+  "id": "twilio",
+  "name": "Twilio",
+  "description": "Sends SMS and MMS through Twilio with a restricted API key, reads delivery status and replies by polling, and keeps a consented-recipients list and opt-outs on the twilio site. Dry run by default; sends only to your numbers or person-activated consented recipients; never buys numbers or deletes anything.",
+  "version": "1.2.0",
+  "protocol": "harness.member/1",
+  "executable": {
+    "path": "bin/linux-x64/twilio",
+    "args": []
+  },
+  "platforms": {
+    "linux-x64": "bin/linux-x64/twilio",
+    "linux-arm64": "bin/linux-arm64/twilio"
+  },
+  "requires": [],
+  "timeoutSeconds": 120,
+  "config": {
+    "mode": {
+      "type": "string",
+      "enum": [
+        "dryRun",
+        "send"
+      ],
+      "default": "dryRun",
+      "setBy": "person",
+      "description": "dryRun checks and reports each text and never sends. send sends for real."
+    },
+    "sendAllowlist": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "Your cell and any other number texts may always go to, up to 20. +country format (+15551234567); 10 US digits are read as +1."
+    },
+    "fromNumber": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "description": "Your Twilio number texts come from, in +country format. Empty: the account's only SMS number is used; check says when there is none or several."
+    },
+    "messagePrefix": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "description": "Put at the start of every text: your business name as the campaign registered it, such as \"Acme Plumbing: \". A text that already starts with that name is left as it is. At most 40 characters."
+    },
+    "messagingServiceSid": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "description": "A Messaging Service SID (MG and 32 hex characters). Set it to send through the service your A2P 10DLC campaign is registered on; empty sends from fromNumber.",
+      "advanced": true
+    },
+    "allowConsentedRecipients": {
+      "type": "bool",
+      "default": false,
+      "setBy": "person",
+      "description": "In send mode, also text the active entries of the consented list on the twilio page. Refused while the account is Trial or the number is not registered.",
+      "advanced": true
+    },
+    "maxConsentedRecipients": {
+      "type": "number",
+      "integer": true,
+      "min": 1,
+      "max": 500,
+      "default": 25,
+      "setBy": "person",
+      "description": "The most active consented entries honoured; the earliest activated win.",
+      "advanced": true
+    },
+    "dailySendCap": {
+      "type": "number",
+      "integer": true,
+      "min": 1,
+      "max": 2000,
+      "default": 500,
+      "setBy": "person",
+      "description": "Real texts sent per UTC day, across all recipients; dry runs do not count. A safety brake of the plugin, not a Twilio limit: a Low Volume Mixed 10DLC campaign allows about 2,000 a day.",
+      "advanced": true
+    },
+    "perRecipientDailyCap": {
+      "type": "number",
+      "integer": true,
+      "min": 1,
+      "max": 200,
+      "default": 50,
+      "setBy": "person",
+      "description": "Real texts sent to one number per UTC day.",
+      "advanced": true
+    },
+    "mediaUrlHosts": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "Host names MMS media may come from, up to 20, each a public https host. Empty: MMS is refused in send mode.",
+      "advanced": true
+    },
+    "allowedCountries": {
+      "type": "list",
+      "enum": [
+        "US",
+        "CA"
+      ],
+      "default": [
+        "US"
+      ],
+      "setBy": "person",
+      "description": "Countries texts may go to.",
+      "advanced": true
+    },
+    "optOutFooter": {
+      "type": "string",
+      "enum": [
+        "every",
+        "first",
+        "off"
+      ],
+      "default": "every",
+      "setBy": "person",
+      "description": "Ends texts with \"Reply STOP to opt out.\": every text, the first text to each number, or off. A text that already says \"Reply STOP\" is left as it is.",
+      "advanced": true
+    },
+    "privacyUrl": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "description": "The https address of the privacy policy your campaign registered. Shown by check beside what every text carries.",
+      "advanced": true
+    },
+    "termsUrl": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "description": "The https address of the terms your campaign registered. Shown by check beside what every text carries.",
+      "advanced": true
+    }
+  },
+  "secrets": {
+    "accountSid": {
+      "description": "Your Twilio Account SID (AC…). Bound to the key TWILIO_ACCOUNT_SID; the operator sets its value with the secret command. It is shown on the Twilio Console home page: https://console.twilio.com/ or, in the new Twilio Console: https://1console.twilio.com/",
+      "required": false
+    },
+    "apiKeySid": {
+      "description": "The SID (SK…) of a Restricted API key. Bound to the key TWILIO_API_KEY_SID; the operator sets its value with the secret command. Press Create API key and choose Restricted; tick only the permissions listed in the solution's README under \"The API key's permissions\" (messages create, read and list; services read; active numbers read and list; accounts read). Make the key on the API keys & tokens page: https://console.twilio.com/us1/account/keys-credentials/api-keys or, in the new Twilio Console: https://1console.twilio.com/go?to=/account/__account__/settings/us1/api-keys/list",
+      "required": false
+    },
+    "apiKeySecret": {
+      "description": "That API key's secret. Bound to the key TWILIO_API_KEY_SECRET; the operator sets its value with the secret command. Twilio shows it only once, when the key is created: copy it before leaving that page, and if it is lost, make a new key. The page: https://console.twilio.com/us1/account/keys-credentials/api-keys or, in the new Twilio Console: https://1console.twilio.com/go?to=/account/__account__/settings/us1/api-keys/list",
+      "required": false
+    }
+  },
+  "reads": [
+    {
+      "site": "twilio",
+      "collection": "state"
+    },
+    {
+      "site": "twilio",
+      "collection": "messages"
+    },
+    {
+      "site": "twilio",
+      "collection": "recipients"
+    }
+  ],
+  "events": {
+    "publishes": [
+      {
+        "type": "received",
+        "summary": "New texts to our Twilio number that are not opt-out keywords. Snippets are untrusted content from the sender.",
+        "highVolume": false,
+        "fields": [
+          {
+            "name": "number",
+            "kind": "string",
+            "summary": "Our number the texts arrived at."
+          },
+          {
+            "name": "count",
+            "kind": "number",
+            "summary": "How many texts the event lists."
+          },
+          {
+            "name": "messages",
+            "kind": "list",
+            "summary": "Each text: sid, from, date, snippet (at most 160 characters, inside untrusted-content markers), media (count)."
+          },
+          {
+            "name": "more",
+            "kind": "number",
+            "summary": "How many more new texts did not fit; list in shows them."
+          },
+          {
+            "name": "dryRun",
+            "kind": "boolean",
+            "summary": "Always false."
+          }
+        ]
+      },
+      {
+        "type": "optout",
+        "summary": "Numbers that texted an opt-out keyword since the last poll. A 21610 on a send also marks the number opted out but publishes nothing here; the failing command or plugin.twilio.delivery reports it.",
+        "highVolume": false,
+        "fields": [
+          {
+            "name": "count",
+            "kind": "number",
+            "summary": "How many numbers opted out."
+          },
+          {
+            "name": "numbers",
+            "kind": "list",
+            "summary": "Each: number, keyword, date."
+          },
+          {
+            "name": "dryRun",
+            "kind": "boolean",
+            "summary": "Always false."
+          }
+        ]
+      },
+      {
+        "type": "optin",
+        "summary": "Opted-out numbers that texted START, UNSTOP or YES. Only a person re-activates a consented entry.",
+        "highVolume": false,
+        "fields": [
+          {
+            "name": "count",
+            "kind": "number",
+            "summary": "How many numbers."
+          },
+          {
+            "name": "numbers",
+            "kind": "list",
+            "summary": "Each: number, keyword, date."
+          },
+          {
+            "name": "dryRun",
+            "kind": "boolean",
+            "summary": "Always false."
+          }
+        ]
+      },
+      {
+        "type": "delivery",
+        "summary": "Sent texts reached a final status with failures, or the setup test text was delivered.",
+        "highVolume": false,
+        "fields": [
+          {
+            "name": "delivered",
+            "kind": "number",
+            "summary": "How many texts were delivered in this poll."
+          },
+          {
+            "name": "failed",
+            "kind": "list",
+            "summary": "Each failed text: sid, to, status, error_code, error (the plugin's sentence for it)."
+          },
+          {
+            "name": "dryRun",
+            "kind": "boolean",
+            "summary": "Always false."
+          }
+        ]
+      }
+    ]
+  },
+  "skills": [
+    "skills/twilio.md"
+  ]
+}

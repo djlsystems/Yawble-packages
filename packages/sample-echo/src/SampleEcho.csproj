@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The sample plugin member: a console app with no dependencies. ../build.sh publishes it
+       framework-dependent into <version-dir>/lib. Self-contained: the image guarantees the .NET
+       runtime (the manifest's "requires": ["dotnet"]) and nothing else. A NuGet package the plugin
+       uses is published into lib/ beside it; nothing a plugin needs is ever added to the image. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <!-- No native launcher: sample-echo runs the dll with dotnet, on either processor. -->
+    <UseAppHost>false</UseAppHost>
+    <AssemblyName>SampleEcho</AssemblyName>
+    <RootNamespace>SampleEcho</RootNamespace>
+  </PropertyGroup>
+
+</Project>
