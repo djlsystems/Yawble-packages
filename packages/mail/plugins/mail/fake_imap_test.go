@@ -126,6 +126,12 @@ func newFakeIMAPWithSent(t *testing.T) *fakeIMAP {
 
 func newFakeIMAPWith(t *testing.T, security, sent string) *fakeIMAP {
 	t.Helper()
+	return newFakeIMAPWrapped(t, security, sent, nil)
+}
+
+// newFakeIMAPWrapped is the fake whose every session is wrap's, when wrap is set.
+func newFakeIMAPWrapped(t *testing.T, security, sent string, wrap func(*fakeIMAP, imapserver.Session) imapserver.Session) *fakeIMAP {
+	t.Helper()
 	cfg := testTLS(t)
 	mem := imapmemserver.New()
 	user := imapmemserver.NewUser(imapUser, appPassword)
@@ -141,6 +147,9 @@ func newFakeIMAPWith(t *testing.T, security, sent string) *fakeIMAP {
 	mem.AddUser(user)
 	opts := &imapserver.Options{
 		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
+			if wrap != nil {
+				return wrap(f, mem.NewSession()), nil, nil
+			}
 			if sent != "" {
 				return sentSession{mem.NewSession(), f}, nil, nil
 			}

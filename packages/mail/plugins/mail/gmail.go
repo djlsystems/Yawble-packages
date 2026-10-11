@@ -68,25 +68,89 @@ func (g *gmail) allLabels(ctx context.Context) ([]gmailLabel, error) {
 	return v.Labels, nil
 }
 
+// gmailRoles are the common names of Gmail's system labels, and the role the folders command
+// shows for each.
+var gmailRoles = map[string]string{
+	"inbox": "INBOX", "sent": "SENT", "drafts": "DRAFT", "junk": "SPAM", "spam": "SPAM", "trash": "TRASH", "bin": "TRASH",
+	"starred": "STARRED", "important": "IMPORTANT",
+}
+
+var gmailRoleOf = map[string]string{
+	"INBOX": "inbox", "SENT": "sent", "DRAFT": "drafts", "SPAM": "junk", "TRASH": "trash", "STARRED": "flagged", "IMPORTANT": "important",
+}
+
 // resolveLabel finds a label by id or by name; a name with spaces may be written with dashes, as
 // Gmail's search does.
 func (g *gmail) resolveLabel(ctx context.Context, want string) (id, name string, err error) {
+	id, name, found, err := g.findLabel(ctx, want)
+	if err == nil && !found {
+		err = failure("No label " + strconv.Quote(want) + " in this mailbox.")
+	}
+	return id, name, err
+}
+
+// findLabel is resolveLabel answering found false for a label the mailbox does not have. A
+// common name of a system label (Junk, Trash) finds that label.
+func (g *gmail) findLabel(ctx context.Context, want string) (id, name string, found bool, err error) {
 	all, err := g.allLabels(ctx)
 	if err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 	for _, l := range all {
 		if l.ID == want {
-			return l.ID, l.Name, nil
+			return l.ID, l.Name, true, nil
 		}
 	}
 	norm := func(s string) string { return strings.ToLower(strings.NewReplacer(" ", "-", "/", "-").Replace(s)) }
 	for _, l := range all {
 		if norm(l.Name) == norm(want) {
-			return l.ID, l.Name, nil
+			return l.ID, l.Name, true, nil
 		}
 	}
-	return "", "", failure("No label " + strconv.Quote(want) + " in this mailbox.")
+	if sys, ok := gmailRoles[strings.ToLower(want)]; ok {
+		for _, l := range all {
+			if l.ID == sys {
+				return l.ID, l.Name, true, nil
+			}
+		}
+	}
+	return "", "", false, nil
+}
+
+func (g *gmail) hasFolder(ctx context.Context, name string) (bool, error) {
+	_, _, found, err := g.findLabel(ctx, name)
+	return found, err
+}
+
+func (g *gmail) labelUsesFolder(context.Context) (bool, error) { return true, nil }
+
+// folders answers the labels a message can be filed under: every user label and the system
+// labels but UNREAD, CHAT and the inbox categories.
+func (g *gmail) folders(ctx context.Context) ([]mailFolder, string, error) {
+	all, err := g.allLabels(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	var out []mailFolder
+	for _, l := range all {
+		if l.ID == "UNREAD" || l.ID == "CHAT" || strings.HasPrefix(l.ID, "CATEGORY_") {
+			continue
+		}
+		out = append(out, mailFolder{Name: l.Name, Role: gmailRoleOf[l.ID]})
+	}
+	return out, "/", nil
+}
+
+// createFolder creates a user label shown in the label list and the message list. Gmail answers
+// 409 when the label was made meanwhile.
+func (g *gmail) createFolder(ctx context.Context, name string) error {
+	body := map[string]string{"name": name, "labelListVisibility": "labelShow", "messageListVisibility": "show"}
+	err := g.api.call(ctx, "POST", "/labels", nil, body, nil)
+	if err != nil && !isStatus(err, 409) {
+		return failure(gmailWords.describe(err, scopeModify, false) + " The label " + strconv.Quote(name) + " was not created; nothing was changed.")
+	}
+	g.labels = nil
+	return nil
 }
 
 type gmailHeader struct {

@@ -1,4 +1,4 @@
-# Mail 2.1.0
+# Mail 2.2.0
 
 A team that works with your mailbox: a Manager you talk to, and a plugin member, Mailer, that lists,
 searches and reads your mail, files it when you allow that, watches your Inbox for new mail, and
@@ -21,7 +21,8 @@ you reply.
   (`@example.com`) Mailer may write to. Only you can set it.
 - **Mailer's `markRead`** - off unless you turn it on. Only you can set it.
 - **Mailer's `moveTo`** - the folders and labels Mailer may move mail to or label it with; empty
-  unless you fill it. Only you can set it.
+  unless you fill it. One the mailbox does not have yet is created at the top level the first time
+  Mailer moves or labels mail to it. Only you can set it.
 - **Mailer's follow quiet hours** - `followQuietStart` and `followQuietEnd` (HH:MM, as 22:00 and
   07:00; empty for none) in `followTimeZone` (an IANA name such as Europe/London; UTC unless you set
   it). No reminder is listed in them. Only you can set them.
@@ -82,7 +83,18 @@ same goes for `plugin.mail.unanswered` and `plugin.mail.answered`.
 
 - `list`, `search`, `read` (text body, links listed, attachments listed but never downloaded),
   `mark-read`/`mark-unread` (with `markRead`), `move`/`label` (to `moveTo` only), `draft`, `send`,
-  `reply`, `replied`, `follow`, `unfollow`, `ack` and `watch`.
+  `reply`, `replied`, `follow`, `unfollow`, `ack`, `folders` and `watch`.
+- A `moveTo` folder or label the mailbox does not have is created on the first `move` or `label` to
+  it, at the top level and spelled as in `moveTo`: a label on Google (shown in the label list and
+  the message list), a mail folder on Microsoft, a folder on IMAP (created and subscribed). The
+  answer says so: "Created folder New Customers; moved 3 messages: ...". Only names on `moveTo` are
+  ever created. Mailer creates only top-level folders: a nested name (`Clients/Acme`) is used when it
+  exists, and you create it in your mail app. Junk, Sent, Trash and the other special-use folders
+  are found by their role and never created. A create the server refuses fails the command in the
+  server's words and moves nothing. `list`, `search` and `watch` never create a folder.
+- `folders` lists the mailbox's folders (labels on Google), each with its special-use role where it
+  has one, then marks each `moveTo` entry "exists", "created on first use", or "nested: create it in
+  your mail app". It changes nothing.
 - `reply` answers a message Mailer listed or read: "Re: " and its subject, to its Reply-To or
   sender (to everyone on it only when you ask), and threaded to it - `In-Reply-To` and `References`
   over IMAP, the same thread on Google, Outlook's own reply on Microsoft. It drafts, or sends in send

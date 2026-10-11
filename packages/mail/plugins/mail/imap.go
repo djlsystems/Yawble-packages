@@ -82,6 +82,8 @@ type imapBox struct {
 	selected string
 	writable bool
 	boxes    []*imap.ListData
+	// ns is the personal namespace, read when a folder is first looked up, created or listed.
+	ns *imap.NamespaceDescriptor
 }
 
 func newIMAP(g imapGrant) *imapBox { return &imapBox{g: g} }
@@ -188,26 +190,148 @@ var specialUse = map[string]imap.MailboxAttr{
 // folder finds a folder by its name (any case), or by a common name for a special-use one, so
 // Drafts and Sent are found on Gmail as [Gmail]/Drafts and [Gmail]/Sent Mail.
 func (b *imapBox) folder(name string) (string, error) {
+	f, found, err := b.findFolder(name)
+	if err == nil && !found {
+		err = failure("No folder " + strconv.Quote(name) + " in this mailbox.")
+	}
+	return f, err
+}
+
+// findFolder is folder answering found false for a folder the mailbox does not have. A folder
+// Mailer created under the personal namespace's prefix (INBOX. on some servers) is found by its
+// name without it.
+func (b *imapBox) findFolder(name string) (string, bool, error) {
 	if name == "" || strings.EqualFold(name, "INBOX") {
-		return "INBOX", nil
+		return "INBOX", true, nil
 	}
 	boxes, err := b.mailboxes()
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	for _, m := range boxes {
 		if strings.EqualFold(m.Mailbox, name) {
-			return m.Mailbox, nil
+			return m.Mailbox, true, nil
 		}
 	}
 	if attr, ok := specialUse[strings.ToLower(name)]; ok {
 		for _, m := range boxes {
 			if slices.Contains(m.Attrs, attr) {
-				return m.Mailbox, nil
+				return m.Mailbox, true, nil
 			}
 		}
 	}
-	return "", failure("No folder " + strconv.Quote(name) + " in this mailbox.")
+	ns, err := b.namespace()
+	if err != nil {
+		return "", false, err
+	}
+	if ns.Prefix != "" {
+		for _, m := range boxes {
+			if strings.EqualFold(m.Mailbox, ns.Prefix+name) {
+				return m.Mailbox, true, nil
+			}
+		}
+	}
+	return "", false, nil
+}
+
+func (b *imapBox) hasFolder(ctx context.Context, name string) (bool, error) {
+	_, found, err := b.findFolder(name)
+	return found, err
+}
+
+// labelUsesFolder is true on Gmail's IMAP, where a label is a folder.
+func (b *imapBox) labelUsesFolder(context.Context) (bool, error) {
+	if err := b.connect(); err != nil {
+		return false, err
+	}
+	return b.c.Caps().Has(imap.Cap("X-GM-EXT-1")), nil
+}
+
+// namespace answers the personal namespace: where top-level folders go, and the hierarchy
+// delimiter. A server without NAMESPACE has the empty prefix and its LIST's delimiter.
+func (b *imapBox) namespace() (*imap.NamespaceDescriptor, error) {
+	if b.ns != nil {
+		return b.ns, nil
+	}
+	boxes, err := b.mailboxes()
+	if err != nil {
+		return nil, err
+	}
+	ns := &imap.NamespaceDescriptor{}
+	for _, m := range boxes {
+		if m.Delim != 0 {
+			ns.Delim = m.Delim
+			break
+		}
+	}
+	if b.c.Caps().Has(imap.CapNamespace) {
+		if data, err := b.c.Namespace().Wait(); err == nil && len(data.Personal) > 0 {
+			ns.Prefix = data.Personal[0].Prefix
+			if data.Personal[0].Delim != 0 {
+				ns.Delim = data.Personal[0].Delim
+			}
+		}
+	}
+	b.ns = ns
+	return ns, nil
+}
+
+// specialRoles are the special-use attributes the folders command names a role for.
+var specialRoles = map[imap.MailboxAttr]string{
+	imap.MailboxAttrDrafts: "drafts", imap.MailboxAttrSent: "sent", imap.MailboxAttrArchive: "archive",
+	imap.MailboxAttrJunk: "junk", imap.MailboxAttrTrash: "trash", imap.MailboxAttrAll: "all", imap.MailboxAttrFlagged: "flagged",
+}
+
+func (b *imapBox) folders(ctx context.Context) ([]mailFolder, string, error) {
+	boxes, err := b.mailboxes()
+	if err != nil {
+		return nil, "", err
+	}
+	ns, err := b.namespace()
+	if err != nil {
+		return nil, "", err
+	}
+	var out []mailFolder
+	for _, m := range boxes {
+		if slices.Contains(m.Attrs, imap.MailboxAttrNoSelect) || slices.Contains(m.Attrs, imap.MailboxAttrNonExistent) {
+			continue
+		}
+		f := mailFolder{Name: m.Mailbox}
+		if strings.EqualFold(m.Mailbox, "INBOX") {
+			f.Role = "inbox"
+		}
+		for _, a := range m.Attrs {
+			if r, ok := specialRoles[a]; ok {
+				f.Role = r
+			}
+		}
+		out = append(out, f)
+	}
+	sep := ""
+	if ns.Delim != 0 {
+		sep = string(ns.Delim)
+	}
+	return out, sep, nil
+}
+
+// createFolder issues CREATE at the top level of the personal namespace, then SUBSCRIBE so mail
+// apps show the folder. A server answering [ALREADYEXISTS] had the folder made meanwhile.
+func (b *imapBox) createFolder(ctx context.Context, name string) error {
+	ns, err := b.namespace()
+	if err != nil {
+		return err
+	}
+	full := ns.Prefix + name
+	if err := b.c.Create(full, nil).Wait(); err != nil {
+		var ie *imap.Error
+		if !errors.As(err, &ie) || ie.Code != imap.ResponseCodeAlreadyExists {
+			return failure(b.imapFailure("create the folder "+strconv.Quote(full), err).Error() + " Nothing was changed.")
+		}
+	}
+	// The folder is there either way; a refused subscription only hides it in some mail apps.
+	_ = b.c.Subscribe(full).Wait()
+	b.boxes = nil
+	return nil
 }
 
 func (b *imapBox) open(folder string, write bool) (*imap.SelectData, error) {

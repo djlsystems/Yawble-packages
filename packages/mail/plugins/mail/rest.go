@@ -133,8 +133,8 @@ func (w httpWords) describe(err error, scope string, outward bool) string {
 			return fmt.Sprintf("%s refused the request (403): the connection lacks the scope %s. A person reconnects the connection in Admin, Connections, granting that scope%s.", w.provider, scope, tail)
 		default:
 			msg := ""
-			if e.message != "" {
-				msg = ": " + e.message
+			if m := strings.TrimSuffix(strings.TrimSpace(e.message), "."); m != "" {
+				msg = ": " + m
 			}
 			return fmt.Sprintf("%s answered %d %s%s%s.", w.provider, e.status, http.StatusText(e.status), msg, tail)
 		}

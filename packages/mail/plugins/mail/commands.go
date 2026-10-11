@@ -15,7 +15,7 @@ const usage = "Commands: `list [folder:<folder>] [unread] [from:<text>] [subject
 	"`search <those terms, or the mailbox's own query> [max:<n>]`, `read <id>`, `mark-read <ids>`, `mark-unread <ids>`, " +
 	"`move <folder> <ids>`, `label <label> <ids>`, `draft` or `send` followed by lines To:, optional Cc:, optional Bcc:, " +
 	"Subject:, one blank line, then the body, `reply <id> [all] [quote] [draft]` followed by the body on the next lines, " +
-	"`ack <ids>`, `replied <id>`, `follow <id> [every:<hours>h]`, `unfollow <id>`, and `watch`. There is no delete command."
+	"`ack <ids>`, `replied <id>`, `follow <id> [every:<hours>h]`, `unfollow <id>`, `folders`, and `watch`. There is no delete command."
 
 type mailer struct {
 	p        provider
@@ -60,6 +60,11 @@ func (m *mailer) do(ctx context.Context, instruction string) (string, error) {
 		return m.markRead(ctx, args, cmd == "mark-read")
 	case "move", "label":
 		return m.move(ctx, cmd, args)
+	case "folders":
+		if len(args) != 0 {
+			return "", failure("folders takes nothing: `folders`.")
+		}
+		return m.folders(ctx)
 	case "draft", "send":
 		if len(args) != 0 {
 			return "", failure("`" + cmd + "` stands alone on its first line; the To:, Cc:, Bcc: and Subject: lines follow it. " + usage)
@@ -351,10 +356,17 @@ func (m *mailer) move(ctx context.Context, cmd string, args []string) (string, e
 	if err != nil {
 		return "", err
 	}
+	created, err := m.ensureFolder(ctx, cmd, target)
+	if err != nil {
+		return "", err
+	}
 	if cmd == "label" {
 		m.progress(fmt.Sprintf("labelling %d messages", len(ids)))
 		if err := m.p.label(ctx, ids, target); err != nil {
 			return "", err
+		}
+		if created != "" {
+			return fmt.Sprintf("Created label %s; labelled %d messages: %s.", created, len(ids), strings.Join(ids, ", ")), nil
 		}
 		return fmt.Sprintf("Labelled %d messages %s: %s.", len(ids), target, strings.Join(ids, ", ")), nil
 	}
@@ -372,6 +384,9 @@ func (m *mailer) move(ctx context.Context, cmd string, args []string) (string, e
 		} else {
 			parts = append(parts, id)
 		}
+	}
+	if created != "" {
+		return fmt.Sprintf("Created folder %s; moved %d messages: %s.", created, len(ids), strings.Join(parts, ", ")), nil
 	}
 	return fmt.Sprintf("Moved %d messages to %s: %s.", len(ids), target, strings.Join(parts, ", ")), nil
 }

@@ -22,7 +22,8 @@ Tell Mailer exactly one command, as the instruction's whole text:
 | To find mail | `search subject:"weekly report"` - the same terms; any other words are the mailbox's own search |
 | One message | `read <id>`, the id from a `list`, `search` or watch line |
 | To mark mail read or unread | `mark-read <id>, <id>` / `mark-unread <id>` - only when the person's `markRead` is on |
-| To file mail | `move Archive <id>` / `label Receipts <id>` - only to a folder on the person's `moveTo` |
+| To file mail | `move Archive <id>` / `label Receipts <id>` - only to a folder on the person's `moveTo`; one the mailbox does not have yet is created at the top level |
+| Which folders there are | `folders` - the mailbox's folders, and whether each `moveTo` entry exists, is created on first use, or is nested and made by the person in their mail app |
 | To write an email for them to send | the multi-line `draft` below |
 | To send an email | the multi-line `send` below (it still only drafts unless the person set `mode` to send) |
 | To answer a message | `reply <id>` with the reply's text on the lines below - see "Replying" |
@@ -145,6 +146,8 @@ with other recipients or folders, and do not reword it. The ones you will see:
 - `Mail is set to send but sendAllowlist is empty; a person must add the addresses or domains it may send to in this member's settings.`
 - `Refused: mark-read and mark-unread are off; ...` / `Refused: move and label are off; ...` /
   `Refused: <folder> is not on moveTo; nothing was changed.`
+- `Refused: Mailer creates only top-level folders, so a person creates the nested folder "<name>" in their mail app; nothing was changed.`
+- `... "<name>" was not created; nothing was changed.` - the mailbox refused to create the folder; nothing moved.
 - `The mail server refused the sign-in for <address>. A person updates the app password in Admin, Connections ...`
 - `The Gmail connection needs reconnecting ...` / `The Microsoft connection needs reconnecting ...`
 - `... refused the request (403): the connection lacks the scope <scope>. ...`

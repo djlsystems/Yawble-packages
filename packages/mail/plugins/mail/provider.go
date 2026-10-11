@@ -17,6 +17,16 @@ type provider interface {
 	// move answers each moved message's new id where the provider gives the message one.
 	move(ctx context.Context, ids []string, folder string) (map[string]string, error)
 	label(ctx context.Context, ids []string, label string) error
+	// folders answers the mailbox's folders (labels on Gmail) and its hierarchy separator.
+	folders(ctx context.Context) ([]mailFolder, string, error)
+	// hasFolder answers whether move and label find a folder or label by this name.
+	hasFolder(ctx context.Context, name string) (bool, error)
+	// createFolder makes a folder (a label on Gmail) of this name at the top level, and reads the
+	// folder list again. A folder of that name made meanwhile by someone else is not a failure.
+	createFolder(ctx context.Context, name string) error
+	// labelUsesFolder is true when label puts a message in a folder or label that must exist
+	// (Gmail, Gmail's IMAP), false when it marks the message (Graph's categories, IMAP keywords).
+	labelUsesFolder(ctx context.Context) (bool, error)
 	draft(ctx context.Context, o outgoing) (string, error)
 	send(ctx context.Context, o outgoing) (string, error)
 	// watchStart sets a new position at now and answers what the look-back finds.
@@ -29,6 +39,12 @@ type provider interface {
 	// holds none. It never reads the \Answered flag.
 	replied(ctx context.Context, o original) (*sentReply, error)
 	close()
+}
+
+// mailFolder is one folder, or label on Gmail, as the folders command shows it. Role is its
+// special-use role (inbox, sent, junk, trash...) when it has one.
+type mailFolder struct {
+	Name, Role string
 }
 
 // summary is one message as list, search and the watch show it. It never holds the body.

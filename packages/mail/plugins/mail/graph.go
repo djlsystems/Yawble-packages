@@ -31,8 +31,8 @@ var graphWords = httpWords{provider: "Microsoft Graph", reconnect: wordsReconnec
 
 // graph is the mailbox over Microsoft Graph, with a Microsoft connection's access token.
 type graph struct {
-	api     *restClient
-	folders map[string]string // display name, lower case -> id, read once per run
+	api *restClient
+	top []graphFolder // the top-level folders, read once per run
 }
 
 func newGraph(token string) *graph {
@@ -50,36 +50,130 @@ func (g *graph) close()       {}
 var graphWellKnown = map[string]string{
 	"inbox": "inbox", "drafts": "drafts", "sent": "sentitems", "sentitems": "sentitems", "sent items": "sentitems",
 	"archive": "archive", "junk": "junkemail", "junkemail": "junkemail", "junk email": "junkemail",
-	"deleted": "deleteditems", "deleteditems": "deleteditems", "deleted items": "deleteditems", "outbox": "outbox",
+	"deleted": "deleteditems", "deleteditems": "deleteditems", "deleted items": "deleteditems", "trash": "deleteditems", "outbox": "outbox",
 }
 
-// folderID finds a folder: a well-known name, else a top-level folder by its display name.
+type graphFolder struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+}
+
+// folderID finds a folder: a well-known name, else a top-level folder by its display name, else
+// a nested one by its path of display names.
 func (g *graph) folderID(ctx context.Context, name string) (string, error) {
+	id, found, err := g.findFolder(ctx, name)
+	if err == nil && !found {
+		err = failure("No folder " + strconv.Quote(name) + " in this mailbox.")
+	}
+	return id, err
+}
+
+func (g *graph) topFolders(ctx context.Context) ([]graphFolder, error) {
+	if g.top != nil {
+		return g.top, nil
+	}
+	var v struct {
+		Value []graphFolder `json:"value"`
+	}
+	if err := g.api.call(ctx, "GET", "/me/mailFolders", url.Values{"$top": {"100"}, "$select": {"id,displayName"}}, nil, &v); err != nil {
+		return nil, failure(graphWords.describe(err, scopeGraphReadWrite, false))
+	}
+	g.top = append([]graphFolder{}, v.Value...)
+	return g.top, nil
+}
+
+// findFolder is folderID answering found false for a folder the mailbox does not have.
+func (g *graph) findFolder(ctx context.Context, name string) (string, bool, error) {
 	if name == "" {
-		return "inbox", nil
+		return "inbox", true, nil
 	}
 	if id, ok := graphWellKnown[strings.ToLower(name)]; ok {
-		return id, nil
+		return id, true, nil
 	}
-	if g.folders == nil {
+	top, err := g.topFolders(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	match := func(list []graphFolder, want string) (string, bool) {
+		for _, f := range list {
+			if strings.EqualFold(f.DisplayName, want) {
+				return f.ID, true
+			}
+		}
+		return "", false
+	}
+	if id, ok := match(top, name); ok {
+		return id, true, nil
+	}
+	path := strings.Split(name, "/")
+	if len(path) < 2 {
+		return "", false, nil
+	}
+	id, ok := match(top, path[0])
+	for _, part := range path[1:] {
+		if !ok {
+			return "", false, nil
+		}
 		var v struct {
-			Value []struct {
-				ID          string `json:"id"`
-				DisplayName string `json:"displayName"`
-			} `json:"value"`
+			Value []graphFolder `json:"value"`
 		}
-		if err := g.api.call(ctx, "GET", "/me/mailFolders", url.Values{"$top": {"100"}, "$select": {"id,displayName"}}, nil, &v); err != nil {
-			return "", failure(graphWords.describe(err, scopeGraphReadWrite, false))
+		err := g.api.call(ctx, "GET", "/me/mailFolders/"+url.PathEscape(id)+"/childFolders", url.Values{"$top": {"100"}, "$select": {"id,displayName"}}, nil, &v)
+		if isStatus(err, 404) {
+			return "", false, nil
 		}
-		g.folders = map[string]string{}
-		for _, f := range v.Value {
-			g.folders[strings.ToLower(f.DisplayName)] = f.ID
+		if err != nil {
+			return "", false, failure(graphWords.describe(err, scopeGraphReadWrite, false))
+		}
+		id, ok = match(v.Value, part)
+	}
+	return id, ok, nil
+}
+
+func (g *graph) hasFolder(ctx context.Context, name string) (bool, error) {
+	_, found, err := g.findFolder(ctx, name)
+	return found, err
+}
+
+// labelUsesFolder is false: Graph's labels are categories on the message.
+func (g *graph) labelUsesFolder(context.Context) (bool, error) { return false, nil }
+
+// graphRoles are the well-known folders the folders command names a role for.
+var graphRoles = [][2]string{{"inbox", "inbox"}, {"drafts", "drafts"}, {"sentitems", "sent"}, {"junkemail", "junk"},
+	{"deleteditems", "trash"}, {"archive", "archive"}, {"outbox", "outbox"}}
+
+// folders answers the top-level folders, each well-known one with its role.
+func (g *graph) folders(ctx context.Context) ([]mailFolder, string, error) {
+	top, err := g.topFolders(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	roles := map[string]string{}
+	for _, r := range graphRoles {
+		var f graphFolder
+		// A mailbox without one of them answers 404; the role is only shown, so any failure leaves it out.
+		if g.api.call(ctx, "GET", "/me/mailFolders/"+r[0], url.Values{"$select": {"id"}}, nil, &f) == nil && f.ID != "" {
+			roles[f.ID] = r[1]
 		}
 	}
-	if id, ok := g.folders[strings.ToLower(name)]; ok {
-		return id, nil
+	var out []mailFolder
+	for _, f := range top {
+		out = append(out, mailFolder{Name: f.DisplayName, Role: roles[f.ID]})
 	}
-	return "", failure("No folder " + strconv.Quote(name) + " in this mailbox.")
+	return out, "/", nil
+}
+
+// createFolder creates a mail folder at the top level of the mailbox. Graph answers 409
+// ErrorFolderExists when the folder was made meanwhile.
+func (g *graph) createFolder(ctx context.Context, name string) error {
+	err := g.api.call(ctx, "POST", "/me/mailFolders", nil, map[string]any{"displayName": name}, nil)
+	if e, ok := err.(*apiError); ok && (e.reason == "ErrorFolderExists" || e.status == 409) {
+		err = nil
+	}
+	if err != nil {
+		return failure(graphWords.describe(err, scopeGraphReadWrite, false) + " The folder " + strconv.Quote(name) + " was not created; nothing was changed.")
+	}
+	g.top = nil
+	return nil
 }
 
 type graphAddress struct {

@@ -34,6 +34,11 @@ type fakeGraph struct {
 	sent    []map[string]any
 	// ignoreLimits answers as a server that ignores $top and odata.maxpagesize would.
 	ignoreLimits bool
+	// parent holds a nested folder's parent id; a folder not in it is at the top level.
+	// raceFolder makes a folder another client creates just before Graph answers a create with
+	// ErrorFolderExists.
+	parent     map[string]string
+	raceFolder bool
 }
 
 type gMsg struct {
@@ -268,7 +273,41 @@ func (f *fakeGraph) serve(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "GET" && path == "/me/mailFolders":
 		var v []any
 		for id, name := range f.folders {
-			v = append(v, map[string]string{"id": id, "displayName": name})
+			if f.parent[id] == "" {
+				v = append(v, map[string]string{"id": id, "displayName": name})
+			}
+		}
+		writeJSON(w, 200, map[string]any{"value": v})
+	case r.Method == "POST" && path == "/me/mailFolders":
+		var p struct {
+			DisplayName string `json:"displayName"`
+		}
+		_ = json.Unmarshal(body, &p)
+		for id, name := range f.folders {
+			if f.parent[id] == "" && strings.EqualFold(name, p.DisplayName) {
+				writeJSON(w, 409, map[string]any{"error": map[string]string{"code": "ErrorFolderExists", "message": "A folder with the specified name already exists."}})
+				return
+			}
+		}
+		f.nextID++
+		id := fmt.Sprintf("AQMk-new%04d", f.nextID)
+		f.folders[id] = p.DisplayName
+		if f.raceFolder {
+			writeJSON(w, 409, map[string]any{"error": map[string]string{"code": "ErrorFolderExists", "message": "A folder with the specified name already exists."}})
+			return
+		}
+		writeJSON(w, 201, map[string]string{"id": id, "displayName": p.DisplayName})
+	case r.Method == "GET" && len(parts) == 4 && parts[1] == "mailFolders" && parts[3] == "childFolders":
+		id, ok := f.folderOf(parts[2])
+		if !ok {
+			graphNotFound(w)
+			return
+		}
+		var v []any
+		for child, name := range f.folders {
+			if f.parent[child] == id {
+				v = append(v, map[string]string{"id": child, "displayName": name})
+			}
 		}
 		writeJSON(w, 200, map[string]any{"value": v})
 	case r.Method == "GET" && len(parts) == 3 && parts[1] == "mailFolders":
