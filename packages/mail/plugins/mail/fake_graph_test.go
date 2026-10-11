@@ -37,6 +37,7 @@ type fakeGraph struct {
 }
 
 type gMsg struct {
+	MsgID                                                     string
 	ID, Conv, From, FromName, Subject, Body, BodyType, Folder string
 	To, Cc, ReplyTo                                           []string
 	Received                                                  time.Time
@@ -88,8 +89,24 @@ func (f *fakeGraph) add(from, subject, body string, received time.Time, read boo
 	defer f.mu.Unlock()
 	f.nextID++
 	f.seq++
-	m := &gMsg{ID: fmt.Sprintf("AAMkAGI2THVSAAA%04d=", f.nextID), Conv: fmt.Sprintf("AAQkConv%04d=", f.nextID), From: from, FromName: "Sender " + strconv.Itoa(f.nextID),
+	m := &gMsg{ID: fmt.Sprintf("AAMkAGI2THVSAAA%04d=", f.nextID), MsgID: fmt.Sprintf("<graph-%04d@contoso.test>", f.nextID), Conv: fmt.Sprintf("AAQkConv%04d=", f.nextID), From: from, FromName: "Sender " + strconv.Itoa(f.nextID),
 		Subject: subject, Body: body, BodyType: "html", Folder: "inbox", To: []string{"person@contoso.test"}, Received: received.UTC().Truncate(time.Second), IsRead: read, seq: f.seq}
+	f.msgs = append(f.msgs, m)
+	return m.ID
+}
+
+// sentIn puts a message the person sent in Sent Items, in a conversation ("" for a new one), and
+// answers its id.
+func (f *fakeGraph) sentIn(conv, subject string, when time.Time) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextID++
+	f.seq++
+	if conv == "" {
+		conv = fmt.Sprintf("AAQkConv%04d=", f.nextID)
+	}
+	m := &gMsg{ID: fmt.Sprintf("AAMkSENT%04d=", f.nextID), Conv: conv, From: "person@contoso.test", Subject: subject, Body: "Sent text",
+		BodyType: "text", Folder: "sentitems", Received: when.UTC().Truncate(time.Second), IsRead: true, seq: f.seq}
 	f.msgs = append(f.msgs, m)
 	return m.ID
 }
@@ -120,7 +137,8 @@ func (m *gMsg) json(full bool) map[string]any {
 	if len(preview) > 60 {
 		preview = preview[:60]
 	}
-	out := map[string]any{"id": m.ID, "conversationId": m.Conv, "subject": m.Subject, "receivedDateTime": m.Received.Format(time.RFC3339),
+	out := map[string]any{"id": m.ID, "conversationId": m.Conv, "internetMessageId": m.MsgID, "subject": m.Subject,
+		"receivedDateTime": m.Received.Format(time.RFC3339), "sentDateTime": m.Received.Format(time.RFC3339),
 		"isRead": m.IsRead, "isDraft": m.IsDraft, "bodyPreview": preview, "parentFolderId": m.Folder, "categories": m.Categories,
 		"from": map[string]any{"emailAddress": map[string]string{"name": m.FromName, "address": m.From}}}
 	if full {
@@ -176,6 +194,10 @@ func graphMatches(m *gMsg, filter string) bool {
 		case strings.HasPrefix(c, "receivedDateTime ge "):
 			t, _ := time.Parse(time.RFC3339, strings.TrimPrefix(c, "receivedDateTime ge "))
 			if m.Received.Before(t) {
+				return false
+			}
+		case strings.HasPrefix(c, "conversationId eq "):
+			if m.Conv != strings.Trim(strings.TrimPrefix(c, "conversationId eq "), "'") {
 				return false
 			}
 		case c == "isRead eq false":

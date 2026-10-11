@@ -1,9 +1,11 @@
-# Mail 2.0.4
+# Mail 2.1.0
 
 A team that works with your mailbox: a Manager you talk to, and a plugin member, Mailer, that lists,
 searches and reads your mail, files it when you allow that, watches your Inbox for new mail, and
 drafts or sends email: HTML made from the text by default, or plain text with `format: text`. A reply
-is threaded to the message it answers, so your mail program shows it in that conversation.
+is threaded to the message it answers, so your mail program shows it in that conversation. Mailer
+tells whether you replied to a message, and follows a message you choose, reminding the team until
+you reply.
 
 ## What install asks you for
 
@@ -20,6 +22,9 @@ is threaded to the message it answers, so your mail program shows it in that con
 - **Mailer's `markRead`** - off unless you turn it on. Only you can set it.
 - **Mailer's `moveTo`** - the folders and labels Mailer may move mail to or label it with; empty
   unless you fill it. Only you can set it.
+- **Mailer's follow quiet hours** - `followQuietStart` and `followQuietEnd` (HH:MM, as 22:00 and
+  07:00; empty for none) in `followTimeZone` (an IANA name such as Europe/London; UTC unless you set
+  it). No reminder is listed in them. Only you can set them.
 
 No documents are uploaded and no secrets are bound.
 
@@ -45,16 +50,39 @@ the check's output.
 The **Mail** site (Open on the tile) shows where the watch has read up to and what is waiting for an
 acknowledgement. Mailer keeps one record per mailbox and folder there, never one per message, and
 one more per mailbox of the messages it has shown you, as short fingerprints of their ids, so a
-reply answers only a message it listed or read.
+reply answers only a message it listed or read. A followed message has a record of its own (see
+below).
+
+## Replied and follow-up reminders
+
+`replied <id>` says whether you replied to a message from this mailbox: yes, with the reply's sent
+time and subject, or no. A reply is a message in your Sent folder, sent after the original arrived,
+threaded to it: over IMAP its `In-Reply-To` or `References` names the original's Message-ID (Sent is
+the folder your server marks `\Sent`); on Google it is a sent message in the same thread; on
+Microsoft, a message in Sent Items in the same conversation. The `\Answered` flag is never used.
+Mailer cannot see a new message to the sender that is not a reply, or a reply sent from another
+mailbox: either reads as not replied.
+
+`follow <id> [every:<hours>h]` follows a message until you reply, and `unfollow <id>` stops. Each
+check of the watch looks for the reply. Once you reply, the follow ends and one
+`plugin.mail.answered` event lists the message. Until then, once per interval (1 to 24 hours,
+1 by default), one `plugin.mail.unanswered` event lists every followed message still waiting -
+sender, subject, since when and how many hours, never the body. In your quiet hours no reminder is
+listed; the first check after lists each one due, once. A followed message you move keeps its
+follow. `replied` and `follow` take only a message Mailer listed or read, as `reply` does, and a
+mailbox follows at most 50 messages.
+
+The Mail site lists the followed messages: from, subject, waiting since and last reminded.
 
 The install wakes nobody when new mail arrives. To have the Manager told, add an event trigger on
-`plugin.mail.received` for the Manager in the team's Triggers dialog (with a daily token cap).
+`plugin.mail.received` for the Manager in the team's Triggers dialog (with a daily token cap); the
+same goes for `plugin.mail.unanswered` and `plugin.mail.answered`.
 
 ## What it does and does not do
 
 - `list`, `search`, `read` (text body, links listed, attachments listed but never downloaded),
   `mark-read`/`mark-unread` (with `markRead`), `move`/`label` (to `moveTo` only), `draft`, `send`,
-  `reply`, `ack` and `watch`.
+  `reply`, `replied`, `follow`, `unfollow`, `ack` and `watch`.
 - `reply` answers a message Mailer listed or read: "Re: " and its subject, to its Reply-To or
   sender (to everyone on it only when you ask), and threaded to it - `In-Reply-To` and `References`
   over IMAP, the same thread on Google, Outlook's own reply on Microsoft. It drafts, or sends in send

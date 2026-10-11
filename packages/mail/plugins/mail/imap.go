@@ -514,9 +514,12 @@ func (b *imapBox) read(ctx context.Context, id string) (*fullMessage, error) {
 		return nil, failure("No message " + id + " in this mailbox.")
 	}
 	s := envelopeSummary(folder, m)
-	full := &fullMessage{ID: s.ID, Thread: s.Thread, From: s.From, Date: s.Date, Subject: s.Subject, Folders: []string{folder}}
+	full := &fullMessage{ID: s.ID, Thread: s.Thread, From: s.From, Date: s.Date, Subject: s.Subject, Folders: []string{folder}, Arrived: m.InternalDate}
 	if m.Envelope != nil {
 		full.To, full.Cc = addressList(m.Envelope.To), addressList(m.Envelope.Cc)
+		if full.Arrived.IsZero() {
+			full.Arrived = m.Envelope.Date
+		}
 	}
 	if h, err := mail.ReadMessage(bytes.NewReader(append(m.FindBodySection(threading), "\r\n"...))); err == nil {
 		dec := &mime.WordDecoder{CharsetReader: charset.Reader}
@@ -884,4 +887,70 @@ func (b *imapBox) watchNext(ctx context.Context, w watchSpec, pos position) (pos
 		msgs = slices.DeleteFunc(msgs, func(s summary) bool { return !s.Unread })
 	}
 	return position{IMAP: &next}, msgs, "", nil
+}
+
+// sentFolder is the folder the server marks \Sent (special-use), else one named Sent.
+func (b *imapBox) sentFolder() (string, error) {
+	boxes, err := b.mailboxes()
+	if err != nil {
+		return "", err
+	}
+	for _, m := range boxes {
+		if slices.Contains(m.Attrs, imap.MailboxAttrSent) {
+			return m.Mailbox, nil
+		}
+	}
+	if f, err := b.folder("Sent"); err == nil {
+		return f, nil
+	}
+	return "", failure("This mailbox has no Sent folder (no folder is marked \\Sent or named Sent), so Mailer cannot tell whether a message was replied to.")
+}
+
+// replied looks in Sent for a message whose In-Reply-To, then whose References, holds the
+// original's Message-ID, sent after the original arrived.
+func (b *imapBox) replied(ctx context.Context, o original) (*sentReply, error) {
+	mid := reMsgID.FindString(o.MessageID)
+	if mid == "" {
+		return nil, failure("The message has no Message-ID, so no reply can name it and Mailer cannot tell whether it was replied to.")
+	}
+	sent, err := b.sentFolder()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := b.open(sent, false); err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"In-Reply-To", "References"} {
+		data, err := b.c.UIDSearch(&imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: key, Value: mid}}}, nil).Wait()
+		if err != nil {
+			return nil, b.imapFailure("search the Sent folder", err)
+		}
+		uids := data.AllUIDs()
+		if len(uids) == 0 {
+			continue
+		}
+		msgs, err := b.c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{UID: true, Envelope: true, InternalDate: true}).Collect()
+		if err != nil {
+			return nil, b.imapFailure("read the Sent folder", err)
+		}
+		var first *sentReply
+		for _, m := range msgs {
+			when := m.InternalDate
+			subject := ""
+			if m.Envelope != nil {
+				subject = m.Envelope.Subject
+				if !m.Envelope.Date.IsZero() {
+					when = m.Envelope.Date
+				}
+			}
+			if !when.After(o.Arrived) || (first != nil && !when.Before(first.Sent)) {
+				continue
+			}
+			first = &sentReply{ID: imapID(sent, m.UID), Subject: subject, Sent: when}
+		}
+		if first != nil {
+			return first, nil
+		}
+	}
+	return nil, nil
 }

@@ -25,6 +25,9 @@ type provider interface {
 	// the position after the last one answered. note is a sentence for the run's output, such as
 	// a position the provider no longer knows being started again from now.
 	watchNext(ctx context.Context, w watchSpec, pos position) (next position, msgs []summary, note string, err error)
+	// replied answers the first reply this mailbox sent to o after o arrived, or nil when Sent
+	// holds none. It never reads the \Answered flag.
+	replied(ctx context.Context, o original) (*sentReply, error)
 	close()
 }
 
@@ -56,6 +59,21 @@ type fullMessage struct {
 	// The headers a reply threads by, as the message carries them: its Message-ID, References
 	// and Reply-To. Graph, which threads a reply itself, fills only ReplyTo.
 	MessageID, References, ReplyTo string
+	// Arrived is when the mailbox received the message.
+	Arrived time.Time
+}
+
+// original is what replied looks for: the message's Message-ID, its thread as the provider keeps
+// it (Gmail's threadId, Graph's conversationId) and when it arrived.
+type original struct {
+	MessageID, Thread string
+	Arrived           time.Time
+}
+
+// sentReply is a reply found in Sent: its id there, subject and sent time.
+type sentReply struct {
+	ID, Subject string
+	Sent        time.Time
 }
 
 // query is the portable query list and search take. Raw, when set, is the provider's own query

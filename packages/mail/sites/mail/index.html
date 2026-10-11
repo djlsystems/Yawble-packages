@@ -2,15 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Mail watch</title>
+  <title>Mail watch and follows</title>
   <link rel="stylesheet" href="site.css">
   <script src="/sites/_sdk/site.js"></script>
   <script src="app.js" defer></script>
 </head>
 <body>
-  <h1>Mail watch</h1>
+  <h1>Mail watch and follows</h1>
   <p class="lead">Where Mailer's watch has read up to in each folder it watches, and the mail it has listed that nobody has acknowledged yet. Mailer keeps one record per mailbox and folder; nothing here is the mail itself.</p>
   <p id="status" class="status"></p>
+  <section class="follows">
+    <h2>Followed messages</h2>
+    <p class="lead">The messages Mailer follows until a reply from this mailbox is in Sent. Each check of the watch looks for the reply, and lists a message still waiting as unanswered once per its interval.</p>
+    <p id="follows-none">Nothing is followed.</p>
+    <table id="follows-table" class="hidden">
+      <thead><tr><th>From</th><th>Subject</th><th>Waiting since</th><th>Last reminded</th><th>Every</th></tr></thead>
+      <tbody id="follows"></tbody>
+    </table>
+  </section>
   <div id="watches"></div>
   <template id="watch">
     <section class="watch">

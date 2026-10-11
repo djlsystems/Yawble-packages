@@ -116,6 +116,8 @@ type graphMessage struct {
 	ReplyTo          []graphAddress `json:"replyTo"`
 	Subject          string         `json:"subject"`
 	ReceivedDateTime time.Time      `json:"receivedDateTime"`
+	SentDateTime     time.Time      `json:"sentDateTime"`
+	InternetMsgID    string         `json:"internetMessageId"`
 	IsRead           bool           `json:"isRead"`
 	IsDraft          bool           `json:"isDraft"`
 	BodyPreview      string         `json:"bodyPreview"`
@@ -199,7 +201,7 @@ func (g *graph) list(ctx context.Context, q query) ([]summary, string, error) {
 
 func (g *graph) read(ctx context.Context, id string) (*fullMessage, error) {
 	var m graphMessage
-	params := url.Values{"$select": {"id,conversationId,from,toRecipients,ccRecipients,replyTo,subject,receivedDateTime,isRead,body,parentFolderId,categories"}}
+	params := url.Values{"$select": {"id,conversationId,internetMessageId,from,toRecipients,ccRecipients,replyTo,subject,receivedDateTime,isRead,body,parentFolderId,categories"}}
 	if err := g.api.call(ctx, "GET", "/me/messages/"+url.PathEscape(id), params, nil, &m); err != nil {
 		if isStatus(err, 404) || isStatus(err, 400) {
 			return nil, failure("No message " + id + " in this mailbox.")
@@ -207,7 +209,8 @@ func (g *graph) read(ctx context.Context, id string) (*fullMessage, error) {
 		return nil, failure(graphWords.describe(err, scopeGraphReadWrite, false))
 	}
 	full := &fullMessage{ID: m.ID, Thread: m.ConversationID, From: m.From.String(), To: graphAddresses(m.ToRecipients),
-		Cc: graphAddresses(m.CcRecipients), ReplyTo: graphAddresses(m.ReplyTo), Date: fmtTime(m.ReceivedDateTime), Subject: m.Subject}
+		Cc: graphAddresses(m.CcRecipients), ReplyTo: graphAddresses(m.ReplyTo), Date: fmtTime(m.ReceivedDateTime), Subject: m.Subject,
+		MessageID: m.InternetMsgID, Arrived: m.ReceivedDateTime}
 	if m.ParentFolderID != "" {
 		full.Folders = append(full.Folders, g.folderName(ctx, m.ParentFolderID))
 	}
@@ -477,4 +480,26 @@ func (g *graph) watchNext(ctx context.Context, w watchSpec, pos position) (posit
 func isGraphSyncReset(err error) bool {
 	e, ok := err.(*apiError)
 	return ok && (strings.Contains(strings.ToLower(e.reason), "syncstate") || strings.Contains(strings.ToLower(e.reason), "resyncrequired"))
+}
+
+// replied looks in Sent Items for a message of the original's conversation sent after it arrived.
+func (g *graph) replied(ctx context.Context, o original) (*sentReply, error) {
+	if o.Thread == "" {
+		return nil, failure("The message has no conversation, so Mailer cannot tell whether it was replied to.")
+	}
+	params := url.Values{"$filter": {"conversationId eq " + odataQuote(o.Thread)}, "$select": {"id,conversationId,subject,sentDateTime,isDraft"}, "$top": {"50"}}
+	var v struct {
+		Value []graphMessage `json:"value"`
+	}
+	if err := g.api.call(ctx, "GET", "/me/mailFolders/sentitems/messages", params, nil, &v); err != nil {
+		return nil, failure(graphWords.describe(err, scopeGraphReadWrite, false))
+	}
+	var first *sentReply
+	for _, m := range v.Value {
+		if m.IsDraft || m.ConversationID != o.Thread || !m.SentDateTime.After(o.Arrived) || (first != nil && !m.SentDateTime.Before(first.Sent)) {
+			continue
+		}
+		first = &sentReply{ID: m.ID, Subject: m.Subject, Sent: m.SentDateTime}
+	}
+	return first, nil
 }

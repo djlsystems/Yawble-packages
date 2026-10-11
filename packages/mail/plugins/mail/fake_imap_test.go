@@ -74,6 +74,37 @@ type fakeIMAP struct {
 	user *imapmemserver.User
 	port int
 	sec  string
+	// folders are the folders it was made with; sent, when set, is the one LIST marks \Sent.
+	folders []string
+	sent    string
+}
+
+// sentSession is a session whose LIST marks the fake's sent folder \Sent, as a server with
+// SPECIAL-USE does; imapmemserver keeps no special-use attributes of its own.
+type sentSession struct {
+	imapserver.Session
+	f *fakeIMAP
+}
+
+func (s sentSession) List(w *imapserver.ListWriter, ref string, patterns []string, options *imap.ListOptions) error {
+	for _, name := range s.f.folders {
+		data := &imap.ListData{Mailbox: name, Delim: '/'}
+		if name == s.f.sent {
+			data.Attrs = []imap.MailboxAttr{imap.MailboxAttrSent}
+		}
+		if err := w.WriteList(data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s sentSession) Move(w *imapserver.MoveWriter, numSet imap.NumSet, dest string) error {
+	return s.Session.(imapserver.SessionMove).Move(w, numSet, dest)
+}
+
+func (s sentSession) Namespace() (*imap.NamespaceData, error) {
+	return s.Session.(imapserver.SessionNamespace).Namespace()
 }
 
 type quietLogger struct{}
@@ -83,10 +114,26 @@ func (quietLogger) Println(...any)        {}
 
 func newFakeIMAP(t *testing.T, security string) *fakeIMAP {
 	t.Helper()
+	return newFakeIMAPWith(t, security, "")
+}
+
+// newFakeIMAPWithSent is the fake with a folder named "Sent Messages" that LIST marks \Sent, so
+// only its special-use attribute finds it.
+func newFakeIMAPWithSent(t *testing.T) *fakeIMAP {
+	t.Helper()
+	return newFakeIMAPWith(t, "TLS", "Sent Messages")
+}
+
+func newFakeIMAPWith(t *testing.T, security, sent string) *fakeIMAP {
+	t.Helper()
 	cfg := testTLS(t)
 	mem := imapmemserver.New()
 	user := imapmemserver.NewUser(imapUser, appPassword)
-	for _, box := range []string{"INBOX", "Drafts", "Archive", "Receipts"} {
+	f := &fakeIMAP{user: user, sec: security, folders: []string{"INBOX", "Drafts", "Archive", "Receipts"}, sent: sent}
+	if sent != "" {
+		f.folders = append(f.folders, sent)
+	}
+	for _, box := range f.folders {
 		if err := user.Create(box, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -94,6 +141,9 @@ func newFakeIMAP(t *testing.T, security string) *fakeIMAP {
 	mem.AddUser(user)
 	opts := &imapserver.Options{
 		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
+			if sent != "" {
+				return sentSession{mem.NewSession(), f}, nil, nil
+			}
 			return mem.NewSession(), nil, nil
 		},
 		Caps:   imap.CapSet{imap.CapIMAP4rev1: {}, imap.CapIMAP4rev2: {}},
@@ -111,7 +161,8 @@ func newFakeIMAP(t *testing.T, security string) *fakeIMAP {
 	srv := imapserver.New(opts)
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
-	return &fakeIMAP{user: user, port: ln.Addr().(*net.TCPAddr).Port, sec: security}
+	f.port = ln.Addr().(*net.TCPAddr).Port
+	return f
 }
 
 type literal struct{ *bytes.Reader }
