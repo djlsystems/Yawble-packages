@@ -82,7 +82,7 @@ type imapBox struct {
 	selected string
 	writable bool
 	boxes    []*imap.ListData
-	// ns is the personal namespace, read when a folder is first created or listed.
+	// ns is the personal namespace, read when a folder is first looked up, created or listed.
 	ns *imap.NamespaceDescriptor
 }
 
@@ -220,9 +220,13 @@ func (b *imapBox) findFolder(name string) (string, bool, error) {
 			}
 		}
 	}
-	if b.ns != nil && b.ns.Prefix != "" {
+	ns, err := b.namespace()
+	if err != nil {
+		return "", false, err
+	}
+	if ns.Prefix != "" {
 		for _, m := range boxes {
-			if strings.EqualFold(m.Mailbox, b.ns.Prefix+name) {
+			if strings.EqualFold(m.Mailbox, ns.Prefix+name) {
 				return m.Mailbox, true, nil
 			}
 		}

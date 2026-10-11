@@ -305,6 +305,7 @@ type imapFolders struct {
 	subscribes []string
 	failCreate string // when set, CREATE answers NO with this text
 	race       bool   // CREATE finds the folder made meanwhile and answers [ALREADYEXISTS]
+	prefix     string // the personal namespace's prefix, with "." its delimiter when set
 }
 
 type folderSession struct {
@@ -318,6 +319,9 @@ func (s folderSession) List(w *imapserver.ListWriter, ref string, patterns []str
 	defer s.x.mu.Unlock()
 	for _, name := range s.x.names {
 		data := &imap.ListData{Mailbox: name, Delim: '/'}
+		if s.x.prefix != "" {
+			data.Delim = '.'
+		}
 		if a, ok := s.x.roles[name]; ok {
 			data.Attrs = []imap.MailboxAttr{a}
 		}
@@ -333,6 +337,9 @@ func (s folderSession) Create(name string, options *imap.CreateOptions) error {
 	defer s.x.mu.Unlock()
 	s.x.creates = append(s.x.creates, name)
 	switch {
+	case slices.Contains(s.x.names, name):
+		// As servers without the ALREADYEXISTS response code answer.
+		return &imap.Error{Type: imap.StatusResponseTypeNo, Text: "Mailbox already exists"}
 	case s.x.failCreate != "":
 		return &imap.Error{Type: imap.StatusResponseTypeNo, Text: s.x.failCreate}
 	case s.x.race:
@@ -361,6 +368,9 @@ func (s folderSession) Move(w *imapserver.MoveWriter, numSet imap.NumSet, dest s
 }
 
 func (s folderSession) Namespace() (*imap.NamespaceData, error) {
+	if s.x.prefix != "" {
+		return &imap.NamespaceData{Personal: []imap.NamespaceDescriptor{{Prefix: s.x.prefix, Delim: '.'}}}, nil
+	}
 	return s.Session.(imapserver.SessionNamespace).Namespace()
 }
 
@@ -394,6 +404,67 @@ func TestIMAPCreatesAMissingMoveToFolderOnceAndMoves(t *testing.T) {
 	}
 	if f.count(t, "INBOX") != 0 || f.count(t, "New Customers") != 2 {
 		t.Fatalf("want both in the new folder, INBOX %d New Customers %d", f.count(t, "INBOX"), f.count(t, "New Customers"))
+	}
+}
+
+// On a server whose personal namespace has a prefix (INBOX. on Courier and some Dovecot setups),
+// a folder Mailer made is INBOX.<name>, and later runs find it without creating it again.
+func TestIMAPPrefixedNamespaceExistingFolderIsUsedAndNothingCreated(t *testing.T) {
+	f, x := newFoldersIMAP(t, nil, "INBOX.New Customers")
+	x.prefix = "INBOX."
+	now := time.Now()
+	a := f.deliver(t, "INBOX", rawMail("a@example.org", "A", "a", "", now, ""), now, false)
+	o := runIt(t, "move \"New Customers\" "+a, imapOpts(f, nil, newCustomers))
+	mustOK(t, o)
+	contains(t, o.output, "Moved 1 messages to New Customers: "+a+" (now 1@INBOX.New%20Customers)")
+	if strings.Contains(o.output, "Created folder") || len(x.creates) != 0 || len(x.subscribes) != 0 {
+		t.Fatalf("the folder exists, so nothing is created; got %q, CREATE %v", o.output, x.creates)
+	}
+	if f.count(t, "INBOX.New Customers") != 1 {
+		t.Fatal("want it moved into the existing folder")
+	}
+}
+
+func TestIMAPPrefixedNamespaceCreatesOnceAndALaterRunFindsIt(t *testing.T) {
+	f, x := newFoldersIMAP(t, nil)
+	x.prefix = "INBOX."
+	now := time.Now()
+	a := f.deliver(t, "INBOX", rawMail("a@example.org", "A", "a", "", now, ""), now, false)
+	o := runIt(t, "move \"New Customers\" "+a, imapOpts(f, nil, newCustomers))
+	mustOK(t, o)
+	contains(t, o.output, "Created folder New Customers; moved 1 messages: "+a+" (now ")
+	if !slices.Equal(x.creates, []string{"INBOX.New Customers"}) || !slices.Equal(x.subscribes, []string{"INBOX.New Customers"}) {
+		t.Fatalf("want one CREATE and SUBSCRIBE of INBOX.New Customers, got %v and %v", x.creates, x.subscribes)
+	}
+	for _, from := range []string{"b@example.org", "c@example.org"} {
+		m := f.deliver(t, "INBOX", rawMail(from, "B", "b", "", now, ""), now, false)
+		o = runIt(t, "move \"New Customers\" "+m, imapOpts(f, nil, newCustomers))
+		mustOK(t, o)
+		contains(t, o.output, "Moved 1 messages to New Customers: "+m+" (now ")
+	}
+	if len(x.creates) != 1 || len(x.subscribes) != 1 || strings.Contains(o.output, "Created folder") {
+		t.Fatalf("later runs find the folder and create nothing; got CREATE %v", x.creates)
+	}
+	if f.count(t, "INBOX") != 0 || f.count(t, "INBOX.New Customers") != 3 {
+		t.Fatalf("want all three moved, INBOX %d INBOX.New Customers %d", f.count(t, "INBOX"), f.count(t, "INBOX.New Customers"))
+	}
+}
+
+// A server answering CREATE of an existing folder with a plain NO, without [ALREADYEXISTS], is
+// never asked to create a folder that is there. A label there is a keyword and needs no folder.
+func TestIMAPPrefixedNamespaceExistingFolderNeverMeetsAPlainNo(t *testing.T) {
+	f, x := newFoldersIMAP(t, nil, "INBOX.New Customers")
+	x.prefix = "INBOX."
+	now := time.Now()
+	for _, cmd := range []string{"move", "label"} {
+		a := f.deliver(t, "INBOX", rawMail("a@example.org", "A", "a", "", now, ""), now, false)
+		mustOK(t, runIt(t, cmd+" \"New Customers\" "+a, imapOpts(f, nil, newCustomers)))
+	}
+	if len(x.creates) != 0 {
+		t.Fatalf("want no CREATE for an existing folder, got %v", x.creates)
+	}
+	if f.count(t, "INBOX.New Customers") != 1 {
+		t.Fatalf("want the moved one there, got %d", f.count(t, "INBOX.New Customers"))
 	}
 }
 
