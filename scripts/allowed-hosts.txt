@@ -19,3 +19,6 @@ console.twilio.com            # the Twilio Console pages the twilio package link
 www.twilio.com                # Twilio's documentation the twilio package links to
 demo.twilio.com               # Twilio's demo reply URL, a number's default the twilio plugin's tests recognise
 yawble.ai                     # the Yawble website, whose Marketplace serves every package zip
+api.stripe.com                # the Stripe API the stripe plugin calls with its restricted key
+dashboard.stripe.com          # the Stripe Dashboard page the stripe package links to for making the restricted key
+vault.azure.net               # Azure Key Vault (<name>.vault.azure.net), where the stripe plugin writes webhook signing secrets
