@@ -13,6 +13,7 @@ th { background: #f5f7fa; }
 .badge.done { background: #e3f4e8; color: #1e6b34; }
 .badge.next { background: #fff3d6; color: #7a5300; }
 .badge.waiting { background: #e6eefc; color: #23468c; }
+.tag { display: inline-block; border-radius: 3px; padding: 0 .35rem; font-size: .75rem; font-weight: 600; background: #e6eefc; color: #23468c; vertical-align: 1px; }
 .status-delivered, .status-active { color: #1e6b34; }
 .status-failed, .status-undelivered, .status-opted-out { color: #8a1c13; }
 .status-pending { color: #7a5300; }

@@ -285,6 +285,12 @@ func TestThePrefixAndTheOptOutLineGoOnEveryTextToEveryRecipient(t *testing.T) {
 	if !strings.Contains(r.text, "As sent: "+want[0]) {
 		t.Fatalf("the reply does not show the text as sent: %s", r.text)
 	}
+	// The page's record holds the text exactly as sent (the fake gives every text one SID, so the
+	// record is the last one), and its snippet is the start of that text.
+	doc := r.put(colMessages, "SM0000000000000000000000000000new1")
+	if doc == nil || doc["body"] != want[2] || doc["snippet"] != snippet(want[2], 80) {
+		t.Fatalf("the record is not the text as sent: %v", doc)
+	}
 }
 
 func TestATextThatAlreadyCarriesTheNameOrTheOptOutLineIsNotGivenItTwice(t *testing.T) {

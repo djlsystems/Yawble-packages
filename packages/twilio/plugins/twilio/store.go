@@ -49,6 +49,7 @@ type messageDoc struct {
 	Price        string `json:"price,omitempty"`
 	PriceUnit    string `json:"priceUnit,omitempty"`
 	Snippet      string `json:"snippet"`
+	Body         string `json:"body,omitempty"` // an outbound text exactly as sent
 	Media        int    `json:"media"`
 	Test         bool   `json:"test,omitempty"`
 	Created      string `json:"created"`

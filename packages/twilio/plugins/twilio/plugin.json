@@ -3,7 +3,7 @@
   "id": "twilio",
   "name": "Twilio",
   "description": "Sends SMS and MMS through Twilio with a restricted API key, reads delivery status and replies by polling, and keeps a consented-recipients list and opt-outs on the twilio site. Dry run by default; sends only to your numbers or person-activated consented recipients; never buys numbers or deletes anything.",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/twilio",

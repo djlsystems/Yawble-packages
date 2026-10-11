@@ -368,7 +368,7 @@ func (p *plugin) send(kind, text string) (string, error) {
 	}
 	doc := &messageDoc{
 		Sid: m.Sid, Direction: "out", To: to, From: from, Status: m.Status, Segments: segs,
-		Snippet: snippet(req.body, 80), Media: len(req.media), Created: stamp, Updated: stamp,
+		Snippet: snippet(body, 80), Body: body, Media: len(req.media), Created: stamp, Updated: stamp,
 		Test: allowlisted && p.st.setup["firstDelivered"] == nil,
 	}
 	p.st.putMessage(p, doc)

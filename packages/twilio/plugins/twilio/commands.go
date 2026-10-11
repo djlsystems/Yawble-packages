@@ -119,6 +119,9 @@ func (p *plugin) recordStatus(m message) (*messageDoc, bool) {
 		created := isoTime(m.DateCreated)
 		doc = &messageDoc{Sid: m.Sid, Direction: dir, To: m.To, From: m.From, Segments: segs,
 			Snippet: snippet(m.Body, 80), Media: m.media(), Created: created}
+		if dir == "out" {
+			doc.Body = m.Body
+		}
 	}
 	changed := doc.Status != m.Status || doc.ErrorCode != m.code()
 	doc.Status = m.Status

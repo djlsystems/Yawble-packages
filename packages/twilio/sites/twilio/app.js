@@ -89,6 +89,15 @@ async function renderSetup() {
     : 'Waiting for the first check. It runs right after install and then with every poll.';
 }
 
+// The text exactly as it was sent (an outbound text's `body`, the business name and the opt-out
+// line included), or the snippet the plugin kept; a setup test is a tag beside it, never in it.
+function textCell(d) {
+  const td = el('td');
+  if (d.test) td.append(el('span', 'setup test', 'tag'), ' ');
+  td.append(String(d.body || d.snippet || ''));
+  return td;
+}
+
 async function renderMessages() {
   const items = await site.data.list('messages');
   items.sort((a, b) => String(b.doc.created || b.updatedAt).localeCompare(String(a.doc.created || a.updatedAt)));
@@ -102,7 +111,7 @@ async function renderMessages() {
       el('td', inbound ? 'in' : 'out'),
       el('td', inbound ? d.from : d.to),
       el('td', status, 'status-' + String(d.status || '').toLowerCase()),
-      el('td', (d.test ? '(setup test) ' : '') + (d.snippet || d.body || '')),
+      textCell(d),
       el('td', d.segments === undefined ? '' : d.segments));
     return tr;
   });
