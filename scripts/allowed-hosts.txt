@@ -25,3 +25,6 @@ ap.www.namecheap.com          # Namecheap's API Access page the namecheap packag
 www.namecheap.com             # Namecheap's API documentation the namecheap package links to
 www.sandbox.namecheap.com     # Namecheap's sandbox, which the namecheap package links to
 yawble.ai                     # the Yawble website, whose Marketplace serves every package zip
+api.stripe.com                # the Stripe API the stripe plugin calls with its restricted key
+dashboard.stripe.com          # the Stripe Dashboard page the stripe package links to for making the restricted key
+vault.azure.net               # Azure Key Vault (<name>.vault.azure.net), where the stripe plugin writes webhook signing secrets

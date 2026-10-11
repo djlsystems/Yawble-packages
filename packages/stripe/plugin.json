@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "id": "stripe",
+  "name": "Stripe",
+  "description": "Sets up Stripe products, one-time prices and webhook endpoints with a restricted key, and reads checkouts, payments, customers and events. Webhook signing secrets go straight into an Azure Key Vault, never into any output. Dry run by default; never moves money.",
+  "version": "1.0.0",
+  "protocol": "harness.member/1",
+  "executable": {
+    "path": "bin/linux-x64/stripe",
+    "args": []
+  },
+  "platforms": {
+    "linux-x64": "bin/linux-x64/stripe",
+    "linux-arm64": "bin/linux-arm64/stripe"
+  },
+  "requires": [],
+  "timeoutSeconds": 120,
+  "config": {
+    "mode": {
+      "type": "string",
+      "enum": [
+        "dryrun",
+        "apply"
+      ],
+      "default": "dryrun",
+      "setBy": "person",
+      "description": "dryrun looks everything up and says what it would do, and changes nothing in Stripe or Key Vault; setup in dryrun only reads, and checks each listed vault is reached. apply makes the changes; setup in apply also writes the check secret stripe-plugin-check to each listed vault to confirm it can be written."
+    },
+    "keyVaults": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "The Azure Key Vaults a webhook signing secret may be written to, by name, such as payments-vault, or by its address ending in vault.azure.net. Any other vault is refused. Empty: no webhook secret is written anywhere."
+    },
+    "expectedAccount": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "advanced": true,
+      "description": "The Stripe account (acct_...) the key must belong to. setup names it and keeps it for this member; copy it here to make it permanent. Every run refuses a key for any other account."
+    }
+  },
+  "secrets": {
+    "apiKey": {
+      "description": "A Stripe restricted key (rk_test_... or rk_live_...). A secret key (sk_...) is refused. Make it in the Stripe Dashboard under Developers, API keys, Create restricted key, with the permissions the package README lists under \"The restricted key's permissions\".",
+      "required": true
+    }
+  },
+  "connections": {
+    "microsoft": {
+      "description": "Optional: a Microsoft account that may write secrets to the Key Vaults in keyVaults. Used for the Key Vault API only.",
+      "providers": ["microsoft"],
+      "scopes": {
+        "microsoft": ["https://vault.azure.net/user_impersonation", "offline_access"]
+      },
+      "required": false
+    }
+  },
+  "events": {
+    "publishes": [
+      {
+        "type": "changed",
+        "summary": "A Stripe object was created, updated or removed in apply mode.",
+        "highVolume": false,
+        "fields": [
+          {
+            "name": "objectType",
+            "kind": "string",
+            "summary": "product, price or webhook_endpoint."
+          },
+          {
+            "name": "id",
+            "kind": "string",
+            "summary": "The Stripe id of the object."
+          },
+          {
+            "name": "lookupKey",
+            "kind": "string",
+            "summary": "The lookup key of a product or price; the URL of a webhook endpoint."
+          },
+          {
+            "name": "environment",
+            "kind": "string",
+            "summary": "test or live, from the key."
+          },
+          {
+            "name": "action",
+            "kind": "string",
+            "summary": "created, updated or deleted."
+          }
+        ]
+      },
+      {
+        "type": "refused",
+        "summary": "A command was refused: a secret key, a key for another account, a vault not in keyVaults, or bad arguments; or setup found the key lacks a needed permission, which the reason names.",
+        "highVolume": false,
+        "fields": [
+          {
+            "name": "command",
+            "kind": "string",
+            "summary": "The command, such as price ensure, without its arguments."
+          },
+          {
+            "name": "reason",
+            "kind": "string",
+            "summary": "Why, in the plugin's words."
+          }
+        ]
+      }
+    ]
+  },
+  "skills": [
+    "skills/stripe.md"
+  ]
+}
