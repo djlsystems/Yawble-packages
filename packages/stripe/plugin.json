@@ -24,7 +24,7 @@
       ],
       "default": "dryrun",
       "setBy": "person",
-      "description": "dryrun looks everything up and says what it would do, and changes nothing in Stripe or Key Vault. apply makes the changes."
+      "description": "dryrun looks everything up and says what it would do, and changes nothing in Stripe or Key Vault; setup in dryrun only reads, and checks each listed vault is reached. apply makes the changes; setup in apply also writes the check secret stripe-plugin-check to each listed vault to confirm it can be written."
     },
     "keyVaults": {
       "type": "list",
@@ -92,7 +92,7 @@
       },
       {
         "type": "refused",
-        "summary": "A command was refused: a secret key, a key for another account, a missing permission, a vault not in keyVaults, or bad arguments.",
+        "summary": "A command was refused: a secret key, a key for another account, a vault not in keyVaults, or bad arguments; or setup found the key lacks a needed permission, which the reason names.",
         "highVolume": false,
         "fields": [
           {

@@ -168,7 +168,7 @@ func (f *fake) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	if perm := permissionFor(r.Method, r.URL.Path); perm != "" {
 		resource, level, _ := strings.Cut(perm, ":")
-		if k.missing[resource] || (level == "read" && k.missing[resource+":read"]) {
+		if k.missing[resource] || (level == "read" && k.missing[resource+":read"]) || (level == "write" && k.missing[resource+":write"]) {
 			f.answer(w, 403, stripeError(403, fmt.Sprintf("The provided key '%s' does not have the required permissions for this endpoint on account '%s'.", masked, k.account)))
 			return
 		}
@@ -344,6 +344,15 @@ func (f *fake) serveVault(w http.ResponseWriter, r *http.Request, raw []byte) {
 		return
 	}
 	name, ok := strings.CutPrefix(path, "secrets/")
+	if r.Method == http.MethodGet && ok && r.URL.Query().Get("api-version") != "" {
+		versions := f.secrets[vault+"/"+name]
+		if len(versions) == 0 {
+			f.answer(w, 404, map[string]any{"error": map[string]any{"code": "SecretNotFound"}})
+			return
+		}
+		f.answer(w, 200, map[string]any{"value": versions[len(versions)-1], "id": "https://" + vault + ".vault.azure.net/secrets/" + name})
+		return
+	}
 	if r.Method != http.MethodPut || !ok || r.URL.Query().Get("api-version") == "" {
 		w.WriteHeader(400)
 		return
@@ -360,6 +369,19 @@ func (f *fake) serveVault(w http.ResponseWriter, r *http.Request, raw []byte) {
 	version := fmt.Sprintf("v%031d", len(f.secrets[key]))
 	// Key Vault echoes the value in its answer; the plugin must read the id only.
 	f.answer(w, 200, map[string]any{"value": body.Value, "id": "https://" + vault + ".vault.azure.net/secrets/" + name + "/" + version})
+}
+
+// sent are the requests to Stripe and to Key Vault that are not a GET.
+func (f *fake) sent() []call {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []call
+	for _, c := range append(append([]call{}, f.calls...), f.vaultCalls...) {
+		if c.Method != http.MethodGet {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // writes are the requests that would change something in Stripe.

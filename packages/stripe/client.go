@@ -133,38 +133,22 @@ var versionInID = regexp.MustCompile(`/secrets/[^/]+/([^/?]+)$`)
 // setSecret writes value as a new version of the secret and answers that version. The value goes
 // only into the request body; the answer, which echoes it, is read for its id and nothing else.
 func (v *vaultClient) setSecret(vault, name, value, contentType string) (string, error) {
-	if v.token == "" {
-		return "", refusal("Refused: no Microsoft connection is bound to the microsoft slot, so nothing can be written to Key Vault. A person binds one in this member's settings.")
-	}
 	body, _ := json.Marshal(map[string]any{
 		"value":       value,
 		"contentType": contentType,
 		"tags":        map[string]string{"writtenBy": "stripe-plugin"},
 	})
-	target := vaultBase(vault) + "/secrets/" + url.PathEscape(name) + "?api-version=" + vaultAPIVersion
-	req, err := http.NewRequest(http.MethodPut, target, bytes.NewReader(body))
+	status, raw, err := v.send(http.MethodPut, vault, name, body)
 	if err != nil {
-		return "", fmt.Errorf("the request to Key Vault could not be made")
+		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+v.token)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("Key Vault %s could not be reached; check the vault's name and its network rules", vault)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-
 	switch {
-	case resp.StatusCode == http.StatusUnauthorized:
-		return "", fmt.Errorf("Key Vault %s refused the Microsoft sign-in (401); reconnect the microsoft connection from Admin, Connections", vault)
-	case resp.StatusCode == http.StatusForbidden:
+	case status == http.StatusForbidden:
 		return "", fmt.Errorf("Key Vault %s does not let the signed-in account set secrets (403); give that account the Key Vault Secrets Officer role on the vault, or an access policy with Set on secrets", vault)
-	case resp.StatusCode == http.StatusNotFound:
+	case status == http.StatusNotFound:
 		return "", fmt.Errorf("Key Vault %s was not found (404); check its name in keyVaults", vault)
-	case resp.StatusCode/100 != 2:
-		return "", fmt.Errorf("Key Vault %s answered %d", vault, resp.StatusCode)
+	case status/100 != 2:
+		return "", fmt.Errorf("Key Vault %s answered %d", vault, status)
 	}
 
 	var answer struct {
@@ -178,4 +162,53 @@ func (v *vaultClient) setSecret(vault, name, value, contentType string) (string,
 		return "", fmt.Errorf("Key Vault %s did not name the new version", vault)
 	}
 	return m[1], nil
+}
+
+// reach proves the vault answers the Microsoft sign-in with a read of one secret, changing nothing.
+// The secret need not exist: a 404 still means the vault was reached. Its value is never read.
+func (v *vaultClient) reach(vault, name string) error {
+	status, _, err := v.send(http.MethodGet, vault, name, nil)
+	if err != nil {
+		return err
+	}
+	switch {
+	case status == http.StatusForbidden:
+		return fmt.Errorf("Key Vault %s does not let the signed-in account read or set secrets (403); give that account the Key Vault Secrets Officer role on the vault, or an access policy with Get and Set on secrets", vault)
+	case status == http.StatusNotFound, status/100 == 2:
+		return nil
+	default:
+		return fmt.Errorf("Key Vault %s answered %d", vault, status)
+	}
+}
+
+// send makes one request to a vault's secret and answers the status and body. A refused sign-in
+// (401) is an error here, the same for every request.
+func (v *vaultClient) send(method, vault, name string, body []byte) (int, []byte, error) {
+	if v.token == "" {
+		return 0, nil, refusal("Refused: no Microsoft connection is bound to the microsoft slot, so nothing can be written to Key Vault. A person binds one in this member's settings.")
+	}
+	target := vaultBase(vault) + "/secrets/" + url.PathEscape(name) + "?api-version=" + vaultAPIVersion
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequest(method, target, reader)
+	if err != nil {
+		return 0, nil, fmt.Errorf("the request to Key Vault could not be made")
+	}
+	req.Header.Set("Authorization", "Bearer "+v.token)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return 0, nil, fmt.Errorf("Key Vault %s could not be reached; check the vault's name and its network rules", vault)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode == http.StatusUnauthorized {
+		return 0, nil, fmt.Errorf("Key Vault %s refused the Microsoft sign-in (401); reconnect the microsoft connection from Admin, Connections", vault)
+	}
+	return resp.StatusCode, raw, nil
 }

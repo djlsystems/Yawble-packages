@@ -15,9 +15,11 @@ money. You never see the key or a webhook signing secret, and never ask anybody 
 The first words are the command. Quote a value with spaces (`"Pro plan"`).
 
 - `setup` - checks the key is restricted (`rk_`; an `sk_` key is refused), names any missing
-  permission, says test or live, keeps the key's account for this member, checks each vault in
-  `keyVaults` can be written, and ends with `Next:` (what a person does next) or `Ready:`. Pass the
-  `Next:` line to the person as it is.
+  permission (and publishes `plugin.stripe.refused` naming it), says test or live, keeps the key's
+  account for this member, checks each vault in `keyVaults`, and ends with `Next:` (what a person
+  does next) or `Ready:`. Pass the `Next:` line to the person as it is. In dryrun setup only reads:
+  it sends no write to Stripe or Key Vault and says the writes are confirmed in apply. In apply it
+  writes the check secret `stripe-plugin-check` to each vault to confirm the vault can be written.
 - `whoami` - the account, `test` or `live`, and the key's prefix only.
 - `product ensure <lookup key> <name> [description]` - the product whose lookup key this is exists
   with this name (and description, when given).

@@ -70,8 +70,81 @@ func TestSetupNamesEachMissingPermission(t *testing.T) {
 	if strings.Contains(r.text(), "Products (write)") || strings.Contains(r.text(), "Balance") {
 		t.Fatalf("a present permission was named missing:\n%s", r.text())
 	}
-	if len(f.writes()) != 0 {
-		t.Fatalf("setup changed something in Stripe: %v", f.writes())
+	if sent := f.sent(); len(sent) != 0 {
+		t.Fatalf("setup in dryrun sent a write: %v", sent)
+	}
+	ev := r.events("refused")
+	if len(ev) != 1 || ev[0]["command"] != "setup" || ev[0]["reason"] != "the restricted key lacks Prices (write), Events (read)" {
+		t.Fatalf("refused event = %v", ev)
+	}
+	if strings.Contains(r.raw, keyA) {
+		t.Fatal("the key was written out")
+	}
+}
+
+func TestSetupInApplyNamesAMissingWritePermission(t *testing.T) {
+	f := newFake(t)
+	f.keys[keyA] = fakeKey{account: accountA, missing: map[string]bool{"Webhook Endpoints:write": true}}
+
+	r := runPlugin(t, runOpts{config: map[string]any{"mode": "apply"}}, "setup")
+
+	mustContain(t, r.text(), "- permissions: missing Webhook Endpoints (write)")
+	if ev := r.events("refused"); len(ev) != 1 || ev[0]["reason"] != "the restricted key lacks Webhook Endpoints (write)" {
+		t.Fatalf("refused event = %v", ev)
+	}
+}
+
+func TestSetupInDryRunWritesNothingAnywhere(t *testing.T) {
+	f := newFake(t)
+
+	r := runPlugin(t, runOpts{vault: true, config: map[string]any{"keyVaults": []string{allowedKV}}}, "setup")
+
+	if !r.ok() {
+		t.Fatalf("setup failed: %s", r.text())
+	}
+	mustContain(t, r.text(),
+		"- Key Vault "+allowedKV+": reached with the Microsoft connection; dryrun writes nothing, so setup confirms the vault can be written when it runs with mode apply",
+		"setup confirms Products, Prices and Webhook Endpoints (write) when it runs with mode apply")
+	if sent := f.sent(); len(sent) != 0 {
+		t.Fatalf("setup in dryrun sent a write to Stripe or Key Vault: %v", sent)
+	}
+	if len(f.vaultCalls) != 1 || f.vaultCalls[0].Method != http.MethodGet {
+		t.Fatalf("vault calls = %v", f.vaultCalls)
+	}
+	if len(f.secrets) != 0 {
+		t.Fatalf("setup in dryrun left secrets in the vault: %v", f.secrets)
+	}
+}
+
+func TestSetupInDryRunSaysAVaultWithNoAccess(t *testing.T) {
+	f := newFake(t)
+	f.vaultStatus[allowedKV] = http.StatusForbidden
+
+	r := runPlugin(t, runOpts{vault: true, config: map[string]any{"keyVaults": []string{allowedKV}}}, "setup")
+
+	mustContain(t, r.text(), "- Key Vault "+allowedKV+": cannot be reached", "(403)", "Next: Fix Key Vault "+allowedKV)
+	if sent := f.sent(); len(sent) != 0 {
+		t.Fatalf("setup in dryrun sent a write: %v", sent)
+	}
+}
+
+func TestSetupInApplyWritesTheCheckSecret(t *testing.T) {
+	f := newFake(t)
+
+	r := runPlugin(t, runOpts{vault: true, config: apply(nil)}, "setup")
+
+	mustContain(t, r.text(), "- Key Vault "+allowedKV+": can be written (setup wrote the check secret "+checkSecret+")")
+	if got := f.secrets[allowedKV+"/"+checkSecret]; len(got) != 1 || got[0] != "write check" {
+		t.Fatalf("check secret = %v", got)
+	}
+	probes := 0
+	for _, c := range f.calls {
+		if c.Method == http.MethodPost && strings.Contains(c.Path, probeID) {
+			probes++
+		}
+	}
+	if probes != 3 {
+		t.Fatalf("setup in apply sent %d write-permission probes, want 3", probes)
 	}
 }
 
@@ -88,11 +161,11 @@ func TestSetupKeepsTheAccountChecksTheVaultAndSaysTheNextStep(t *testing.T) {
 		"- account: "+accountA+", kept for this member",
 		"expectedAccount (Advanced settings) to "+accountA,
 		"- permissions: all 9 present",
-		"- Key Vault "+allowedKV+": can be written",
+		"- Key Vault "+allowedKV+": reached with the Microsoft connection",
 		"- mode: dryrun",
-		"Next: When the dry runs say what you want, a person sets mode to apply.")
-	if got := f.secrets[allowedKV+"/"+checkSecret]; len(got) != 1 || got[0] != "write check" {
-		t.Fatalf("check secret = %v", got)
+		"Next: When the dry runs say what you want, a person sets mode to apply and runs setup again to confirm the writes.")
+	if len(f.secrets) != 0 {
+		t.Fatalf("setup in dryrun wrote to the vault: %v", f.secrets)
 	}
 	if pin := (&plugin{workdir: dir}).readPin(); pin != accountA {
 		t.Fatalf("kept account = %q", pin)

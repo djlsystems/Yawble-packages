@@ -22,8 +22,12 @@ changes nothing until a person sets `mode` to `apply`.
    - the key is restricted (`rk_`), not a secret key (`sk_`, refused);
    - it has each permission the plugin needs, naming any that is missing;
    - whether it is a test or a live key;
-   - each vault in `keyVaults` can be written (setup writes a secret named `stripe-plugin-check`
-     holding the words `write check`);
+   - each vault in `keyVaults` is reached with the Microsoft connection. In dry run setup only
+     reads: it sends no write to Stripe or Key Vault, checks the write permissions by reading, and
+     says the writes are confirmed when it runs with `mode` set to `apply`. In apply it also
+     confirms each vault can be written by writing a secret named `stripe-plugin-check` holding
+     the words `write check`, and confirms each write permission with an update of an object that
+     does not exist, which changes nothing;
    - the Stripe account the key belongs to, which it keeps for this member (see
      [The expected account](#the-expected-account)).
 
@@ -59,8 +63,9 @@ mode first.
    instance as in step 2 of the setup. Never paste it into a chat, a card or a file in a
    repository.
 6. Tell the member `setup`. A missing permission is named, such as
-   `- permissions: missing Prices (write)`; edit the key in the Dashboard, set that permission,
-   and run `setup` again.
+   `- permissions: missing Prices (write)`, and setup publishes `plugin.stripe.refused` naming it;
+   edit the key in the Dashboard, set that permission, and run `setup` again. A key with only
+   Read on Products, Prices or Webhook Endpoints is named missing when setup runs in apply.
 
 When the test key works the way you want, make a live key the same way with the **Test mode**
 switch off, and bind it instead.
@@ -71,11 +76,12 @@ switch off, and bind it instead.
    goes in `keyVaults`, as the name (`payments-vault`) or the address
    (`https://<name>.vault.azure.net`). The plugin writes to no vault outside that list.
 2. Give the Microsoft account you will sign in with the **Key Vault Secrets Officer** role on that
-   vault (or, on a vault that uses access policies, a policy with **Set** on secrets).
+   vault (or, on a vault that uses access policies, a policy with **Get** and **Set** on secrets).
 3. On the member's `microsoft` connection slot, sign in with that account. The slot asks for the
    Key Vault API only (`https://vault.azure.net/user_impersonation`); the plugin uses the
    connection for nothing else.
-4. Run `setup` again: `- Key Vault payments-vault: can be written`.
+4. Run `setup` again. In dry run it answers `- Key Vault payments-vault: reached with the
+   Microsoft connection`; in apply it answers `- Key Vault payments-vault: can be written`.
 
 The application reads the signing secret from Key Vault at runtime, with its own identity (a
 managed identity, or a Key Vault reference in its configuration). The secret is never copied into
