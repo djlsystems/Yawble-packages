@@ -28,6 +28,7 @@ type pollState struct {
 	SentTodayByNumber map[string]int        `json:"sentTodayByNumber"`
 	OptedOut          map[string]optOutMark `json:"optedOut"`
 	FirstMessageSent  map[string]string     `json:"firstMessageSent"`
+	AutoRepliedAt     map[string]string     `json:"autoRepliedAt,omitempty"` // number -> last auto-reply
 }
 
 type optOutMark struct {
@@ -52,6 +53,8 @@ type messageDoc struct {
 	Body         string `json:"body,omitempty"` // an outbound text exactly as sent
 	Media        int    `json:"media"`
 	Test         bool   `json:"test,omitempty"`
+	Tag          string `json:"tag,omitempty"`    // "auto-reply" for a text the plugin sent by itself
+	DryRun       bool   `json:"dryRun,omitempty"` // an auto-reply dry run records the text it would send
 	Created      string `json:"created"`
 	Updated      string `json:"updated"`
 }
@@ -158,6 +161,9 @@ func loadStore(reads []siteRead) *store {
 	}
 	if s.poll.FirstMessageSent == nil {
 		s.poll.FirstMessageSent = map[string]string{}
+	}
+	if s.poll.AutoRepliedAt == nil {
+		s.poll.AutoRepliedAt = map[string]string{}
 	}
 	return s
 }

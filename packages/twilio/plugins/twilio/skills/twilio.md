@@ -47,7 +47,8 @@ One command per instruction. The first word is the command. Phone numbers are E.
   `all` and the last 7 days by default. `out` is from our number, `in` is to it. `max` defaults
   to 20 and never exceeds it.
 - `check` - every setup check in order, as the setup checklist: secrets, credentials, account
-  type, number, capabilities, registration, mode, allowlist, last test message. Read only.
+  type, number, capabilities, registration, mode, allowlist, compliance, auto-reply (only while
+  `autoReply` is on; `Next:` when `autoReplyText` is empty), last test message. Read only.
 - `account` - the account's friendly name, `type` (Trial/Full) and `status`
   (active/suspended/closed); the balance only when the key can read it (a restricted key cannot).
 - `number` - the From number, its capabilities (sms/mms/voice), local or toll-free, and whether
@@ -103,12 +104,16 @@ message. Site files cannot be used as media: Twilio cannot fetch them.
 
 Each `poll` re-checks outbound texts that are not final (up to 72 hours old), lists new
 inbound texts to our number (the first poll starts from now), applies opt-out and opt-in keywords,
-and publishes at most one event of each type. A poll with nothing new finishes quietly and wakes
-nobody. If one step fails the others still run and a progress line names it.
+answers new texts itself when `autoReply` is on (below), and publishes at most one event of each
+type. A poll with nothing new finishes quietly and wakes nobody; neither does one whose only news is
+how its own auto-replies went (a failed one is published as any failed text). If one step fails the
+others still run and a progress line names it.
 
 - `plugin.twilio.received` - `number` (ours), `count`, `messages` (each: sid, from, date, a snippet
-  of at most 160 characters marked untrusted, `media` count), `more`. New inbound texts that are not
-  opt-out keywords.
+  of at most 160 characters marked untrusted, `media` count, and `autoReplied: true` on a text
+  twilio answered), `more`, and while `autoReply` is on `autoReplied`: how many of the new texts
+  twilio answered. New inbound texts that are not opt-out keywords. When twilio auto-replied to a
+  text, never send another reply to it: tell the person it was answered.
 - `plugin.twilio.optout` - `count`, `numbers` (each: number, keyword, date). Any new opt-out.
 - `plugin.twilio.optin` - `count`, `numbers`. START, UNSTOP or YES from a number marked opted out.
   It does not re-activate anyone: a person does that on the twilio page.
@@ -119,6 +124,23 @@ Every event carries `dryRun: false`; dry runs publish nothing.
 
 Opt-out keywords (the whole body, trimmed, any case): STOP, STOPALL, UNSUBSCRIBE, CANCEL, END,
 QUIT, REVOKE, OPTOUT. Opt-in: START, UNSTOP, YES. Help: HELP, INFO (Twilio answers these itself).
+
+## Auto-reply
+
+With `autoReply` on and `autoReplyText` set, each `poll` answers every new inbound text with
+`autoReplyText`, by itself: no agent run, and nothing a text says changes what is sent. The reply
+goes through the same checks as `sms`: in dry run it is recorded and not sent; the sender must be on
+`sendAllowlist` or an active consented recipient; an opted-out number, a country off
+`allowedCountries`, a reached cap or a body over 1600 characters refuses it; `messagePrefix` and the
+opt-out line are added as for any text. A keyword text (opt-out, opt-in, HELP, INFO) is never
+answered. A number gets at most one auto-reply in `autoReplyOncePerHours`; the time of each number's
+last auto-reply is kept in the twilio site's `state/poll`, so the window survives restarts.
+
+Each auto-reply is in `messages` like any outbound text, with `body` exactly as sent and
+`tag: "auto-reply"` (a dry run has the SID `dryrun-<inbound SID>`, status `dry run` and
+`dryRun: true`); the twilio page shows the tag beside the text. A text not answered is counted in
+one progress line per poll, by reason only - no numbers and no text:
+`poll: auto-reply answered 1 text(s), skipped 2: 1 not on sendAllowlist or the active consented list, 1 opted out.`
 
 ## Settings only a person changes
 
@@ -132,6 +154,8 @@ QUIT, REVOKE, OPTOUT. Opt-in: START, UNSTOP, YES. Help: HELP, INFO (Twilio answe
 
 - `messagePrefix` (empty), `optOutFooter` (`every`), `privacyUrl`, `termsUrl`: what every text
   carries for the campaign, and the pages it registered; `check`'s `compliance` step says them.
+- `autoReply` (off), `autoReplyText` (empty, at most 300 characters), `autoReplyOncePerHours`
+  (24, from 1 to 720): the poll's own reply to new texts, above.
 
 No command, text or event changes these. Never ask anyone to widen them.
 There are no quiet hours: a text goes when it is sent, whatever the time where the recipient is.

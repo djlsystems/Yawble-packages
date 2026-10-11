@@ -90,10 +90,12 @@ async function renderSetup() {
 }
 
 // The text exactly as it was sent (an outbound text's `body`, the business name and the opt-out
-// line included), or the snippet the plugin kept; a setup test is a tag beside it, never in it.
+// line included), or the snippet the plugin kept; a setup test or an auto-reply is a tag beside it,
+// never in it.
 function textCell(d) {
   const td = el('td');
   if (d.test) td.append(el('span', 'setup test', 'tag'), ' ');
+  if (d.tag) td.append(el('span', d.tag, 'tag'), ' ');
   td.append(String(d.body || d.snippet || ''));
   return td;
 }

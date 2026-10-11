@@ -3,7 +3,7 @@
   "id": "twilio",
   "name": "Twilio",
   "description": "Sends SMS and MMS through Twilio with a restricted API key, reads delivery status and replies by polling, and keeps a consented-recipients list and opt-outs on the twilio site. Dry run by default; sends only to your numbers or person-activated consented recipients; never buys numbers or deletes anything.",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/twilio",
@@ -133,6 +133,27 @@
       "setBy": "person",
       "description": "The https address of the terms your campaign registered. Shown by check beside what every text carries.",
       "advanced": true
+    },
+    "autoReply": {
+      "type": "bool",
+      "default": false,
+      "setBy": "person",
+      "description": "Answer each new text with autoReplyText at the next poll, by itself and through every check a send has: dry run records it, only sendAllowlist numbers or active consented recipients, never an opted-out number or a STOP, START or HELP text."
+    },
+    "autoReplyText": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "description": "The auto-reply, at most 300 characters. messagePrefix and the opt-out line are added as for any text. Empty: no auto-reply is sent and check says so."
+    },
+    "autoReplyOncePerHours": {
+      "type": "number",
+      "integer": true,
+      "min": 1,
+      "max": 720,
+      "default": 24,
+      "setBy": "person",
+      "description": "At most one auto-reply to a number in this many hours."
     }
   },
   "secrets": {
@@ -183,7 +204,12 @@
           {
             "name": "messages",
             "kind": "list",
-            "summary": "Each text: sid, from, date, snippet (at most 160 characters, inside untrusted-content markers), media (count)."
+            "summary": "Each text: sid, from, date, snippet (at most 160 characters, inside untrusted-content markers), media (count), and autoReplied: true when twilio auto-replied to it."
+          },
+          {
+            "name": "autoReplied",
+            "kind": "number",
+            "summary": "While autoReply is on: how many of the new texts twilio auto-replied to. Never send another reply to those."
           },
           {
             "name": "more",

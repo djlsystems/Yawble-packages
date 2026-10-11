@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
@@ -13,7 +14,10 @@ import (
 var (
 	optOutKeywords = set("STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "REVOKE", "OPTOUT")
 	optInKeywords  = set("START", "UNSTOP", "YES")
+	helpKeywords   = set("HELP", "INFO")
 )
+
+const autoReplyTag = "auto-reply"
 
 // A published payload must stay under the Host's excerpt limit (4,000 characters by default).
 const payloadBudget = 3500
@@ -144,7 +148,16 @@ func (p *plugin) setupSteps() []step {
 	state, text := p.complianceStep()
 	add("compliance", state, text)
 
-	// 10. The first real message to the person's own phone.
+	// 10. The auto-reply, when it is on.
+	if p.cfg.AutoReply {
+		if p.cfg.AutoReplyText == "" {
+			add("auto-reply", "Next", "auto-reply — autoReply is on but autoReplyText is empty, so no text is answered; a person sets autoReplyText in this member's settings")
+		} else {
+			add("auto-reply", "Done", fmt.Sprintf("auto-reply — on: a new text is answered with %q, at most once in %d hours to each number, through every check a send has", p.cfg.AutoReplyText, p.cfg.AutoReplyOncePerHours))
+		}
+	}
+
+	// 11. The first real message to the person's own phone.
 	state, text = p.firstMessageStep()
 	add("first message", state, text)
 
@@ -229,13 +242,13 @@ func (p *plugin) poll() outcome {
 	}
 
 	// 1. Delivery status of recent outbound messages that are not final.
-	changes, delivered := 0, 0
+	changes, delivered, autoChanges := 0, 0, 0
 	var failed []map[string]any
 	testDelivered := false
 	var pending []*messageDoc
 	for _, m := range p.st.messages {
 		created, err := time.Parse(time.RFC3339, m.Created)
-		if m.Direction == "out" && !finalStatus(m.Status) && (err != nil || now.Sub(created) <= pollLookback) {
+		if m.Direction == "out" && !m.DryRun && !finalStatus(m.Status) && (err != nil || now.Sub(created) <= pollLookback) {
 			pending = append(pending, m)
 		}
 	}
@@ -253,6 +266,9 @@ func (p *plugin) poll() outcome {
 			continue
 		}
 		changes++
+		if doc.Tag == autoReplyTag && msg.Status != "failed" && msg.Status != "undelivered" && msg.Status != "canceled" {
+			autoChanges++
+		}
 		switch msg.Status {
 		case "delivered":
 			delivered++
@@ -274,6 +290,8 @@ func (p *plugin) poll() outcome {
 
 	// 2-3. New inbound texts, with the opt-out and opt-in keywords.
 	var received, optouts, optins []map[string]any
+	var answerable []message
+	replied := map[string]bool{}
 	inboundOK := true
 	newInbound := 0
 	ours, err := p.ourNumbers()
@@ -334,8 +352,13 @@ func (p *plugin) poll() outcome {
 				}
 			default:
 				received = append(received, inboundItem(m))
+				// HELP and INFO are Twilio's to answer, like STOP and START.
+				if !helpKeywords[word] {
+					answerable = append(answerable, m)
+				}
 			}
 		}
+		replied = p.autoReply(answerable, now)
 		keep := seenKept
 		if lookback+24*time.Hour > keep {
 			keep = lookback + 24*time.Hour
@@ -354,10 +377,20 @@ func (p *plugin) poll() outcome {
 	published := false
 	if len(received) > 0 {
 		number := strings.Join(ours, ", ")
-		items, more := fit(received, func(items []map[string]any) map[string]any {
-			return map[string]any{"number": number, "count": len(items), "messages": items, "more": len(received) - len(items)}
-		})
-		p.publish("received", map[string]any{"number": number, "count": len(items), "messages": items, "more": more})
+		payload := func(items []map[string]any) map[string]any {
+			out := map[string]any{"number": number, "count": len(items), "messages": items, "more": len(received) - len(items)}
+			if p.cfg.AutoReply {
+				out["autoReplied"] = len(replied)
+			}
+			return out
+		}
+		for _, item := range received {
+			if replied[item["sid"].(string)] {
+				item["autoReplied"] = true
+			}
+		}
+		items, _ := fit(received, payload)
+		p.publish("received", payload(items))
 		published = true
 	}
 	if len(optouts) > 0 {
@@ -398,14 +431,75 @@ func (p *plugin) poll() outcome {
 	}
 	text := fmt.Sprintf("Poll: %d status change(s) (%d delivered, %d failed), %d new inbound text(s), %d opt-out(s), %d opt-in(s).",
 		changes, delivered, len(failed), newInbound, len(optouts), len(optins))
+	if p.cfg.AutoReply {
+		text += fmt.Sprintf(" Auto-replied to %d.", len(replied))
+	}
 	if len(failures) > 0 {
 		text += " Not done: " + strings.Join(failures, " ")
 	}
-	quiet := !published && changes == 0 && newInbound == 0 && len(failures) == 0
+	// A poll whose only news is how its own auto-replies went stays quiet.
+	quiet := !published && changes-autoChanges == 0 && newInbound == 0 && len(failures) == 0
 	if quiet {
 		text = "Nothing new."
 	}
 	return outcome{text: text, quiet: quiet}
+}
+
+// autoReply answers new texts with autoReplyText through the send path, at most once in
+// autoReplyOncePerHours to each number, and returns the SIDs it answered. A text it does not answer
+// is counted by reason in one progress line, which names no number and quotes no text.
+func (p *plugin) autoReply(texts []message, now time.Time) map[string]bool {
+	replied := map[string]bool{}
+	if !p.cfg.AutoReply || p.cfg.AutoReplyText == "" || len(texts) == 0 {
+		return replied
+	}
+	window := time.Duration(p.cfg.AutoReplyOncePerHours) * time.Hour
+	skipped := map[string]int{}
+	total := 0
+	for _, m := range texts {
+		if last, err := time.Parse(time.RFC3339, p.st.poll.AutoRepliedAt[m.From]); err == nil && now.Sub(last) < window {
+			skipped[fmt.Sprintf("answered in the last %d hours", p.cfg.AutoReplyOncePerHours)]++
+			total++
+			continue
+		}
+		if _, err := p.deliver(sendRequest{kind: "SMS", to: m.From, body: p.cfg.AutoReplyText}, m.Sid); err != nil {
+			var s skip
+			var r refusal
+			switch {
+			case errors.As(err, &s):
+				skipped[s.why]++
+			case errors.As(err, &r):
+				skipped["refused by the send checks or Twilio"]++
+			default:
+				skipped["Twilio could not be reached"]++
+			}
+			total++
+			continue
+		}
+		replied[m.Sid] = true
+		p.st.poll.AutoRepliedAt[m.From] = now.Format(time.RFC3339)
+		p.st.pollDirty = true
+	}
+	for number, at := range p.st.poll.AutoRepliedAt {
+		if t, err := time.Parse(time.RFC3339, at); err != nil || now.Sub(t) > window {
+			delete(p.st.poll.AutoRepliedAt, number)
+			p.st.pollDirty = true
+		}
+	}
+	line := fmt.Sprintf("poll: auto-reply answered %d text(s)", len(replied))
+	if p.cfg.Mode != "send" {
+		line += " as a dry run"
+	}
+	if total > 0 {
+		var reasons []string
+		for why, n := range skipped {
+			reasons = append(reasons, fmt.Sprintf("%d %s", n, why))
+		}
+		sort.Strings(reasons)
+		line += fmt.Sprintf(", skipped %d: %s", total, strings.Join(reasons, ", "))
+	}
+	p.progress(line + ".")
+	return replied
 }
 
 func inboundItem(m message) map[string]any {
