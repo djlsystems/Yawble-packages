@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Customer support</title>
+  <link rel="stylesheet" href="site.css">
+  <script src="/sites/_sdk/site.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <h1>Customer support</h1>
+  <p class="lead">What the team has sorted from your mailbox, by the rules in its support-playbook skill, and the inquiries waiting on your reply. Spam goes to Junk and is not counted.</p>
+  <p id="status" class="status"></p>
+  <section class="box">
+    <h2>Counts</h2>
+    <p id="counts-none">Nothing counted yet: the first new mail starts the counts.</p>
+    <dl id="counts" class="hidden">
+      <dt>New customers</dt><dd id="new-customers"></dd>
+      <dt>Orders</dt><dd id="orders"></dd>
+      <dt>Other</dt><dd id="other"></dd>
+      <dt>Counting since</dt><dd id="since"></dd>
+      <dt>Last updated</dt><dd id="updated"></dd>
+    </dl>
+  </section>
+  <section class="box">
+    <h2>Last summary</h2>
+    <p id="batch-none">No summary yet.</p>
+    <p id="batch-at" class="status"></p>
+    <ul id="batch"></ul>
+  </section>
+  <section class="box">
+    <h2>Open inquiries</h2>
+    <p class="lead">Each one is texted to you when it arrives and again every hour until your reply to it is in Sent.</p>
+    <p id="open-none">No open inquiries.</p>
+    <table id="open-table" class="hidden">
+      <thead><tr><th>From</th><th>Subject</th><th>Waiting since</th><th>Reminders</th><th>Last reminded</th></tr></thead>
+      <tbody id="open"></tbody>
+    </table>
+  </section>
+  <section class="box">
+    <h2>Closed inquiries</h2>
+    <p id="closed-none">None yet.</p>
+    <table id="closed-table" class="hidden">
+      <thead><tr><th>From</th><th>Subject</th><th>Arrived</th><th>Replied</th></tr></thead>
+      <tbody id="closed"></tbody>
+    </table>
+  </section>
+</body>
+</html>
