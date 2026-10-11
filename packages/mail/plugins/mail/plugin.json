@@ -3,7 +3,7 @@
   "id": "mail",
   "name": "Mail",
   "description": "Lists, searches, reads, marks, moves and labels mail, drafts or sends email - as HTML made from the text by default, or as plain text with format: text - drafts or sends a reply threaded to the message it answers, says whether a message was replied to, follows a message until it is, and watches a folder for new mail, over an IMAP app-password mailbox, Microsoft or Google. Drafts only by default; sends only to a person's allowlist; never deletes.",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "protocol": "harness.member/1",
   "executable": { "path": "bin/linux-x64/mail", "args": [] },
   "platforms": {
@@ -41,7 +41,7 @@
       "type": "list",
       "default": [],
       "setBy": "person",
-      "description": "The only folders and labels move and label may use (Archive, Receipts). Empty: move and label are refused. Nothing is ever deleted."
+      "description": "The only folders and labels move and label may use (Archive, Receipts). One the mailbox does not have is created at the top level on its first move or label; a nested one (Clients/Acme) must exist, and Junk, Sent and Trash are never created. The folders command lists what exists. Empty: move and label are refused. Nothing is ever deleted."
     },
     "maxResults": {
       "type": "number",

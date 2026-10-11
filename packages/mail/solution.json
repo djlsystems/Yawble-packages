@@ -2,7 +2,7 @@
   "format": 1,
   "id": "mail",
   "name": "Mail",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "A team that works with your mailbox - an IMAP app password (Gmail, iCloud, Yahoo, other), a Microsoft account or a Google account: it lists, searches and reads your mail, watches your Inbox for new mail, and writes email for you. The email it drafts or sends is HTML made from the text by default, or plain text with format: text. A reply it drafts or sends is threaded to the message it answers, so your mail program shows it in that conversation. It tells whether you replied to a message, and follows a message you choose, reminding the team until you reply. By default it only saves drafts for you to send; it sends only when you switch it to send, and only to addresses you allow. It never deletes mail.",
 
   "team": {
@@ -69,7 +69,7 @@
       {
         "member": "Mailer",
         "setting": "moveTo",
-        "description": "The only folders and labels Mailer may move mail to or label it with (Archive, Receipts). Empty (the default): it never moves or labels anything. It never deletes.",
+        "description": "The only folders and labels Mailer may move mail to or label it with (Archive, Receipts). One your mailbox does not have is created at the top level the first time Mailer uses it; a nested one (Clients/Acme) you create in your mail app. Ask for folders to see which exist. Empty (the default): it never moves or labels anything. It never deletes.",
         "required": false
       },
       {

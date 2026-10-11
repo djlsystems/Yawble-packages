@@ -37,6 +37,10 @@ type gmailBox struct {
 	oneRecord bool
 	// ignoreMax answers a list with every match, as a server that ignores maxResults would.
 	ignoreMax bool
+	// labels are the mailbox's labels, gbLabels to begin with; raceLabel makes a label another
+	// client creates just before Gmail answers a create with 409.
+	labels    []gmailLabel
+	raceLabel bool
 }
 
 type gbMsg struct {
@@ -57,7 +61,7 @@ var gbLabels = []gmailLabel{{"INBOX", "INBOX"}, {"UNREAD", "UNREAD"}, {"SENT", "
 
 func newGmailBox(t *testing.T) *gmailBox {
 	t.Helper()
-	g := &gmailBox{t: t, histID: 1000, fail: map[string]func(http.ResponseWriter){}}
+	g := &gmailBox{t: t, histID: 1000, fail: map[string]func(http.ResponseWriter){}, labels: slices.Clone(gbLabels)}
 	g.srv = httptest.NewServer(http.HandlerFunc(g.serve))
 	t.Cleanup(g.srv.Close)
 	t.Setenv(gmailBaseEnv, g.srv.URL)
@@ -203,7 +207,25 @@ func (g *gmailBox) serve(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	switch {
 	case r.Method == "GET" && path == "/labels":
-		writeJSON(w, 200, map[string]any{"labels": gbLabels})
+		writeJSON(w, 200, map[string]any{"labels": g.labels})
+	case r.Method == "POST" && path == "/labels":
+		var p struct {
+			Name string `json:"name"`
+		}
+		_ = json.Unmarshal(body, &p)
+		for _, l := range g.labels {
+			if strings.EqualFold(l.Name, p.Name) {
+				writeJSON(w, 409, map[string]any{"error": map[string]any{"code": 409, "message": "Label name exists or conflicts"}})
+				return
+			}
+		}
+		l := gmailLabel{ID: "Label_" + strconv.Itoa(100+len(g.labels)), Name: p.Name}
+		g.labels = append(g.labels, l)
+		if g.raceLabel {
+			writeJSON(w, 409, map[string]any{"error": map[string]any{"code": 409, "message": "Label name exists or conflicts"}})
+			return
+		}
+		writeJSON(w, 200, l)
 	case r.Method == "GET" && path == "/profile":
 		writeJSON(w, 200, map[string]any{"emailAddress": "person@example.test", "historyId": strconv.Itoa(g.histID)})
 	case r.Method == "GET" && path == "/messages":
