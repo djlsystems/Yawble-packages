@@ -18,4 +18,10 @@ console.twilio.com            # the Twilio Console pages the twilio package link
 1console.twilio.com           # the new Twilio Console pages the twilio package links to
 www.twilio.com                # Twilio's documentation the twilio package links to
 demo.twilio.com               # Twilio's demo reply URL, a number's default the twilio plugin's tests recognise
+api.namecheap.com             # the Namecheap API the namecheap plugin calls
+api.sandbox.namecheap.com     # Namecheap's sandbox API the namecheap plugin calls when sandbox is on
+api.ipify.org                 # the address service the namecheap plugin asks for this computer's public address (ClientIp)
+ap.www.namecheap.com          # Namecheap's API Access page the namecheap package links to
+www.namecheap.com             # Namecheap's API documentation the namecheap package links to
+www.sandbox.namecheap.com     # Namecheap's sandbox, which the namecheap package links to
 yawble.ai                     # the Yawble website, whose Marketplace serves every package zip

@@ -1,0 +1,91 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"net"
+	"regexp"
+	"strings"
+)
+
+// settings are the manifest's config, with the manifest's defaults applied again here so a request
+// that leaves a field out still gets the safe value: dry run, and no domain at all.
+type settings struct {
+	Domains  []string // lower case, no trailing dot
+	Mode     string   // dryrun or apply
+	ClientIP string   // empty: found from the address service
+	Sandbox  bool
+}
+
+type secrets struct {
+	APIUser, APIKey string
+}
+
+var domainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}$`)
+
+func normaliseDomain(d string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(d)), ".")
+}
+
+func parseSettings(raw map[string]json.RawMessage) (settings, string) {
+	s := settings{Domains: []string{}, Mode: "dryrun"}
+
+	var problems []string
+	str := func(name string, into *string) {
+		if v, ok := raw[name]; ok && string(v) != "null" {
+			if json.Unmarshal(v, into) != nil {
+				problems = append(problems, fmt.Sprintf("`%s` must be text", name))
+			}
+			*into = strings.TrimSpace(*into)
+		}
+	}
+
+	str("mode", &s.Mode)
+	s.Mode = strings.ToLower(s.Mode)
+	str("clientIp", &s.ClientIP)
+	if v, ok := raw["sandbox"]; ok && string(v) != "null" {
+		if json.Unmarshal(v, &s.Sandbox) != nil {
+			problems = append(problems, "`sandbox` must be on or off")
+		}
+	}
+	if v, ok := raw["domains"]; ok && string(v) != "null" {
+		var items []string
+		if json.Unmarshal(v, &items) != nil {
+			problems = append(problems, "`domains` must be a list")
+		}
+		for _, item := range items {
+			d := normaliseDomain(item)
+			if d == "" {
+				continue
+			}
+			if !domainPattern.MatchString(d) {
+				problems = append(problems, fmt.Sprintf("`domains` holds %q, which is not a domain name such as example.com", item))
+				continue
+			}
+			s.Domains = append(s.Domains, d)
+		}
+	}
+
+	if s.Mode != "dryrun" && s.Mode != "apply" {
+		problems = append(problems, "`mode` must be dryrun or apply")
+	}
+	if s.ClientIP != "" {
+		if ip := net.ParseIP(s.ClientIP); ip == nil || ip.To4() == nil {
+			problems = append(problems, "`clientIp` must be an IPv4 address such as 203.0.113.7, or empty to find it")
+		}
+	}
+
+	if len(problems) > 0 {
+		return s, "This member's settings cannot be used: " + strings.Join(problems, "; ") + ". A person corrects them in this member's settings; nothing was changed."
+	}
+	return s, ""
+}
+
+func (s settings) listed(domain string) bool {
+	for _, d := range s.Domains {
+		if d == domain {
+			return true
+		}
+	}
+	return false
+}

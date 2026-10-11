@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "id": "namecheap",
+  "name": "Namecheap DNS",
+  "description": "Adds and changes DNS records for the domains you list, registered at Namecheap and using Namecheap DNS, without ever losing an existing record.\n\nIt sets A, AAAA, CNAME, MX, TXT and CAA records: a custom domain's verification and certificate records for a hosted app, or a mailbox's MX, SPF, DKIM and DMARC records. Every change reads the domain's current records, changes only the one named, saves the records before the change as a backup that restore puts back, and reads them again after writing to check every earlier record is still there. Dry run by default: it shows the records before and after and changes nothing until you set mode to apply.\n\nThe setup command checks that API access is on, that this computer's address is on Namecheap's API allow-list (naming the address), and that each listed domain is in the account and on Namecheap DNS.",
+  "version": "1.0.0",
+  "protocol": "harness.member/1",
+  "executable": {
+    "path": "bin/linux-x64/namecheap",
+    "args": []
+  },
+  "platforms": {
+    "linux-x64": "bin/linux-x64/namecheap",
+    "linux-arm64": "bin/linux-arm64/namecheap"
+  },
+  "requires": [],
+  "timeoutSeconds": 120,
+  "config": {
+    "domains": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "The only domains this member may read or change, such as example.com. Each must be in the Namecheap account and use Namecheap DNS."
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "dryrun",
+        "apply"
+      ],
+      "default": "dryrun",
+      "setBy": "person",
+      "description": "dryrun shows each change as the records before and after and changes nothing. apply makes the change, after saving a backup."
+    },
+    "clientIp": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "description": "This computer's public IPv4 address, as on Namecheap's API allow-list. Empty: the plugin finds it itself. Set it when the computer reaches the internet through an address that changes or differs from the one found.",
+      "advanced": true
+    },
+    "sandbox": {
+      "type": "bool",
+      "default": false,
+      "setBy": "person",
+      "description": "Send every call to Namecheap's sandbox API instead of the real one. The sandbox has its own account, API user and API key.",
+      "advanced": true
+    }
+  },
+  "secrets": {
+    "apiUser": {
+      "description": "Your Namecheap user name, which is the API user. It is the name you sign in to Namecheap with.",
+      "required": false
+    },
+    "apiKey": {
+      "description": "The API key from Namecheap: Profile, Tools, Namecheap API Access (shown once API access is on). Anyone with it and an allowed address can change your domains, so it goes only in this key field.",
+      "required": false
+    }
+  },
+  "events": {
+    "publishes": [
+      {
+        "type": "changed",
+        "summary": "A domain's records were changed (ensure, remove or restore in apply mode), written and checked.",
+        "highVolume": false,
+        "fields": [
+          { "name": "domain", "kind": "string", "summary": "The domain changed." },
+          { "name": "command", "kind": "string", "summary": "ensure, remove or restore." },
+          { "name": "added", "kind": "list", "summary": "Each record added, as type host value [pref] ttl." },
+          { "name": "changed", "kind": "list", "summary": "Each record changed, as before -> after." },
+          { "name": "removed", "kind": "list", "summary": "Each record removed." },
+          { "name": "backupId", "kind": "string", "summary": "The backup of the records before the change; restore <domain> <backupId> puts them back." }
+        ]
+      },
+      {
+        "type": "refused",
+        "summary": "A command was refused or failed: the domain is not listed or not on Namecheap DNS, the records could not be read, the arguments were wrong, or a write failed.",
+        "highVolume": false,
+        "fields": [
+          { "name": "command", "kind": "string", "summary": "The command: list, ensure, remove or restore." },
+          { "name": "domain", "kind": "string", "summary": "The domain the command named, when it named one." },
+          { "name": "reason", "kind": "string", "summary": "Why, in the plugin's words." }
+        ]
+      }
+    ]
+  },
+  "skills": [
+    "skills/plugin-namecheap.md"
+  ]
+}
