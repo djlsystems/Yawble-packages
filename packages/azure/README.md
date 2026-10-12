@@ -228,7 +228,9 @@ the last 30 minutes unless told otherwise, at most 500 lines.
 An app's own secrets (a third-party API key, a webhook signing secret) go in Key Vault, set by a
 person in the Azure portal or by another plugin. They never go in a template, a parameters file, a
 command or the repository: the member refuses a template that calls any list function (`list`,
-`listKeys`, `listAuthKeys` and every other `list*`), a parameters file that holds a secret's
+`listKeys`, `listAuthKeys` and every other `list*`, in any string or object key of the template,
+read after its JSON escapes are decoded, so the words `list (` in a description count too), a
+template that is not valid JSON, a parameters file that holds a secret's
 value, and an `env=` whose name or value looks like a secret. A container app
 points at the secret with `secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name>`, and
 reads it with its managed identity; `keyvault secrets <vault>` lists the names a vault holds,

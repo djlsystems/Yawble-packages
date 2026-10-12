@@ -397,6 +397,63 @@ func TestDeployRefusesEveryListFunctionWithNothingWritten(t *testing.T) {
 	}
 }
 
+// escapedL is the letter l written as a JSON escape, built at run time so no source decodes it.
+var escapedL = string([]byte{92, 'u', '0', '0', '6', 'c'})
+
+func TestDeployRefusesAListFunctionWrittenWithJSONEscapesInAValue(t *testing.T) {
+	f := newFake(t)
+	f.whatIf = []map[string]any{
+		wiChange("Create", inRG(ownedRG, "Microsoft.ManagedIdentity/userAssignedIdentities/app-id"), map[string]any{"tags": ownTags()}),
+	}
+	call := escapedL + "ist" + "Keys(resourceId('Microsoft.Storage/storageAccounts', 's'), '2023-01-01').keys[0].value"
+	withList := strings.Replace(simpleTemplate, `"resources"`, `"outputs": {"k": {"type": "string", "value": "[`+call+`]"}}, "resources"`, 1)
+	tpl := docFile(t, "escaped.json", withList)
+
+	r := runPlugin(t, runOpts{config: apply(nil)}, "deploy "+ownedRG+" "+tpl)
+
+	if r.ok() {
+		t.Fatalf("a template calling an escaped list function was accepted: %s", r.text())
+	}
+	mustContain(t, r.text(), "calls list"+"Keys", "App secrets go in Key Vault")
+	if len(f.calls) != 0 {
+		t.Fatalf("a refused template reached Azure: %v", f.calls)
+	}
+}
+
+func TestDeployRefusesAListFunctionWrittenWithJSONEscapesInAKey(t *testing.T) {
+	for name, extra := range map[string]string{
+		"variables": `"variables": {"` + escapedL + `istSecrets(x)": "v"}, `,
+		"outputs":   `"outputs": {"[` + escapedL + `ist(x)]": {"type": "string", "value": "v"}}, `,
+	} {
+		f := newFake(t)
+		f.whatIf = []map[string]any{
+			wiChange("Create", inRG(ownedRG, "Microsoft.ManagedIdentity/userAssignedIdentities/app-id"), map[string]any{"tags": ownTags()}),
+		}
+		tpl := docFile(t, "key.json", strings.Replace(simpleTemplate, `"resources"`, extra+`"resources"`, 1))
+
+		r := runPlugin(t, runOpts{config: apply(nil)}, "deploy "+ownedRG+" "+tpl)
+
+		if r.ok() {
+			t.Fatalf("%s: a key naming an escaped list function was accepted: %s", name, r.text())
+		}
+		mustContain(t, r.text(), "calls list", "App secrets go in Key Vault")
+		if len(f.calls) != 0 {
+			t.Fatalf("%s: a refused template reached Azure: %v", name, f.calls)
+		}
+	}
+}
+
+func TestListFunctionInRefusesJSONThatDoesNotParse(t *testing.T) {
+	for _, raw := range []string{`{"resources": [`, `{"a": "b"} {`, `{"a": "b"`} {
+		if _, ok := listFunctionIn([]byte(raw)); ok {
+			t.Fatalf("%q parsed", raw)
+		}
+	}
+	if m, ok := listFunctionIn([]byte(`{"a": ["play` + escapedL + `ist(x)", "the ` + escapedL + `isting"]}`)); !ok || m != "" {
+		t.Fatalf("plain words matched: %q %v", m, ok)
+	}
+}
+
 func TestDeployRefusesAnIgnoredResourceOutsideWhatTheTeamOwns(t *testing.T) {
 	f := newFake(t)
 	f.add(foreignRG, "Microsoft.Storage/storageAccounts", "theirstore", nil)

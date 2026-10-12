@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -115,6 +116,37 @@ func within(root, path string) bool {
 // They answer keys, connection strings and credentials, so a template that calls one is refused:
 // app secrets go in Key Vault.
 var secretFunctions = regexp.MustCompile(`(?i)\blist\w*\s*\(`)
+
+// listFunctionIn decodes a template's JSON and answers the first list function in any string,
+// object key or value alike, after JSON escapes such as \u006c are decoded, as Azure decodes them.
+// It reads token by token, so a key written twice is checked each time. ok is false when the
+// JSON does not parse.
+func listFunctionIn(raw []byte) (match string, ok bool) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	depth := 0
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			return "", depth == 0
+		}
+		if err != nil {
+			return "", false
+		}
+		switch t := tok.(type) {
+		case json.Delim:
+			if t == '{' || t == '[' {
+				depth++
+			} else {
+				depth--
+			}
+		case string:
+			if m := secretFunctions.FindString(t); m != "" {
+				return m, true
+			}
+		}
+	}
+}
 
 var secretParam = regexp.MustCompile(`(?i)(password|secret|key|token|connectionstring)`)
 
@@ -239,7 +271,11 @@ func (p *plugin) prepare(args []string) (*deployment, error) {
 	if s := strings.ToLower(tpl.Schema); s != "" && !strings.Contains(s, "/deploymenttemplate.json") {
 		return nil, refusef("Refused: %s is not a resource group template (its $schema is %s); this member deploys into a resource group only.", args[1], tpl.Schema)
 	}
-	if m := secretFunctions.FindString(string(raw)); m != "" {
+	m, ok := listFunctionIn(raw)
+	if !ok {
+		return nil, refusef("Refused: %s is not valid JSON, so this member cannot check it for list functions.", args[1])
+	}
+	if m != "" {
 		return nil, refusef("Refused: %s calls %s, and this member refuses every list function, since they read keys, connection strings and credentials. App secrets go in Key Vault, set by a person or another plugin, and apps read them with a managed identity; nothing was deployed.", args[1], strings.TrimSpace(strings.TrimSuffix(m, "(")))
 	}
 	d.template = raw
