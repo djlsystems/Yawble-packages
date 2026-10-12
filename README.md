@@ -3,14 +3,7 @@
 Solution packages and plugins for [Yawble](https://github.com/djlsystems/Yawble). This repository
 builds each package into a zip and checks it. Packages are published on the
 [yawble.ai](https://yawble.ai) Marketplace, which is what a Yawble instance's **Marketplace** reads.
-
-| Package | Kind | What it is |
-|---|---|---|
-| [`mail`](packages/mail) | solution | A team that reads, files, watches and drafts or sends your mail, with the `mail` plugin (Go). |
-| [`twilio`](packages/twilio) | solution | A team that texts through your Twilio account (SMS and MMS), with the `twilio` plugin (Go): dry run first, your numbers only until you add consented recipients. |
-| [`stripe`](packages/stripe) | plugin | Sets up Stripe products, prices and webhook endpoints with a restricted key (Go); webhook signing secrets go straight into Azure Key Vault. Dry run first. |
-| [`sample-echo`](packages/sample-echo) | plugin | A deterministic stand-in member (.NET) that upper-cases or reverses each instruction: for trying plugin members without a model. |
-| [`sample-echo-go`](packages/sample-echo-go) | plugin | The same stand-in member written in Go. |
+Each package's own `README.md` and manifest say what it does.
 
 ## Layout
 
@@ -48,8 +41,7 @@ build.sh <out>
 lays out one installable version of the plugin in `<out>`: `plugin.json` at its root and every file
 it names - for a Go plugin, a static binary for each of `linux-x64` and `linux-arm64` under `bin/`,
 named in the manifest's `platforms`, and its skills. Nothing else goes in `<out>`: no sources, no
-tests. It must work from any current folder (`cd "$(dirname "$0")"`), and need only Go and sh -
-except `sample-echo`'s, which publishes a .NET project and needs the .NET SDK (10).
+tests. It must work from any current folder (`cd "$(dirname "$0")"`) and need only Go and sh.
 
 ## Build
 
@@ -57,8 +49,8 @@ except `sample-echo`'s, which publishes a .NET project and needs the .NET SDK (1
 scripts/build.sh
 ```
 
-needs Go (the version the packages' `go.mod` name; Go fetches it if yours is older), the .NET SDK
-(10, for `sample-echo` only) and a POSIX sh, nothing else. It empties `dist/` and writes:
+needs Go (the version the packages' `go.mod` name; Go fetches it if yours is older) and a POSIX sh,
+nothing else. It empties `dist/` and writes:
 
 - `dist/<id>-<version>.zip` for every package;
   - a **solution** zip's root is the package folder's content - `solution.json` at the root - with
@@ -70,9 +62,8 @@ needs Go (the version the packages' `go.mod` name; Go fetches it if yours is old
   [The catalog](#the-catalog)).
 
 The zips are **reproducible**: the same commit built with the same Go gives byte-identical zips
-(fixed entry times and modes, sorted entries, `-trimpath -buildvcs=false`, and a deterministic
-`dotnet publish` with its paths mapped away). `generatedAt` in the catalog is the build's time
-unless `SOURCE_DATE_EPOCH` is set.
+(fixed entry times and modes, sorted entries, `-trimpath -buildvcs=false`). `generatedAt` in the
+catalog is the build's time unless `SOURCE_DATE_EPOCH` is set.
 
 ## Check
 
@@ -87,7 +78,7 @@ then exits 1 if any did:
 | Check | What fails it |
 |---|---|
 | `build` | `scripts/build.sh` fails for any package. |
-| `tests` | `go test ./...` fails in any Go module under `packages/` or `scripts/` - every plugin's own tests, the mail plugin's unit tests **and** its verification suite, and the helper's. |
+| `tests` | `go test ./...` fails in any Go module under `packages/` or `scripts/`. |
 | `catalog` | `dist/catalog.json` does not match `dist/`: a field the catalog does not have, a `generatedAt` that is not UTC to the second, packages not ordered by id, a zip's sha256 or size differs, a zip or a package folder is not listed, an entry names a zip that is not there, a download link that is not the Marketplace's address for that version, or any other field is not what the zip's manifests say. |
 | `people` | Any text file (tracked or not; not `.git`, binaries or zips) holds a real person's data: an email address at a domain that is not reserved; a host or domain, in a link or bare, that is not reserved, not `github.com/djlsystems`, not a Go module path a `go.mod`/`go.sum` names and not in `scripts/allowed-hosts.txt`; an authorship line (`Copyright`, `Author:`, `Signed-off-by:` ...) that does not name the project; or the name or address of anyone in the repository's git history or of the git user running it. |
 
@@ -96,28 +87,7 @@ Reserved means `example.com`, `example.net`, `example.org` and their subdomains,
 goes in `scripts/allowed-hosts.txt` with a comment saying why; nothing else does. A program cannot
 tell a real name from a made-up one on its own, so keep to made-up people (see Add a package).
 
-Run `scripts/check.sh` before you publish a package. It builds every package, so on a shared machine
-take the heavy lease first.
-
-Each module's tests can also be run on their own, from its folder:
-
-```sh
-(cd packages/mail/plugins/mail && go test ./...)               # the mail plugin's unit tests
-(cd packages/mail/plugins/mail/verification && go test ./...)  # its black-box verification suite
-(cd packages/stripe && go test ./...)                       # against a fake Stripe and Key Vault
-(cd packages/sample-echo-go && go test ./...)                   # builds it; it has no tests
-(cd scripts/pkgtool && go test ./...)                           # the scripts' own helper
-```
-
-The verification suite builds the plugin from the folder above it; to check a packaged binary
-instead, point `MAIL_BIN` at it:
-
-```sh
-MAIL_BIN=<unpacked mail zip>/plugins/mail/bin/linux-x64/mail go test -count=1 .
-```
-
-The `job-board` plugin is a Python script, and `sample-echo` and `sample-echo-go` are stand-ins, with
-no tests of their own; Yawble's own tests exercise the same code from their test data.
+A Go module's tests also run on their own, from its folder: `go test ./...`.
 
 ## The catalog
 
@@ -165,10 +135,4 @@ To make a new version of a package, raise `version` in its manifest (and in each
 ## Publish
 
 A package is published by uploading its zip, `dist/<id>-<version>.zip`, on the yawble.ai
-Marketplace's admin page. Build and check first:
-
-```sh
-scripts/check.sh
-```
-
-then upload each zip whose version is new. Publishing is a person's step.
+Marketplace's admin page, after `scripts/check.sh` passes. Upload each zip whose version is new.
