@@ -1,4 +1,4 @@
-# Mail 2.2.0
+# Mail 2.2.1
 
 A team that works with your mailbox: a Manager you talk to, and a plugin member, Mailer, that lists,
 searches and reads your mail, files it when you allow that, watches your Inbox for new mail, and

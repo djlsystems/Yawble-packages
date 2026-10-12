@@ -477,32 +477,22 @@ func (b *imapBox) summaries(folder string, uids []imap.UID) ([]summary, error) {
 	}
 	slices.SortFunc(msgs, func(x, y *imapclient.FetchMessageBuffer) int { return int(x.UID) - int(y.UID) })
 
-	// One snippet fetch per message, pipelined: each message's text part has its own path.
-	type pending struct {
-		cmd     *imapclient.FetchCommand
-		section *imap.FetchItemBodySection
-		part    *imap.BodyStructureSinglePart
-	}
-	snips := make([]pending, len(msgs))
-	for i, m := range msgs {
+	// One snippet fetch per message, each message's text part having its own path. Each is
+	// collected before the next is sent: go-imap hands a FETCH reply to its own command, and a
+	// server that answers pipelined fetches in one burst would block on a reply nobody reads yet.
+	out := make([]summary, 0, len(msgs))
+	for _, m := range msgs {
+		s := envelopeSummary(folder, m)
 		path, part := textPart(m.BodyStructure, "plain")
 		if part == nil {
 			path, part = textPart(m.BodyStructure, "html")
 		}
-		if part == nil {
-			continue
-		}
-		sec := &imap.FetchItemBodySection{Part: path, Peek: true, Partial: &imap.SectionPartial{Offset: 0, Size: 2048}}
-		snips[i] = pending{b.c.Fetch(imap.UIDSetNum(m.UID), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}), sec, part}
-	}
-	out := make([]summary, 0, len(msgs))
-	for i, m := range msgs {
-		s := envelopeSummary(folder, m)
-		if p := snips[i]; p.cmd != nil {
-			got, err := p.cmd.Collect()
+		if part != nil {
+			sec := &imap.FetchItemBodySection{Part: path, Peek: true, Partial: &imap.SectionPartial{Offset: 0, Size: 2048}}
+			got, err := b.c.Fetch(imap.UIDSetNum(m.UID), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
 			if err == nil && len(got) == 1 {
-				text := decodePart(got[0].FindBodySection(p.section), p.part, true)
-				if p.part.Subtype == "html" || strings.EqualFold(p.part.Subtype, "html") {
+				text := decodePart(got[0].FindBodySection(sec), part, true)
+				if part.Subtype == "html" || strings.EqualFold(part.Subtype, "html") {
 					text = htmlToText(text)
 				}
 				s.Snippet = cutRunes(oneLine(text), snippetChars)

@@ -161,8 +161,8 @@ func TestIdentity(t *testing.T) {
 func TestMembers(t *testing.T) {
 	s, _ := loadSolution(t)
 	ps := plugins(t)
-	if v := ps["mail"].Version; v != "2.2.0" {
-		t.Fatalf("the published mail plugin is %s, want 2.2.0", v)
+	if v := ps["mail"].Version; v != "2.2.1" {
+		t.Fatalf("the published mail plugin is %s, want 2.2.1", v)
 	}
 	if v := ps["twilio"].Version; v != "1.4.1" {
 		t.Fatalf("the published twilio plugin is %s, want 1.4.1", v)
