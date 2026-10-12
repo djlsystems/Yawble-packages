@@ -194,7 +194,7 @@ func TestPollWithoutSecretsIsQuietAndFillsTheChecklist(t *testing.T) {
 	if !r.ok || !r.quiet {
 		t.Fatalf("ok=%t quiet=%t %s", r.ok, r.quiet, r.text)
 	}
-	wantOK(t, r, "Poll skipped: Twilio is not set up: TWILIO_ACCOUNT_SID is not set on this platform; the operator sets it with the secret command; nothing was sent.")
+	wantOK(t, r, "Poll skipped: Twilio is not set up: accountSid has no value on this platform; a person sets the key bound to accountSid in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for that key; nothing was sent.")
 	if r.put(colState, "setup") == nil {
 		t.Fatal("state/setup not written")
 	}

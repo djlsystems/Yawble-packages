@@ -164,8 +164,8 @@ func TestMembers(t *testing.T) {
 	if v := ps["mail"].Version; v != "2.2.1" {
 		t.Fatalf("the published mail plugin is %s, want 2.2.1", v)
 	}
-	if v := ps["twilio"].Version; v != "1.4.1" {
-		t.Fatalf("the published twilio plugin is %s, want 1.4.1", v)
+	if v := ps["twilio"].Version; v != "1.4.2" {
+		t.Fatalf("the published twilio plugin is %s, want 1.4.2", v)
 	}
 	got := map[string]string{}
 	for _, m := range s.Members {

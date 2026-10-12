@@ -106,21 +106,43 @@ func (s sender) label() string {
 	return s.service
 }
 
+// missingSecret names the first secret setting with no value. The platform sends a plugin each
+// secret's value by setting name only, never the key the member binds to it, so the sentences name
+// the setting.
 func (p *plugin) missingSecret() string {
 	switch {
 	case p.sec.AccountSid == "":
-		return "TWILIO_ACCOUNT_SID"
+		return "accountSid"
 	case p.sec.APIKeySid == "":
-		return "TWILIO_API_KEY_SID"
+		return "apiKeySid"
 	case p.sec.APIKeySecret == "":
-		return "TWILIO_API_KEY_SECRET"
+		return "apiKeySecret"
 	}
 	return ""
 }
 
+// howToSetKeys says where the keys bound to the named secret settings are set: this member's
+// settings on the screen first, the operator CLI second.
+func howToSetKeys(names []string) string {
+	if len(names) == 1 {
+		return fmt.Sprintf("a person sets the key bound to %s in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for that key", names[0])
+	}
+	return fmt.Sprintf("a person sets the keys bound to %s in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for each of those keys", joinAnd(names))
+}
+
+func joinAnd(names []string) string {
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return names[0]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
+
 func (p *plugin) needSecrets() error {
-	if key := p.missingSecret(); key != "" {
-		return refusal(fmt.Sprintf("Twilio is not set up: %s is not set on this platform; the operator sets it with the secret command; nothing was sent.", key))
+	if name := p.missingSecret(); name != "" {
+		return refusal(fmt.Sprintf("Twilio is not set up: %s has no value on this platform; %s; nothing was sent.", name, howToSetKeys([]string{name})))
 	}
 	return nil
 }

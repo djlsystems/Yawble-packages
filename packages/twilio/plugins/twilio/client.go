@@ -56,7 +56,7 @@ func (e *apiError) Error() string {
 	case e.Unreachable:
 		return fmt.Sprintf("Could not reach %s; try again later. Nothing was sent.", e.Host)
 	case e.Status == http.StatusUnauthorized:
-		return "Twilio refused the API key (401). The operator checks the values of TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET with the secret command, or a person makes a new restricted key and the operator sets it."
+		return "Twilio rejected the keys bound to accountSid, apiKeySid and apiKeySecret (401). A person replaces them in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for each of those keys."
 	case e.Status == http.StatusForbidden && e.Perm != "":
 		return fmt.Sprintf("Twilio refused the request (403): the API key lacks the permission %s. A person adds it to the restricted key in the Twilio Console.", e.Perm)
 	case e.Status == http.StatusTooManyRequests:

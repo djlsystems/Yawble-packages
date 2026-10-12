@@ -22,10 +22,11 @@ The commands, output and refusals of `twilio` are in the skill `plugin-twilio`. 
 - **`check` after every step.** Tell `twilio` the one word `check`. Report its lines as they are,
   then say in one sentence what is done and what is next.
 - **Never a secret value.** Never ask for the Account SID's, key SID's or key secret's value, never
-  tell anyone to paste one into chat, a page or member settings, and never repeat one the person
-  pastes by mistake (tell them to make a new key, step 2). The values go to the operator's secret
-  command on the machine that runs the platform; on a single-person install the person is the
-  operator.
+  tell anyone to paste one into chat or a page, and never repeat one the person pastes by mistake
+  (tell them to make a new key, step 2). The person sets the keys bound to twilio's `accountSid`,
+  `apiKeySid` and `apiKeySecret` in the twilio member's settings on the screen, or the operator
+  runs `yawble secret set <KEY>` for each on the machine that runs the platform; on a single-person
+  install the person is the operator.
 - **Settings are the person's.** The person changes `mode`, `fromNumber`, `messagingServiceSid`,
   `sendAllowlist` and every other twilio setting on this solution's panel (Marketplace >
   Installed > Twilio SMS/MMS > Manage). You say which setting and which value when they ask; you never change one
@@ -49,7 +50,7 @@ number` / `choose fromNumber`), `capabilities`, `registration` (one or more line
 Work on the **first** `Next:` line. A `Waiting:` line needs nothing from the person but time: say
 how long it typically takes and that the twilio page shows when it changes. The first poll runs at
 install, so the checklist is filled before the first conversation. Until the secrets are set, each
-poll answers `Poll skipped: Twilio is not set up: <KEY> is not set on this platform; …` - quietly,
+poll answers `Poll skipped: Twilio is not set up: <setting> has no value on this platform; …` - quietly,
 waking nobody - and still fills the checklist.
 
 ## The steps
@@ -73,7 +74,9 @@ until step 6, so carry on with step 3. A Full one shows `Done: account type — 
 
 ### 2. Credentials (the only manual step that cannot be avoided)
 
-The person makes a **Restricted** API key, then the operator stores three values as secrets.
+The person makes a **Restricted** API key, then sets three values as the keys bound to twilio's
+`accountSid`, `apiKeySid` and `apiKeySecret`: in the twilio member's settings on the screen, or the
+operator with `yawble secret set <KEY>`.
 
 1. Open https://console.twilio.com/us1/account/keys-credentials/api-keys and press
    **Create API key**. Key type **Restricted**. Name it `yawble-twilio`. In the new Twilio
@@ -92,8 +95,10 @@ The person makes a **Restricted** API key, then the operator stores three values
 4. The Account SID (`AC…`) is on the Console home page: https://console.twilio.com/ or, in the
    new Twilio Console: https://1console.twilio.com/
 
-Then give the person this block, exactly, to run on the machine that runs the platform. Each
-`secret set` asks for the value and hides it; nothing goes on the command line or in chat:
+The person sets the three keys in the twilio member's settings on the screen first. When they use
+the operator CLI instead, give them this block, exactly, to run on the machine that runs the
+platform; it names the keys this solution binds. Each `secret set` asks for the value and hides it;
+nothing goes on the command line or in chat:
 
 ```
 # Run on the machine that runs the platform. Paste each value only when the command asks for it.
@@ -105,14 +110,16 @@ yawble up                                 # restarts the platform so twilio sees
 
 Never use the account's Auth Token: twilio does not accept it.
 
-`check` evidence: `Done: secrets — TWILIO_ACCOUNT_SID set (…1234), TWILIO_API_KEY_SID set
-(…5678), TWILIO_API_KEY_SECRET set` (last 4 characters of the SIDs, never the secret) and `Done:
+`check` evidence: `Done: secrets — accountSid set (…1234), apiKeySid set (…5678), apiKeySecret
+set` (last 4 characters of the SIDs, never the secret) and `Done:
 credentials — the API key signs in to account …1234`. What `check` names, and what to do:
 
-- `Next: secrets — <KEYS> missing; …` - those `secret set` lines were not run, or `yawble up` was
-  not run after them. Give the block again with only the missing keys.
-- `Twilio refused the API key (401)` - a value was mistyped; run the two key lines again, or make a
-  new key.
+- `Next: secrets — <settings> missing; …` - the keys bound to those settings have no value: they
+  were not set in the member's settings on the screen, or the `secret set` lines were not run, or
+  `yawble up` was not run after them. Set the keys bound to only the missing settings.
+- `Twilio rejected the keys bound to accountSid, apiKeySid and apiKeySecret (401)` - a value is
+  mistyped or the key was deleted; replace the values in the member's settings on the screen, or
+  with `yawble secret set <KEY>`, or make a new key.
 - `Twilio refused the request (403): the API key lacks the permission <permission>` - edit the key
   at the link above and tick that permission.
 

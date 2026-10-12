@@ -1,4 +1,4 @@
-# Twilio SMS/MMS 1.4.1
+# Twilio SMS/MMS 1.4.2
 
 A team that texts through your Twilio account. The **Texting Assistant** guides you through
 Twilio setup, writes texts for you and sends them through the **twilio** plugin member, and tells
@@ -89,9 +89,11 @@ number with an answer meant for the owner.
 ## Set up: talk to the Texting Assistant
 
 Say "set up Twilio" (or "what's next"). It goes one step at a time, links to the right Twilio
-Console page and runs `check` after each step. The only manual step is the three secrets, run on
-the machine that runs the platform (each command asks for the value; never paste one into chat, a
-page or settings):
+Console page and runs `check` after each step. The only manual step is the three secrets: the keys
+bound to twilio's `accountSid`, `apiKeySid` and `apiKeySecret` settings. A person sets them in the
+twilio member's settings on the screen, or the operator runs `yawble secret set <KEY>` for each on
+the machine that runs the platform; each command asks for the value and hides it. This solution
+binds the default keys:
 
 ```
 yawble secret set TWILIO_ACCOUNT_SID      # value: <AC... Account SID>   from https://console.twilio.com/
@@ -124,7 +126,8 @@ The key's secret is shown only once, when the key is created; if it is lost, mak
 **Open** on the solution's tile shows the setup checklist (Done / Next / Waiting, with Console
 links), recent texts, and the consented-recipients list where only you add and activate people.
 The first poll runs at install, so the checklist fills straight away. Until the three secrets are
-set, the 5-minute poll answers "Poll skipped: Twilio is not set up …" quietly and wakes nobody.
+set, the 5-minute poll answers "Poll skipped: Twilio is not set up: accountSid has no value on this
+platform; …" quietly and wakes nobody.
 
 ## The last setup step: the live test
 

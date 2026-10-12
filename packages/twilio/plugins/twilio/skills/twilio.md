@@ -87,8 +87,9 @@ Anything else fails with this list.
 - `optout`: `Marked +1555… opted out (by request); nothing will be sent to it. Only a person re-activates a number, on the twilio page.`
   If it already was: `+1555… was already opted out (<keyword> on <date>); nothing changed.`
 - `check`: one line per step, each `Done: <step> — <evidence>`, `Next: <step> — <what to do>` or
-  `Waiting: <step> — <since when, typical time>`. The secrets are reported set or missing by key
-  name, with the last 4 characters of the SIDs, never a secret.
+  `Waiting: <step> — <since when, typical time>`. The secrets are reported set or missing by
+  setting name (`accountSid`, `apiKeySid`, `apiKeySecret`), with the last 4 characters of the SIDs,
+  never a secret.
 
 A segment holds 160 GSM-7 or 70 UCS-2 characters (153/67 each when split); one emoji makes the
 whole text UCS-2. Statuses: `queued`, `accepted`, `scheduled`, `sending`, `sent`, `delivered`,
@@ -197,7 +198,7 @@ Nothing was sent in any of these unless the sentence says otherwise.
 
 Settings and recipients:
 
-- `Twilio is not set up: <TWILIO_ACCOUNT_SID|TWILIO_API_KEY_SID|TWILIO_API_KEY_SECRET> is not set on this platform; the operator sets it with the secret command; nothing was sent.`
+- `` Twilio is not set up: <accountSid|apiKeySid|apiKeySecret> has no value on this platform; a person sets the key bound to <setting> in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for that key; nothing was sent. `` - the platform passes the setting's value only, so the sentence names the setting, not the key bound to it (TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET as this solution installs it).
 - `Refused: mode is send but sendAllowlist is empty; a person adds at least their own cell to sendAllowlist in this member's settings. Nothing was sent.` - every command fails this way until a person fixes the settings.
 - `Twilio has no sender: the account has no SMS-capable number; buy one in the Twilio Console. Nothing was sent.`
 - `Twilio has <n> numbers and fromNumber is empty: a person chooses one (<numbers>) in this member's settings; nothing was sent.`
@@ -227,7 +228,7 @@ SID) is used by `status`, by the poll's delivery event and by `check`, for a mes
 accepted and that failed later. `Message to <number> …` is used when Twilio refused the `sms`/`mms`
 request itself, so no message (and no SID) exists; that form always reads `failed`.
 
-- `Twilio refused the API key (401). The operator checks the values of TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET with the secret command, or a person makes a new restricted key and the operator sets it.`
+- `` Twilio rejected the keys bound to accountSid, apiKeySid and apiKeySecret (401). A person replaces them in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for each of those keys. `` - a value is mistyped, or the key was deleted; when the key's secret is lost, a person makes a new restricted key in the Twilio Console first.
 - `Twilio refused the request (403): the API key lacks the permission <permission>. A person adds it to the restricted key in the Twilio Console.`
 - `Twilio answered 21608: this Trial account can only text verified numbers. Verify <number> in the Twilio Console, or upgrade the account.`
 - `Message <sid> failed with 30034: <fromNumber> is not registered for A2P 10DLC, so US carriers block it. Finish registration (ask Texting Assistant "what's next for registration").`
@@ -271,4 +272,6 @@ unknown or no longer in service; 30006 a landline or a number that cannot receiv
 the carrier filtered it as spam; 30022 over the daily carrier limit; 11751 the media is too large.
 
 Report a refusal to the person word for word, then explain it. Never ask anybody for a secret
-value: the operator sets them with the secret command on the machine that runs the platform.
+value. A person sets the keys bound to accountSid, apiKeySid and apiKeySecret in this member's
+settings on the screen, or the operator runs `yawble secret set <KEY>` for each on the machine that
+runs the platform.

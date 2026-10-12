@@ -52,16 +52,16 @@ func (p *plugin) setupSteps() []step {
 	var steps []step
 	add := func(name, state, text string) { steps = append(steps, step{name, state, text}) }
 
-	// 1. Secrets, by key name only: set or missing, and the last 4 characters of the SIDs.
+	// 1. Secrets, by setting name only: set or missing, and the last 4 characters of the SIDs.
 	keys := []struct{ key, value string }{
-		{"TWILIO_ACCOUNT_SID", p.sec.AccountSid}, {"TWILIO_API_KEY_SID", p.sec.APIKeySid}, {"TWILIO_API_KEY_SECRET", p.sec.APIKeySecret},
+		{"accountSid", p.sec.AccountSid}, {"apiKeySid", p.sec.APIKeySid}, {"apiKeySecret", p.sec.APIKeySecret},
 	}
 	var set, missing []string
 	for _, k := range keys {
 		switch {
 		case k.value == "":
 			missing = append(missing, k.key)
-		case k.key == "TWILIO_API_KEY_SECRET":
+		case k.key == "apiKeySecret":
 			set = append(set, k.key+" set")
 		default:
 			set = append(set, fmt.Sprintf("%s set (%s)", k.key, last4(k.value)))
@@ -71,8 +71,8 @@ func (p *plugin) setupSteps() []step {
 	if network {
 		add("secrets", "Done", "secrets — "+strings.Join(set, ", "))
 	} else {
-		add("secrets", "Next", fmt.Sprintf("secrets — %s missing; the operator sets each with the secret command on the machine that runs the platform (yawble secret set %s), never in chat, a page or settings. The values are on %s",
-			strings.Join(missing, ", "), strings.Join(missing, ", yawble secret set "), consoleKeys))
+		add("secrets", "Next", fmt.Sprintf("secrets — %s missing; %s. The values are on %s",
+			strings.Join(missing, ", "), howToSetKeys(missing), consoleKeys))
 		add("credentials", "Next", "credentials — set the missing secrets, then run check again")
 	}
 

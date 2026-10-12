@@ -121,14 +121,30 @@ func TestSendModeWithEmptyAllowlistRefusesAnyCommand(t *testing.T) {
 	}
 }
 
-func TestMissingSecretsAreNamedByKey(t *testing.T) {
+// The platform sends secrets by setting name only, so an unset one is named by its setting, with
+// this member's settings on the screen first and the operator CLI second.
+func TestMissingSecretsAreNamedBySetting(t *testing.T) {
 	newFake(t)
-	for field, key := range map[string]string{"accountSid": "TWILIO_ACCOUNT_SID", "apiKeySid": "TWILIO_API_KEY_SID", "apiKeySecret": "TWILIO_API_KEY_SECRET"} {
+	for _, field := range []string{"accountSid", "apiKeySid", "apiKeySecret"} {
 		s := goodSecrets()
 		delete(s, field)
 		r := runWith(t, opts{secrets: s}, sms(ownCell, "x"))
-		wantFail(t, r, "Twilio is not set up: "+key+" is not set on this platform; the operator sets it with the secret command; nothing was sent.")
+		wantFail(t, r, "Twilio is not set up: "+field+" has no value on this platform; a person sets the key bound to "+field+" in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for that key; nothing was sent.")
+		if screen, cli := strings.Index(r.text, "settings on the screen"), strings.Index(r.text, "yawble secret set"); screen < 0 || cli < screen {
+			t.Fatalf("the screen does not come before yawble secret set: %s", r.text)
+		}
+		if strings.Contains(r.text, "TWILIO_") {
+			t.Fatalf("named a default key the member may not be bound to: %s", r.text)
+		}
 	}
+}
+
+// A member bound to a non-default key: the request still carries only setting names and values,
+// so the sentence names the setting and never a default key.
+func TestMissingSecretWithCustomBindingNamesTheSetting(t *testing.T) {
+	newFake(t)
+	r := runWith(t, opts{secrets: map[string]string{"apiKeySid": testKeySid, "apiKeySecret": "s"}}, sms(ownCell, "x"))
+	wantFail(t, r, "Twilio is not set up: accountSid has no value on this platform; a person sets the key bound to accountSid in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for that key; nothing was sent.")
 }
 
 func TestSenderFallbacks(t *testing.T) {
@@ -507,7 +523,7 @@ func Test21610OnSendMarksAConsentedEntryOptedOut(t *testing.T) {
 func TestHTTPErrors(t *testing.T) {
 	f := newFake(t)
 	r := runWith(t, opts{cfg: send(), secrets: map[string]string{"accountSid": testAccount, "apiKeySid": testKeySid, "apiKeySecret": "wrong-secret"}}, sms(ownCell, "x"))
-	wantFail(t, r, "Twilio refused the API key (401). The operator checks the values of TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET with the secret command, or a person makes a new restricted key and the operator sets it.")
+	wantFail(t, r, "Twilio rejected the keys bound to accountSid, apiKeySid and apiKeySecret (401). A person replaces them in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for each of those keys.")
 
 	f.numbersCode = 403
 	wantFail(t, run1(t, nil, sms(ownCell, "x")), "Twilio refused the request (403): the API key lacks the permission /twilio/phone-numbers/active-numbers/list. A person adds it to the restricted key in the Twilio Console.")

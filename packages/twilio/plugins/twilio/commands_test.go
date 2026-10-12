@@ -248,11 +248,11 @@ func TestCheckWithNoSecretsNamesEachMissingKey(t *testing.T) {
 		t.Fatal(r.text)
 	}
 	lines := strings.Split(r.text, "\n")
-	if !strings.HasPrefix(lines[0], "Next: secrets — TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET missing; the operator sets each with the secret command") {
+	if !strings.HasPrefix(lines[0], "Next: secrets — apiKeySid, apiKeySecret missing; a person sets the keys bound to apiKeySid and apiKeySecret in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for each of those keys. The values are on ") {
 		t.Fatalf("secrets line: %s", lines[0])
 	}
 	wantBareLinks(t, r)
-	wantContains(t, r, "yawble secret set TWILIO_API_KEY_SID, yawble secret set TWILIO_API_KEY_SECRET", "Done: mode — dryRun", "Done: allowlist — +15551234567", "Next: first message")
+	wantContains(t, r, "Done: mode — dryRun", "Done: allowlist — +15551234567", "Next: first message")
 	if strings.Contains(r.text, testAccount) {
 		t.Fatal("check printed a whole SID")
 	}
@@ -266,7 +266,7 @@ func TestCheckFullWalk(t *testing.T) {
 	f.acct.Type = "Trial"
 	r := run1(t, nil, "check")
 	want := []string{
-		"Done: secrets — TWILIO_ACCOUNT_SID set (…1234), TWILIO_API_KEY_SID set (…5678), TWILIO_API_KEY_SECRET set",
+		"Done: secrets — accountSid set (…1234), apiKeySid set (…5678), apiKeySecret set",
 		"Done: credentials — the API key signs in to account …1234",
 		"Next: account type — Trial (status active): texts reach only verified numbers and carry a trial prefix; to upgrade, press Upgrade at the top of the Twilio Console; billing overview: " + consoleUpgrade,
 		"Done: number — +18445550100, toll-free (the account's only SMS-capable number)",
@@ -288,7 +288,7 @@ func TestCheckFullWalk(t *testing.T) {
 	wantContains(t, run1(t, nil, "check"), "Next: choose fromNumber — the account has 2 SMS-capable numbers (+18445550100, +16175550100); a person sets fromNumber to one in this member's settings")
 
 	r = runWith(t, opts{secrets: map[string]string{"accountSid": testAccount, "apiKeySid": testKeySid, "apiKeySecret": "bad-secret-1"}}, "check")
-	wantContains(t, r, "Next: credentials — Twilio refused the API key (401).")
+	wantContains(t, r, "Next: credentials — Twilio rejected the keys bound to accountSid, apiKeySid and apiKeySecret (401). A person replaces them in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for each of those keys.")
 }
 
 func TestCheckFirstMessageStates(t *testing.T) {
