@@ -8,11 +8,9 @@ builds each package into a zip and checks it. Packages are published on the
 |---|---|---|
 | [`mail`](packages/mail) | solution | A team that reads, files, watches and drafts or sends your mail, with the `mail` plugin (Go). |
 | [`twilio`](packages/twilio) | solution | A team that texts through your Twilio account (SMS and MMS), with the `twilio` plugin (Go): dry run first, your numbers only until you add consented recipients. |
-| [`job-tracker`](packages/job-tracker) | solution | A team that finds job postings, tracks them on a page and drafts cover letters, with the `job-board` plugin (Python). |
 | [`stripe`](packages/stripe) | plugin | Sets up Stripe products, prices and webhook endpoints with a restricted key (Go); webhook signing secrets go straight into Azure Key Vault. Dry run first. |
 | [`sample-echo`](packages/sample-echo) | plugin | A deterministic stand-in member (.NET) that upper-cases or reverses each instruction: for trying plugin members without a model. |
 | [`sample-echo-go`](packages/sample-echo-go) | plugin | The same stand-in member written in Go. |
-| [`sample-whoami-go`](packages/sample-whoami-go) | plugin | A small Go plugin that reports the Google account bound to it: the end-to-end check for connections. |
 
 ## Layout
 
@@ -106,7 +104,6 @@ Each module's tests can also be run on their own, from its folder:
 ```sh
 (cd packages/mail/plugins/mail && go test ./...)               # the mail plugin's unit tests
 (cd packages/mail/plugins/mail/verification && go test ./...)  # its black-box verification suite
-(cd packages/sample-whoami-go && go test ./...)
 (cd packages/stripe && go test ./...)                       # against a fake Stripe and Key Vault
 (cd packages/sample-echo-go && go test ./...)                   # builds it; it has no tests
 (cd scripts/pkgtool && go test ./...)                           # the scripts' own helper

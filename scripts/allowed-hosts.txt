@@ -6,11 +6,7 @@
 
 www.googleapis.com            # Gmail and Google sign-in APIs the mail plugin calls
 gmail.googleapis.com          # the Gmail API the mail plugin calls
-openidconnect.googleapis.com  # Google's userinfo endpoint the whoami plugin calls
 graph.microsoft.com           # the Microsoft Graph API the mail plugin calls
-developer.adzuna.com          # where the job-board plugin's Adzuna key comes from
-developer.usajobs.gov         # where the job-board plugin's USAJOBS key comes from
-themuse.com                   # where the job-board plugin's The Muse key comes from
 www.apache.org                # the Apache License named in LICENSE
 api.twilio.com                # the Twilio REST API the twilio plugin calls
 messaging.twilio.com          # Twilio's Messaging Services API the twilio plugin calls
