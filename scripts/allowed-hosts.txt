@@ -27,4 +27,15 @@ www.sandbox.namecheap.com     # Namecheap's sandbox, which the namecheap package
 yawble.ai                     # the Yawble website, whose Marketplace serves every package zip
 api.stripe.com                # the Stripe API the stripe plugin calls with its restricted key
 dashboard.stripe.com          # the Stripe Dashboard page the stripe package links to for making the restricted key
-vault.azure.net               # Azure Key Vault (<name>.vault.azure.net), where the stripe plugin writes webhook signing secrets
+vault.azure.net               # Azure Key Vault (<name>.vault.azure.net), where the stripe plugin writes webhook signing secrets, and the Key Vault API the azure plugin signs in to
+management.azure.com          # Azure Resource Manager, the API the azure plugin calls for every resource and deployment
+schema.management.azure.com   # the ARM template schema a template's $schema names, in the azure plugin's tests and README
+portal.azure.com              # the Azure portal the azure package's README sends a person to
+database.windows.net          # Azure SQL (<server>.database.windows.net), an API the azure plugin signs in to
+storage.azure.com             # Azure Storage, an API the azure plugin signs in to
+api.loganalytics.io           # Log Analytics, an API the azure plugin signs in to
+azurecr.io                    # Azure Container Registry (<name>.azurecr.io), which the azure plugin builds images in and container apps pull from, and whose addresses its sharedRegistries setting accepts
+github.com                    # the bicep compiler's release downloads (github.com/Azure/bicep), which the azure plugin fetches once and checks by sha256
+blob.core.windows.net         # Azure Blob Storage (<account>.blob.core.windows.net), where the azure plugin reads and writes blobs and a registry build's source and log are kept
+table.core.windows.net        # Azure Table Storage (<account>.table.core.windows.net), where the azure plugin reads and writes entities
+queue.core.windows.net        # Azure Queue Storage (<account>.queue.core.windows.net), where the azure plugin sends and receives messages
