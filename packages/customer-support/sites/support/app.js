@@ -26,10 +26,30 @@ function view(counts, inquiries) {
       since: running.since || '',
       updatedAt: running.updatedAt || '',
     },
-    batch: batch && { at: batch.at || '', lines: Array.isArray(batch.lines) ? batch.lines.map(String) : [] },
+    batch: batch && {
+      at: batch.at || '',
+      lines: Array.isArray(batch.lines) ? batch.lines.map(String) : [],
+      textStatus: batch.textStatus || '',
+      textAt: batch.textAt || '',
+      textError: batch.textError || '',
+    },
     open: all.filter((d) => d.status !== 'closed'),
     closed: all.filter((d) => d.status === 'closed').reverse(),
   };
+}
+
+// texted says whether the last summary's text went out, as the Manager records it on lastBatch:
+// textStatus sent, failed (textError is twilio's sentence) or notSent while twilio has not answered.
+// A summary written by 1.0.0 has no textStatus, so the page cannot know and says so.
+function texted(batch) {
+  if (!batch) return '';
+  const at = when(batch.textAt || batch.at);
+  switch (batch.textStatus) {
+    case 'sent': return 'Texted ' + at;
+    case 'failed': return 'Text failed ' + at + ': ' + (batch.textError || 'twilio gave no reason');
+    case 'notSent': return 'Not texted yet';
+    default: return batch.at ? 'Summary of ' + when(batch.at) + '; whether it was texted was not recorded' : '';
+  }
 }
 
 function rows(body, docs, cells) {
@@ -62,7 +82,7 @@ function render(v) {
 
   const lines = v.batch ? v.batch.lines : [];
   document.getElementById('batch-none').classList.toggle('hidden', lines.length > 0);
-  document.getElementById('batch-at').textContent = v.batch && v.batch.at ? 'Texted ' + when(v.batch.at) : '';
+  document.getElementById('batch-at').textContent = texted(v.batch);
   document.getElementById('batch').replaceChildren(...lines.map((line) => {
     const li = document.createElement('li');
     li.textContent = line;
@@ -84,7 +104,7 @@ async function refresh() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { view };
+  module.exports = { view, texted, render };
 } else {
   refresh();
   setInterval(refresh, 10000);

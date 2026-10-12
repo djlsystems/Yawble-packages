@@ -1,4 +1,4 @@
-# Customer Support 1.0.0
+# Customer Support 1.0.1
 
 A solution package: a team that watches your mailbox, sorts new mail by your rules and texts your
 cell about it. Each batch of new mail gets a short summary text; each inquiry gets an alert at once
@@ -99,9 +99,28 @@ inquiry, 300,000 each for the other two.
 ## The page
 
 The `support` site shows the `counts` collection (one document, `running`: the totals, when
-counting started, the last summary) and the `inquiries` collection (one document per inquiry,
+counting started, the last summary and whether its text went out) and the `inquiries` collection (one document per inquiry,
 `open` or `closed`). The launcher tile shows the open inquiries. The `mail` and `twilio` sites show
 Mailer's watch and follows and twilio's texts and setup.
+
+## What changed in 1.0.1
+
+- **Handled mail is remembered per mailbox.** The playbook's `counted` list keys each message as
+  `<mailbox>|<folder>|<id>` (the mailbox's address in lower case), not by its bare id, so a mailbox
+  connected through Change setup starts with nothing handled, and switching back to the first one
+  counts none of its mail again. Each mailbox and folder keeps its own last 200. A 1.0.0 list of bare
+  ids does not say which mailbox it came from, so the update files each id under every mailbox and
+  folder the `mail` site's watches show and records them in `legacyMailboxes`: nothing is counted,
+  alerted or dropped by the update. The cost: a message in a newer mailbox whose id matches a 1.0.0
+  id may stay skipped as already handled, once, as it was in 1.0.0. New inquiry documents are
+  named by the message's mailbox, folder and id (`inq-<mailbox>-<folder>-<id>`); 1.0.0 ones are kept
+  as they are and only events from a mailbox in `legacyMailboxes` reach them.
+- **The page says whether the last summary was texted.** `lastBatch` records `textStatus`: `notSent`
+  when written, then `sent` or `failed` with twilio's sentence once twilio answers. The page reads
+  "Texted <time>", "Text failed <time>: <sentence>" or "Not texted yet". A summary written by 1.0.0
+  has no status, so the page reads "Summary of <time>; whether it was texted was not recorded"
+  rather than claiming it was texted.
+- Rules, alerts and reminders are as in 1.0.0.
 
 ## Check it
 
@@ -110,7 +129,7 @@ From the repository root:
 ```
 (cd packages/customer-support/.tests && go test -count=1 ./...)
 scripts/build.sh
-mkdir /tmp/customer-support && cd /tmp/customer-support && unzip <repository>/dist/customer-support-1.0.0.zip
+mkdir /tmp/customer-support && cd /tmp/customer-support && unzip <repository>/dist/customer-support-1.0.1.zip
 yawble solution check /tmp/customer-support
 ```
 

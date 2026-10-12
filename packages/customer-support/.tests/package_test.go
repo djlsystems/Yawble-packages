@@ -153,7 +153,7 @@ func memberPlugin(t *testing.T, s solution, name string) plugin {
 
 func TestIdentity(t *testing.T) {
 	s, _ := loadSolution(t)
-	if s.Format != 1 || s.ID != "customer-support" || s.Name != "Customer Support" || s.Version != "1.0.0" {
+	if s.Format != 1 || s.ID != "customer-support" || s.Name != "Customer Support" || s.Version != "1.0.1" {
 		t.Fatalf("identity: format %d id %q name %q version %q", s.Format, s.ID, s.Name, s.Version)
 	}
 }

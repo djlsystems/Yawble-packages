@@ -72,3 +72,72 @@ process.stdout.write(JSON.stringify({ full: view(counts, inquiries), empty: view
 		t.Errorf("empty: %+v", got.Empty)
 	}
 }
+
+// The last summary says whether its text went out, and every word of it reaches the page as text:
+// render runs against a fake document whose markup setters throw.
+func TestSupportSiteSummaryTextStatus(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	app, err := filepath.Abs(filepath.Join(pkgDir, "sites", "support", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := `
+const el = () => {
+  const e = { textContent: '', children: [], classList: { toggle() {} },
+    replaceChildren(...c) { this.children = c; }, append(...c) { this.children.push(...c); } };
+  for (const p of ['innerHTML', 'outerHTML']) Object.defineProperty(e, p, { set() { throw new Error(p + ' set'); } });
+  e.insertAdjacentHTML = () => { throw new Error('insertAdjacentHTML'); };
+  return e;
+};
+const els = {};
+global.document = { getElementById: (id) => (els[id] = els[id] || el()), createElement: el };
+const { view, texted, render } = require(process.argv[1]);
+const at = '2026-10-11T14:05:00Z', textAt = '2026-10-11T14:05:20Z';
+const lines = ['Order: <img src=x onerror=alert(1)> - <b>Order</b>'];
+const run = (b) => { render(view([{ id: 'running', doc: { lastBatch: b } }], [])); return { at: els['batch-at'].textContent, lines: els['batch'].children.map((li) => li.textContent) }; };
+process.stdout.write(JSON.stringify({
+  sent: run({ at, lines, textStatus: 'sent', textAt }),
+  failed: run({ at, lines, textStatus: 'failed', textAt, textError: 'Refused: <b>+1555</b> opted out (STOP on 2026-10-01); nothing was sent.' }),
+  notSent: run({ at, lines, textStatus: 'notSent' }),
+  old: run({ at, lines }),
+  none: texted(null),
+  when: new Date(textAt).toLocaleString(),
+  whenAt: new Date(at).toLocaleString(),
+}));
+`
+	out, err := exec.Command(node, "-e", script, app).CombinedOutput()
+	if err != nil {
+		t.Fatalf("node: %v: %s", err, out)
+	}
+	type shown struct {
+		At    string
+		Lines []string
+	}
+	var got struct {
+		Sent, Failed, NotSent, Old shown
+		None, When, WhenAt         string
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	want := map[string]string{
+		"sent":    "Texted " + got.When,
+		"failed":  "Text failed " + got.When + ": Refused: <b>+1555</b> opted out (STOP on 2026-10-01); nothing was sent.",
+		"notSent": "Not texted yet",
+		"old":     "Summary of " + got.WhenAt + "; whether it was texted was not recorded",
+	}
+	for name, s := range map[string]shown{"sent": got.Sent, "failed": got.Failed, "notSent": got.NotSent, "old": got.Old} {
+		if s.At != want[name] {
+			t.Errorf("%s: batch-at %q, want %q", name, s.At, want[name])
+		}
+		if len(s.Lines) != 1 || s.Lines[0] != "Order: <img src=x onerror=alert(1)> - <b>Order</b>" {
+			t.Errorf("%s: lines %q", name, s.Lines)
+		}
+	}
+	if got.None != "" {
+		t.Errorf("no summary: %q", got.None)
+	}
+}
