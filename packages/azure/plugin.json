@@ -1,0 +1,203 @@
+{
+  "schemaVersion": 1,
+  "id": "azure",
+  "name": "Azure",
+  "description": "Builds and runs a team's own Azure resources, signed in as the person: resource groups, Bicep and ARM deployments checked by what-if first, DNS zones, budgets and role assignments for its managed identities.\n\nIt changes only what it created, which carries the tags yawble-owner and yawble-plugin, plus the shared SQL servers and registries a person lists. It acts with the person's own Azure rights, never more. What-if by default: every changing command says what it would do and changes nothing until a person sets mode to apply. It never reads a key, a connection string or a secret value, and no token reaches its output.",
+  "version": "1.0.0",
+  "protocol": "harness.member/1",
+  "executable": {
+    "path": "bin/linux-x64/azure",
+    "args": []
+  },
+  "platforms": {
+    "linux-x64": "bin/linux-x64/azure",
+    "linux-arm64": "bin/linux-arm64/azure"
+  },
+  "requires": [],
+  "timeoutSeconds": 300,
+  "config": {
+    "subscription": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "description": "The id of the Azure subscription this member works in, such as 00000000-0000-0000-0000-000000000000; run setup after signing in and it lists the subscriptions your account can read."
+    },
+    "regions": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "The Azure regions resource groups may be created in, by name, such as westeurope or eastus2."
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "whatif",
+        "apply"
+      ],
+      "default": "whatif",
+      "setBy": "person",
+      "description": "whatif answers what each changing command would do and changes nothing in Azure; apply makes the changes."
+    },
+    "allowDelete": {
+      "type": "bool",
+      "default": false,
+      "setBy": "person",
+      "description": "Off: every delete is refused, in whatif and apply; on: the member may delete what its team owns."
+    },
+    "sharedSqlServers": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "Existing SQL servers, by name such as my-sql-server, on which the member may create its own databases; it never changes the server or another database on it."
+    },
+    "sharedRegistries": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "Existing container registries, by name such as myregistry, the member may build and push images to and grant pull rights on to its own managed identities."
+    },
+    "monthlyBudget": {
+      "type": "number",
+      "min": 0,
+      "default": 0,
+      "setBy": "person",
+      "description": "A monthly budget, in the subscription's currency, put on every resource group the member creates, with alerts at 80% and 100%; 0 means no budget."
+    },
+    "budgetEmails": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "The email addresses the budget alerts go to; needed when monthlyBudget is more than 0."
+    },
+    "namePrefix": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "advanced": true,
+      "description": "Text put before the name of every resource group the member creates, such as team1-; empty by default."
+    }
+  },
+  "secrets": {},
+  "connections": {
+    "microsoft": {
+      "description": "The Microsoft account that signs in to Azure; the member acts with that account's own Azure rights.",
+      "providers": [
+        "microsoft"
+      ],
+      "scopes": {
+        "microsoft": [
+          "https://management.azure.com/user_impersonation",
+          "https://database.windows.net/user_impersonation",
+          "https://storage.azure.com/user_impersonation",
+          "https://vault.azure.net/user_impersonation",
+          "https://api.loganalytics.io/Data.Read",
+          "offline_access"
+        ]
+      },
+      "required": true
+    }
+  },
+  "events": {
+    "publishes": [
+      {
+        "type": "planned",
+        "summary": "What a changing command would do, or what a deployment's what-if found: counts by change type and any refusals.",
+        "highVolume": false,
+        "fields": [
+          {
+            "name": "command",
+            "kind": "string",
+            "summary": "The command, such as deploy or rg create, without its arguments."
+          },
+          {
+            "name": "target",
+            "kind": "string",
+            "summary": "The resource group or resource id it acts on."
+          },
+          {
+            "name": "summary",
+            "kind": "string",
+            "summary": "What it would do, in words."
+          },
+          {
+            "name": "mode",
+            "kind": "string",
+            "summary": "whatif or apply."
+          },
+          {
+            "name": "create",
+            "kind": "number",
+            "summary": "Resources it would create."
+          },
+          {
+            "name": "modify",
+            "kind": "number",
+            "summary": "Resources it would change."
+          },
+          {
+            "name": "delete",
+            "kind": "number",
+            "summary": "Resources it would delete."
+          },
+          {
+            "name": "unchanged",
+            "kind": "number",
+            "summary": "Resources a deployment leaves as they are."
+          },
+          {
+            "name": "refusals",
+            "kind": "list",
+            "summary": "Each change refused, naming its resource; empty when none."
+          }
+        ]
+      },
+      {
+        "type": "applied",
+        "summary": "A change was made in apply mode.",
+        "highVolume": false,
+        "fields": [
+          {
+            "name": "command",
+            "kind": "string",
+            "summary": "The command, such as deploy or rg create, without its arguments."
+          },
+          {
+            "name": "target",
+            "kind": "string",
+            "summary": "The resource group or resource id it acted on."
+          },
+          {
+            "name": "summary",
+            "kind": "string",
+            "summary": "What changed, in words."
+          },
+          {
+            "name": "resourceIds",
+            "kind": "list",
+            "summary": "The id of each resource created or changed."
+          }
+        ]
+      },
+      {
+        "type": "refused",
+        "summary": "A command was refused: outside what the team owns, a role or principal not allowed, a delete with allowDelete off, a path outside the team's folders, or bad arguments.",
+        "highVolume": false,
+        "fields": [
+          {
+            "name": "command",
+            "kind": "string",
+            "summary": "The command, without its arguments."
+          },
+          {
+            "name": "reason",
+            "kind": "string",
+            "summary": "Why, in the plugin's words."
+          }
+        ]
+      }
+    ]
+  },
+  "skills": [
+    "skills/plugin-azure.md"
+  ]
+}
