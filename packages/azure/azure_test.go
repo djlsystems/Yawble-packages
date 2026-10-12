@@ -370,6 +370,80 @@ func TestDeployRefusesTemplatesThatReadKeysOrHoldSecrets(t *testing.T) {
 	}
 }
 
+func TestDeployRefusesEveryListFunctionWithNothingWritten(t *testing.T) {
+	for _, call := range []string{
+		"list(resourceId('Microsoft.Storage/storageAccounts', 'theirstore'), '2023-01-01').keys[0].value",
+		"listAuthKeys(resourceId('Microsoft.DataFactory/factories/integrationRuntimes', 'f', 'r'), '2018-06-01').authKey1",
+		"listClusterAdminCredential(resourceId('Microsoft.ContainerService/managedClusters', 'c'), '2024-01-01').kubeconfigs[0].value",
+		"LIST (resourceId('Microsoft.Web/sites/config', 's', 'appsettings'), '2023-01-01').properties",
+	} {
+		f := newFake(t)
+		f.whatIf = []map[string]any{
+			wiChange("Create", inRG(ownedRG, "Microsoft.ManagedIdentity/userAssignedIdentities/app-id"), map[string]any{"tags": ownTags()}),
+		}
+		withList := strings.Replace(simpleTemplate, `"resources"`, `"outputs": {"k": {"type": "string", "value": "[`+call+`]"}}, "resources"`, 1)
+		tpl := docFile(t, "list.json", withList)
+
+		r := runPlugin(t, runOpts{config: apply(nil)}, "deploy "+ownedRG+" "+tpl)
+
+		name := strings.TrimSpace(call[:strings.Index(call, "(")])
+		if r.ok() {
+			t.Fatalf("a template calling %s was accepted: %s", name, r.text())
+		}
+		mustContain(t, r.text(), "calls "+name, "App secrets go in Key Vault")
+		if w := f.writes(); len(w) != 0 {
+			t.Fatalf("%s: writes = %v", name, w)
+		}
+	}
+}
+
+func TestDeployRefusesAnIgnoredResourceOutsideWhatTheTeamOwns(t *testing.T) {
+	f := newFake(t)
+	f.add(foreignRG, "Microsoft.Storage/storageAccounts", "theirstore", nil)
+	tpl := docFile(t, "main.json", simpleTemplate)
+	ignored := inRG(foreignRG, "Microsoft.Storage/storageAccounts/theirstore")
+	f.whatIf = []map[string]any{
+		wiChange("Create", inRG(ownedRG, "Microsoft.ManagedIdentity/userAssignedIdentities/app-id"), map[string]any{"tags": ownTags()}),
+		wiChange("Ignore", ignored, nil),
+	}
+
+	r := runPlugin(t, runOpts{config: apply(nil)}, "deploy "+ownedRG+" "+tpl)
+
+	if r.ok() {
+		t.Fatalf("the deployment was accepted: %s", r.text())
+	}
+	mustContain(t, r.text(), "none of it is deployed", ignored+" does not carry this team's tags")
+	if w := f.writes(); len(w) != 0 {
+		t.Fatalf("writes = %v", w)
+	}
+	if ev := r.events("refused"); len(ev) != 1 || !strings.Contains(ev[0]["reason"].(string), ignored) {
+		t.Fatalf("refused = %v", ev)
+	}
+}
+
+func TestDeployAllowsAnIgnoredResourceTheTeamOwns(t *testing.T) {
+	f := newFake(t)
+	f.add(foreignRG, "Microsoft.Storage/storageAccounts", "ourstore", ownTags())
+	tpl := docFile(t, "main.json", simpleTemplate)
+	f.whatIf = []map[string]any{
+		wiChange("Create", inRG(ownedRG, "Microsoft.ManagedIdentity/userAssignedIdentities/app-id"), map[string]any{"tags": ownTags()}),
+		wiChange("Ignore", inRG(ownedRG, "Microsoft.KeyVault/vaults/my-vault"), nil),
+		wiChange("Ignore", inRG(foreignRG, "Microsoft.Storage/storageAccounts/ourstore"), nil),
+	}
+
+	r := runPlugin(t, runOpts{config: apply(nil)}, "deploy "+ownedRG+" "+tpl)
+
+	if !r.ok() {
+		t.Fatalf("the deployment was refused: %s", r.text())
+	}
+	if puts := f.callsTo(http.MethodPut, ""); len(puts) != 1 {
+		t.Fatalf("puts = %v", puts)
+	}
+	if pl := r.events("planned"); len(pl) != 1 || pl[0]["unchanged"] != float64(2) {
+		t.Fatalf("planned = %v", pl)
+	}
+}
+
 func TestDeployRefusesSharedKeyStorageCustomRolesAndBadGrants(t *testing.T) {
 	f := newFake(t)
 	tpl := docFile(t, "main.json", simpleTemplate)

@@ -111,9 +111,10 @@ func within(root, path string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
-// secretFunctions are the template functions that read keys or connection strings. A template
-// that calls one is refused: app secrets go in Key Vault.
-var secretFunctions = regexp.MustCompile(`(?i)\blist(Keys|AccountSas|ServiceSas|ConnectionStrings|Credentials?|Secrets|AdminKeys|QueryKeys|KeyValue)\s*\(`)
+// secretFunctions matches every list function of a template: list() and each list*() function.
+// They answer keys, connection strings and credentials, so a template that calls one is refused:
+// app secrets go in Key Vault.
+var secretFunctions = regexp.MustCompile(`(?i)\blist\w*\s*\(`)
 
 var secretParam = regexp.MustCompile(`(?i)(password|secret|key|token|connectionstring)`)
 
@@ -239,7 +240,7 @@ func (p *plugin) prepare(args []string) (*deployment, error) {
 		return nil, refusef("Refused: %s is not a resource group template (its $schema is %s); this member deploys into a resource group only.", args[1], tpl.Schema)
 	}
 	if m := secretFunctions.FindString(string(raw)); m != "" {
-		return nil, refusef("Refused: %s calls %s, which reads keys or connection strings. App secrets go in Key Vault, set by a person or another plugin, and apps read them with a managed identity; nothing was deployed.", args[1], strings.TrimSpace(strings.TrimSuffix(m, "(")))
+		return nil, refusef("Refused: %s calls %s, and this member refuses every list function, since they read keys, connection strings and credentials. App secrets go in Key Vault, set by a person or another plugin, and apps read them with a managed identity; nothing was deployed.", args[1], strings.TrimSpace(strings.TrimSuffix(m, "(")))
 	}
 	d.template = raw
 	d.parameters = json.RawMessage(`{}`)
@@ -328,8 +329,20 @@ func (p *plugin) judge(d *deployment, changes []whatIfChange) (report []string, 
 		kind := strings.ToLower(c.ChangeType)
 		r, _ := parseID(c.ResourceID)
 		switch kind {
-		case "nochange", "ignore":
+		case "nochange":
 			counts["unchanged"]++
+			continue
+		case "ignore":
+			// ARM also answers Ignore for resources beyond its nested-template expansion limits,
+			// which it still deploys, so each one must be inside what the team owns.
+			counts["unchanged"]++
+			why, err := p.guard(change{id: c.ResourceID, kind: changeModify})
+			if err != nil {
+				return nil, nil, nil, nil, err
+			}
+			if why != "" {
+				refusals = append(refusals, why)
+			}
 			continue
 		case "delete":
 			counts["delete"]++

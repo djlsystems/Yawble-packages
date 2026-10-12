@@ -54,11 +54,12 @@ Quote a value with spaces (`"Storage Blob Data Contributor"`).
   (`.json`) template from the team's documents folder or a worktree of this run, into a resource
   group the team owns. A relative path is read from the team's documents folder. It always runs a
   what-if first and answers each change. Any change outside what the team owns - a nested
-  deployment into another resource group included - refuses the whole deployment, naming each
-  resource. In apply it then deploys exactly the bytes and parameters it checked (the answer names
-  their sha256), in Incremental mode, so it never deletes. A template that calls `listKeys` or
-  another key-reading function, a storage account without `allowSharedKeyAccess: false`, a
-  custom role, or a role assignment the `role assign` rules would refuse, is refused.
+  deployment into another resource group, or a resource the what-if marks as ignored, included -
+  refuses the whole deployment, naming each resource. In apply it then deploys exactly the bytes
+  and parameters it checked (the answer names their sha256), in Incremental mode, so it never
+  deletes. A template that calls any list function (`list`, `listKeys`, `listAuthKeys` and every
+  other `list*`), a storage account without `allowSharedKeyAccess: false`, a custom role, or a
+  role assignment the `role assign` rules would refuse, is refused.
 - `role assign <role> <managed identity id> <scope id>` - grants one of Contributor, Storage
   Blob Data Contributor, Storage Table Data Contributor, Storage Queue Data Contributor, Key Vault
   Secrets Officer, Key Vault Secrets User or AcrPull, on a scope the team owns (or AcrPull on a

@@ -112,7 +112,7 @@ It **will not**:
   than the two shared exceptions above;
 - deploy a template that would change anything outside what the team owns: every deployment is
   checked with Azure's what-if first, and one change outside refuses the whole deployment,
-  naming each resource;
+  naming each resource, including a resource the what-if marks as ignored;
 - grant any role to a user or a group, or any other role;
 - read a storage key, a connection string, a registry password or a Key Vault secret value;
   storage accounts are created with shared key access off, registries with their admin user off,
@@ -227,8 +227,9 @@ the last 30 minutes unless told otherwise, at most 500 lines.
 
 An app's own secrets (a third-party API key, a webhook signing secret) go in Key Vault, set by a
 person in the Azure portal or by another plugin. They never go in a template, a parameters file, a
-command or the repository: the member refuses a template that reads keys, a parameters file that
-holds a secret's value, and an `env=` whose name or value looks like a secret. A container app
+command or the repository: the member refuses a template that calls any list function (`list`,
+`listKeys`, `listAuthKeys` and every other `list*`), a parameters file that holds a secret's
+value, and an `env=` whose name or value looks like a secret. A container app
 points at the secret with `secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name>`, and
 reads it with its managed identity; `keyvault secrets <vault>` lists the names a vault holds,
 never their values.
