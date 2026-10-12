@@ -114,8 +114,9 @@ func within(root, path string) bool {
 
 // secretFunctions matches every list function of a template: list() and each list*() function.
 // They answer keys, connection strings and credentials, so a template that calls one is refused:
-// app secrets go in Key Vault.
-var secretFunctions = regexp.MustCompile(`(?i)\blist\w*\s*\(`)
+// app secrets go in Key Vault. Between the name and the bracket it allows any space Azure's parser
+// may skip: ASCII and Unicode whitespace, separators and invisible format characters.
+var secretFunctions = regexp.MustCompile(`(?i)\blist\w*[\s\x{0B}\x{85}\p{Z}\p{Cf}]*\(`)
 
 // listFunctionIn decodes a template's JSON and answers the first list function in any string,
 // object key or value alike, after JSON escapes such as \u006c are decoded, as Azure decodes them.

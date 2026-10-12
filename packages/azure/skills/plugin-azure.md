@@ -58,8 +58,9 @@ Quote a value with spaces (`"Storage Blob Data Contributor"`).
   refuses the whole deployment, naming each resource. In apply it then deploys exactly the bytes
   and parameters it checked (the answer names their sha256), in Incremental mode, so it never
   deletes. A template that calls any list function (`list`, `listKeys`, `listAuthKeys` and every
-  other `list*`; every string and object key is checked after its JSON escapes are decoded, so a
-  word such as `list (` in a description counts too, and a template that is not valid JSON is
+  other `list*`; every string and object key is checked after its JSON escapes are decoded, with
+  any space, Unicode space or invisible character before the bracket, so a word such as `list (`
+  in a description counts too, and a template that is not valid JSON is
   refused), a storage account without `allowSharedKeyAccess: false`, a custom role, or a
   role assignment the `role assign` rules would refuse, is refused.
 - `role assign <role> <managed identity id> <scope id>` - grants one of Contributor, Storage

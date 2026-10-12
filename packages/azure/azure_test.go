@@ -420,6 +420,37 @@ func TestDeployRefusesAListFunctionWrittenWithJSONEscapesInAValue(t *testing.T) 
 	}
 }
 
+func TestDeployRefusesAListFunctionWithAUnicodeSpaceBeforeTheBracket(t *testing.T) {
+	for name, space := range map[string]rune{
+		"no-break space":      0x00A0,
+		"ideographic space":   0x3000,
+		"line separator":      0x2028,
+		"zero-width no-break": 0xFEFF,
+		"vertical tab":        0x000B,
+		"next line":           0x0085,
+		"zero-width space":    0x200B,
+	} {
+		f := newFake(t)
+		f.whatIf = []map[string]any{
+			wiChange("Create", inRG(ownedRG, "Microsoft.ManagedIdentity/userAssignedIdentities/app-id"), map[string]any{"tags": ownTags()}),
+		}
+		call := "list" + "Keys" + string(space) + "(resourceId('Microsoft.Storage/storageAccounts', 's'), '2023-01-01').keys[0].value"
+		value, _ := json.Marshal("[" + call + "]")
+		withList := strings.Replace(simpleTemplate, `"resources"`, `"outputs": {"k": {"type": "string", "value": `+string(value)+`}}, "resources"`, 1)
+		tpl := docFile(t, "space.json", withList)
+
+		r := runPlugin(t, runOpts{config: apply(nil)}, "deploy "+ownedRG+" "+tpl)
+
+		if r.ok() {
+			t.Fatalf("%s: a template calling a list function was accepted: %s", name, r.text())
+		}
+		mustContain(t, r.text(), "calls list"+"Keys", "App secrets go in Key Vault")
+		if len(f.calls) != 0 {
+			t.Fatalf("%s: a refused template reached Azure: %v", name, f.calls)
+		}
+	}
+}
+
 func TestDeployRefusesAListFunctionWrittenWithJSONEscapesInAKey(t *testing.T) {
 	for name, extra := range map[string]string{
 		"variables": `"variables": {"` + escapedL + `istSecrets(x)": "v"}, `,
