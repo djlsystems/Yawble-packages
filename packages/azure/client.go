@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -136,8 +137,16 @@ func (c *client) send(a api, method, url string, body any, headers map[string]st
 				Message string `json:"message"`
 			} `json:"error"`
 		}
+		var storage struct {
+			Code    string `xml:"Code"`
+			Message string `xml:"Message"`
+		}
 		if json.Unmarshal(raw, &body) == nil {
 			e.code, e.message = body.Error.Code, body.Error.Message
+		} else if xml.Unmarshal(raw, &storage) == nil {
+			// Azure Storage answers in XML; its message's later lines are request ids.
+			e.code, _, _ = strings.Cut(storage.Code, "\n")
+			e.message, _, _ = strings.Cut(storage.Message, "\n")
 		}
 		return nil, e
 	}
@@ -257,4 +266,47 @@ func retryAfter(h http.Header) time.Duration {
 		}
 	}
 	return pollEvery
+}
+
+// anonymous makes a request that carries no token: an address that holds its own short-lived
+// permission, such as the upload and log addresses a registry hands out, or a release download.
+// The address is never written out; the caller hides it first.
+func anonymous(method, url string, body []byte, headers map[string]string, timeout time.Duration) (*answer, error) {
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequest(method, endpoint(url), reader)
+	if err != nil {
+		return nil, fmt.Errorf("the request could not be made")
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	c := &http.Client{Transport: httpClient.Transport, Timeout: timeout}
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("the address Azure gave could not be reached; try again later")
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 512<<20))
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("the address Azure gave answered %d", resp.StatusCode)
+	}
+	return &answer{status: resp.StatusCode, header: resp.Header, body: raw}, nil
+}
+
+// data sends one request to a data-plane API (storage, Key Vault, Log Analytics) with that API's
+// token, and decodes a JSON answer into into when it is not nil.
+func (c *client) data(a api, method, url string, body any, headers map[string]string, into any) (*answer, error) {
+	ans, err := c.send(a, method, url, body, headers)
+	if err != nil {
+		return nil, err
+	}
+	if into != nil && len(ans.body) > 0 {
+		if err := json.Unmarshal(ans.body, into); err != nil {
+			return nil, fmt.Errorf("%s's answer could not be read", apiNames[a])
+		}
+	}
+	return ans, nil
 }

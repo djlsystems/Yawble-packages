@@ -99,7 +99,7 @@ func (p *plugin) dnsRecordSet(args []string) (string, error) {
 		}
 		ttl, values = n, values[:len(values)-1]
 	}
-	field, ok := recordTypes[typ]
+	_, ok := recordTypes[typ]
 	if !ok {
 		return "", refusef("Refused: %s is not a record type this member sets; it sets A, AAAA, CNAME, TXT and MX.", typ)
 	}
@@ -109,39 +109,9 @@ func (p *plugin) dnsRecordSet(args []string) (string, error) {
 	if len(values) == 0 {
 		return "", refusal("Refused: dns record set needs at least one value.")
 	}
-	props := map[string]any{"TTL": ttl}
-	switch typ {
-	case "A", "AAAA":
-		var recs []map[string]string
-		for _, v := range values {
-			ip := net.ParseIP(v)
-			if ip == nil || (typ == "A") != (ip.To4() != nil) {
-				return "", refusef("Refused: %s is not an %s address.", v, map[string]string{"A": "IPv4", "AAAA": "IPv6"}[typ])
-			}
-			key := map[string]string{"A": "ipv4Address", "AAAA": "ipv6Address"}[typ]
-			recs = append(recs, map[string]string{key: v})
-		}
-		props[field] = recs
-	case "CNAME":
-		if len(values) != 1 {
-			return "", refusal("Refused: a CNAME record has exactly one value, a host name.")
-		}
-		props[field] = map[string]string{"cname": values[0]}
-	case "TXT":
-		props[field] = []map[string][]string{{"value": {strings.Join(values, " ")}}}
-	case "MX":
-		if len(values)%2 != 0 {
-			return "", refusal("Refused: an MX record's values come in pairs: <preference> <host>, such as 10 mail.example.com.")
-		}
-		var recs []map[string]any
-		for i := 0; i < len(values); i += 2 {
-			pref, err := strconv.Atoi(values[i])
-			if err != nil || pref < 0 || pref > 65535 {
-				return "", refusef("Refused: %s is not an MX preference (0 to 65535).", values[i])
-			}
-			recs = append(recs, map[string]any{"preference": pref, "exchange": values[i+1]})
-		}
-		props[field] = recs
+	props, err := recordProps(typ, values, ttl)
+	if err != nil {
+		return "", err
 	}
 
 	zoneID, err := p.zoneID(zone)
@@ -194,4 +164,45 @@ func (p *plugin) dnsRecordDelete(args []string) (string, error) {
 	}
 	p.applied("dns record delete", id, what, []string{id})
 	return fmt.Sprintf("Deleted %s record %s in %s.", typ, name, zone), nil
+}
+
+// recordProps is the body of a DNS record set of one type holding the values.
+func recordProps(typ string, values []string, ttl int) (map[string]any, error) {
+	props := map[string]any{"TTL": ttl}
+	field := recordTypes[typ]
+	switch typ {
+	case "A", "AAAA":
+		var recs []map[string]string
+		for _, v := range values {
+			ip := net.ParseIP(v)
+			if ip == nil || (typ == "A") != (ip.To4() != nil) {
+				return nil, refusef("Refused: %s is not an %s address.", v, map[string]string{"A": "IPv4", "AAAA": "IPv6"}[typ])
+			}
+			key := map[string]string{"A": "ipv4Address", "AAAA": "ipv6Address"}[typ]
+			recs = append(recs, map[string]string{key: v})
+		}
+		props[field] = recs
+	case "CNAME":
+		if len(values) != 1 {
+			return nil, refusal("Refused: a CNAME record has exactly one value, a host name.")
+		}
+		props[field] = map[string]string{"cname": values[0]}
+	case "TXT":
+		props[field] = []map[string][]string{{"value": {strings.Join(values, " ")}}}
+	case "MX":
+		if len(values)%2 != 0 {
+			return nil, refusal("Refused: an MX record's values come in pairs: <preference> <host>, such as 10 mail.example.com.")
+		}
+		var recs []map[string]any
+		for i := 0; i < len(values); i += 2 {
+			pref, err := strconv.Atoi(values[i])
+			if err != nil || pref < 0 || pref > 65535 {
+				return nil, refusef("Refused: %s is not an MX preference (0 to 65535).", values[i])
+			}
+			recs = append(recs, map[string]any{"preference": pref, "exchange": values[i+1]})
+		}
+		props[field] = recs
+	}
+
+	return props, nil
 }

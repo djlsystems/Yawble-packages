@@ -313,7 +313,7 @@ func TestDeployCompilesBicepWithThePinnedCompiler(t *testing.T) {
 	f := newFake(t)
 	old := compileBicep
 	var compiled string
-	compileBicep = func(path string) ([]byte, error) { compiled = path; return []byte(simpleTemplate), nil }
+	compileBicep = func(_ *plugin, path string) ([]byte, error) { compiled = path; return []byte(simpleTemplate), nil }
 	t.Cleanup(func() { compileBicep = old })
 	tpl := docFile(t, "main.bicep", "param name string\n")
 	f.whatIf = []map[string]any{wiChange("Create", inRG(ownedRG, "Microsoft.ManagedIdentity/userAssignedIdentities/app-id"), nil)}

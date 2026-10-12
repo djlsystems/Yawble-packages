@@ -152,26 +152,35 @@ func (p *plugin) roleAssign(args []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	r, _ := parseID(scope)
 	assignment := scope + "/providers/Microsoft.Authorization/roleAssignments/" + assignmentName(scope, role, principal)
 	what := fmt.Sprintf("grant %s to %s on %s", grantable[role], identity, scope)
 	if !p.cfg.apply() {
 		return p.whatif("role assign", scope, what, map[string]int{"create": 1}), nil
 	}
+	if _, already, err := p.grantRole(scope, role, principal); err != nil {
+		return "", err
+	} else if already {
+		return fmt.Sprintf("%s already holds %s on %s. Nothing was changed.", identity, grantable[role], scope), nil
+	}
+	p.applied("role assign", scope, what, []string{assignment})
+	return fmt.Sprintf("Granted %s to %s on %s.", grantable[role], identity, scope), nil
+}
+
+// grantRole assigns a role to a managed identity's principal on a scope the guard has allowed, and
+// answers the assignment's id, and whether the identity held the role already.
+func (p *plugin) grantRole(scope, role, principal string) (string, bool, error) {
+	r, _ := parseID(scope)
+	assignment := scope + "/providers/Microsoft.Authorization/roleAssignments/" + assignmentName(scope, role, principal)
 	body := map[string]any{"properties": map[string]any{
 		"roleDefinitionId": "/subscriptions/" + r.sub + "/providers/Microsoft.Authorization/roleDefinitions/" + role,
 		"principalId":      principal,
 		"principalType":    "ServicePrincipal",
 	}}
-	_, err = p.az.arm(http.MethodPut, assignment+"?api-version="+roleAPIVersion, body, nil)
+	_, err := p.az.arm(http.MethodPut, assignment+"?api-version="+roleAPIVersion, body, nil)
 	if isStatus(err, http.StatusConflict) {
-		return fmt.Sprintf("%s already holds %s on %s. Nothing was changed.", identity, grantable[role], scope), nil
+		return assignment, true, nil
 	}
-	if err != nil {
-		return "", err
-	}
-	p.applied("role assign", scope, what, []string{assignment})
-	return fmt.Sprintf("Granted %s to %s on %s.", grantable[role], identity, scope), nil
+	return assignment, false, err
 }
 
 func (p *plugin) roleList(args []string) (string, error) {

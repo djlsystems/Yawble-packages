@@ -21,6 +21,7 @@ var providers = []string{
 	"Microsoft.Sql",
 	"Microsoft.ManagedIdentity",
 	"Microsoft.Consumption",
+	"Microsoft.Insights",
 }
 
 const (

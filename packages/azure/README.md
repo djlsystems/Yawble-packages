@@ -1,7 +1,9 @@
 # Azure 1.0.0
 
 A plugin member that builds and runs a team's own Azure resources: resource groups, deployments
-from Bicep or ARM templates, DNS zones and records, budgets, and role assignments for the managed
+from Bicep or ARM templates, container registries and image builds, Azure SQL databases and the SQL
+run on them, storage accounts with their blobs, tables and queues, Key Vaults, Container Apps with
+their logs and custom domains, DNS zones and records, budgets, and role assignments for the managed
 identities it creates. You sign in with Microsoft once; the member then acts **with your own Azure
 rights**, so it can never do more than you can yourself in the Azure portal.
 
@@ -44,7 +46,8 @@ until you set `mode` to `apply`.
    - each SQL server in `sharedSqlServers` and registry in `sharedRegistries` can be reached;
    - the resource providers it uses (Microsoft.App, Microsoft.OperationalInsights,
      Microsoft.Storage, Microsoft.KeyVault, Microsoft.Network, Microsoft.ContainerRegistry,
-     Microsoft.Sql, Microsoft.ManagedIdentity and Microsoft.Consumption) are registered. A
+     Microsoft.Sql, Microsoft.ManagedIdentity, Microsoft.Consumption and Microsoft.Insights) are
+     registered. A
      provider is Azure's switch for one kind of resource. In apply, setup registers any that are
      missing when your role allows it; in whatif it says it would.
 
@@ -77,16 +80,27 @@ them. The member never sees your password, and no token appears in anything it w
 It acts with your own rights: whatever your roles allow, and nothing more. If your account can
 only read a subscription, the member can only read it too.
 
+Data inside a resource needs a data role of its own, even for a subscription's Owner:
+
+- reading and writing blobs, tables and queues needs Storage Blob, Table or Queue Data Contributor
+  on the storage account (or its resource group);
+- listing a Key Vault's secret names needs Key Vault Secrets User or Key Vault Reader on the vault;
+- running SQL needs your account to be the SQL server's Microsoft Entra administrator (true of a
+  server the member creates) or a user in the database, and the server's firewall to let this
+  instance in (Azure portal, SQL server, Networking).
+
 ## What it will and will not touch
 
 It **will**:
 
 - read anything your account can read: `list`, `show`, `whoami`;
 - create resource groups, tagged `yawble-owner: <team id>` and `yawble-plugin: azure`, and
-  anything inside them;
+  anything inside them: registries, SQL servers and databases, storage accounts, Key Vaults,
+  Container Apps environments and apps, DNS zones, managed certificates;
 - change resources carrying those tags, or inside a resource group that does;
 - create a new database on a server in `sharedSqlServers` (tagged, and then the team's);
-- push images to, and grant pull rights on, a registry in `sharedRegistries`;
+- build images in, and grant pull rights on, a registry in `sharedRegistries`;
+- run SQL on databases the team owns, and read and write data in storage accounts it owns;
 - grant a short list of roles (Contributor, Storage Blob/Table/Queue Data Contributor, Key Vault
   Secrets Officer, Key Vault Secrets User, AcrPull) on what the team owns, only to managed
   identities the team created;
@@ -100,8 +114,10 @@ It **will not**:
   checked with Azure's what-if first, and one change outside refuses the whole deployment,
   naming each resource;
 - grant any role to a user or a group, or any other role;
-- read a storage key, a connection string or a Key Vault secret value; storage accounts are
-  created with shared key access off;
+- read a storage key, a connection string, a registry password or a Key Vault secret value;
+  storage accounts are created with shared key access off, registries with their admin user off,
+  and SQL servers with Microsoft Entra sign-in only, so no SQL password exists;
+- run SQL on a database without the team's tags, even on a shared server where your account could;
 - delete anything while `allowDelete` is off.
 
 ## Commands
@@ -121,11 +137,51 @@ dns zone create <resource group> <zone>
 dns record set <zone> <name> <A|AAAA|CNAME|TXT|MX> <value...> [ttl=<seconds>]
 dns record delete <zone> <name> <type>
 delete <resource id or resource group>
+
+acr create <resource group> <registry> [Basic|Standard|Premium]
+acr build <registry> <image:tag> <folder>
+
+sql server create <resource group> <server>
+sql db create <server> <database> <sku>
+sql exec <server>/<database> <file.sql>
+sql grant <server>/<database> <managed identity id> <db_datareader|db_datawriter|db_ddladmin...>
+
+storage create <resource group> <account> [sku]
+storage container create <account> <container>
+storage table create <account> <table>
+storage queue create <account> <queue>
+blob list <account> <container> [prefix]
+blob get <account> <container> <blob> [path in the team's documents]
+blob put <account> <container> <blob> <file>
+blob delete <account> <container> <blob>
+table query <account> <table> [filter]
+table upsert <account> <table> <partition key> <row key> '<JSON properties>'
+table delete <account> <table> <partition key> <row key>
+queue send <account> <queue> <text>
+queue peek <account> <queue> [count]
+queue receive <account> <queue> [count]
+queue delete <account> <queue> <message id> <pop receipt>
+
+keyvault create <resource group> <vault>
+keyvault secrets <vault>
+
+containerapp env create <resource group> <environment>
+containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>]...
+containerapp show <app>
+containerapp revisions <app>
+containerapp restart <app>
+containerapp logs <app> [minutes]
+domain bind <app> <hostname>
 ```
 
-A template comes from the team's documents folder or a worktree of the run; any other path is
-refused. A Bicep file is compiled by the bicep compiler that ships inside the plugin (a pinned
-release, checked by its sha256 when the package is built).
+A template, a build folder, a SQL file or a file to upload comes from the team's documents folder
+or a worktree of the run; any other path is refused. A relative path is the documents folder's.
+
+A Bicep file is compiled by a pinned release of the bicep compiler (v0.48.1). It is not inside
+the package, which would then be over the Marketplace's 100 MB limit: the first Bicep deployment
+downloads it once from the release on github.com into the member's working folder, about 120 MB,
+and the member runs it only while its sha256 is the pinned one. ARM JSON templates need no
+compiler.
 
 For example, with `mode` at `whatif`:
 
@@ -137,13 +193,45 @@ deploy my-project-rg infra/main.bicep infra/main.parameters.json
 answers what would be created and changes nothing; with `mode` at `apply`, the same lines create
 the group and deploy exactly what the what-if checked.
 
+An app from start to finish, in apply, `<registry>` and `<vault>` standing for names of your own
+that are unique in all of Azure:
+
+```
+rg create my-project-rg westeurope
+acr create my-project-rg <registry>
+acr build <registry> my-app:1.0 app
+keyvault create my-project-rg <vault>
+containerapp env create my-project-rg my-project-env
+containerapp create my-project-rg my-app my-project-env <registry>.azurecr.io/my-app:1.0 port=8080 secret=API_KEY=https://<vault>.vault.azure.net/secrets/api-key
+domain bind my-app www.example.com
+```
+
+- `acr build` uploads the folder `app` from the team's documents (leaving out `.git` and what its
+  `.dockerignore` leaves out), builds it in the registry and answers the image's digest and the
+  end of the build's log.
+- `containerapp create` makes a managed identity for the app and grants it AcrPull on the registry
+  and Key Vault Secrets User on each vault a `secret=` names. The app pulls its image and reads its
+  secrets with that identity; no password is involved. Each secret must already be in the vault.
+- `domain bind` answers the TXT and CNAME (or, for a domain's apex, A) records the domain needs. In
+  a DNS zone the team owns it sets them itself. Once they resolve, `domain bind` again creates a
+  free managed certificate, which Azure renews, and binds it.
+
+`sql exec` runs a file's batches (split at `GO` lines) in order, stopping at the first that fails,
+and answers the rows each changed, or each result capped at 200 rows. In whatif it says what it
+would run and does not connect.
+
+`containerapp logs` reads the app's console lines from the environment's Log Analytics workspace,
+the last 30 minutes unless told otherwise, at most 500 lines.
+
 ## App secrets
 
 An app's own secrets (a third-party API key, a webhook signing secret) go in Key Vault, set by a
-person in the Azure portal or by another plugin. They never go in a template, a parameters file or
-the repository; the member refuses a template that reads keys and a parameters file that holds a
-secret's value. A template points at the secret with a Key Vault reference, and the app reads it
-with its managed identity.
+person in the Azure portal or by another plugin. They never go in a template, a parameters file, a
+command or the repository: the member refuses a template that reads keys, a parameters file that
+holds a secret's value, and an `env=` whose name or value looks like a secret. A container app
+points at the secret with `secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name>`, and
+reads it with its managed identity; `keyvault secrets <vault>` lists the names a vault holds,
+never their values.
 
 ## Events
 
@@ -158,4 +246,5 @@ with its managed identity.
 go test ./...
 ```
 
-runs every command against a fake Azure (`httptest`); nothing reaches a network.
+runs every command against fakes of Azure Resource Manager, the registry, Azure SQL (a local TDS
+server), storage, Key Vault and Log Analytics; nothing reaches a network.

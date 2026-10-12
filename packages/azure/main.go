@@ -85,6 +85,7 @@ type plugin struct {
 	account string // the signed-in account's name, as the connection names it
 	az      *client
 	docs    string   // the team's documents folder
+	work    string   // the member's own working folder, kept between runs
 	trees   []string // the run's worktrees
 	now     func() time.Time
 
@@ -132,6 +133,7 @@ func run(in io.Reader, out io.Writer, now func() time.Time) int {
 	p.cfg = cfg
 	p.team = req.Member.Team
 	p.docs = documentsFolder(req.Member.Team, req.SiteFiles)
+	p.work = req.WorkingDirectory
 	for _, t := range req.Worktrees {
 		if t.Path != "" {
 			p.trees = append(p.trees, t.Path)
@@ -230,7 +232,7 @@ func (p *plugin) hide(value string) {
 // a JWT, and a key, password or signature inside a connection string or a SAS address.
 var credentialShaped = []*regexp.Regexp{
 	regexp.MustCompile(`eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]*`),
-	regexp.MustCompile(`(?i)\b(AccountKey|SharedAccessKey|SharedAccessSignature|InstrumentationKey|Password|Pwd|sig)=[^;&"\s\\]+`),
+	regexp.MustCompile(`(?i)(AccountKey|SharedAccessKey|SharedAccessSignature|InstrumentationKey|Password|Pwd|sig)=[^;&"\s\\]+`),
 }
 
 // emit writes one record. Every record goes through scrub first: no token, key or connection string

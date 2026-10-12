@@ -23,25 +23,17 @@ func init() {
 	register(command{words: []string{"deploy"}, usage: "<resource group> <template .bicep or .json> [parameters .json]", run: (*plugin).deploy})
 }
 
-// bicepPath is the pinned bicep binary build.sh puts beside the plugin's own.
-var bicepPath = func() string {
-	exe, err := os.Executable()
+// compileBicep turns a Bicep file into ARM JSON with the pinned bicep compiler. Only tests change it.
+var compileBicep = func(p *plugin, path string) ([]byte, error) {
+	bin, err := p.bicep()
 	if err != nil {
-		return ""
-	}
-	return filepath.Join(filepath.Dir(exe), "bicep")
-}
-
-// compileBicep turns a Bicep file into ARM JSON with the pinned bicep binary. Only tests change it.
-var compileBicep = func(path string) ([]byte, error) {
-	bin := bicepPath()
-	if _, err := os.Stat(bin); err != nil {
-		return nil, fmt.Errorf("the bicep compiler is not beside this plugin (%s); reinstall the plugin from its package", bin)
+		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "build", path, "--stdout")
-	cmd.Env = append(os.Environ(), "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1", "DOTNET_CLI_TELEMETRY_OPTOUT=1")
+	cmd.Env = append(os.Environ(), "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1", "DOTNET_CLI_TELEMETRY_OPTOUT=1",
+		"DOTNET_BUNDLE_EXTRACT_BASE_DIR="+filepath.Join(filepath.Dir(bin), "extract"))
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
@@ -57,14 +49,45 @@ var compileBicep = func(path string) ([]byte, error) {
 // readAllowed reads a file the team may deploy from: inside the team's documents folder or a
 // worktree of this run, after links are followed. Any other path is refused.
 func (p *plugin) readAllowed(arg string) (string, []byte, error) {
+	real, err := p.allowedPath(arg, "deploys only templates from those")
+	if err != nil {
+		return "", nil, err
+	}
+	info, err := os.Stat(real)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", nil, refusef("Refused: %s is not a file.", arg)
+	}
+	if info.Size() > 4<<20 {
+		return "", nil, refusef("Refused: %s is larger than 4 MB, Azure's limit for a template.", arg)
+	}
+	raw, err := os.ReadFile(real)
+	if err != nil {
+		return "", nil, refusef("Refused: %s cannot be read.", arg)
+	}
+	return real, raw, nil
+}
+
+// allowedPath answers where a path the team names really is, after links are followed, when that is
+// inside the team's documents folder or a worktree of this run. A relative path is the documents
+// folder's. Any other path is refused, the sentence ending with what the command takes.
+func (p *plugin) allowedPath(arg, takes string) (string, error) {
 	path := arg
 	if !filepath.IsAbs(path) && p.docs != "" {
 		path = filepath.Join(p.docs, path)
 	}
 	real, err := filepath.EvalSymlinks(filepath.Clean(path))
 	if err != nil {
-		return "", nil, refusef("Refused: %s cannot be read; give a file in the team's documents folder or a worktree of this run.", arg)
+		return "", refusef("Refused: %s cannot be read; give a path in the team's documents folder or a worktree of this run.", arg)
 	}
+	if p.insideTeamFolders(real) {
+		return real, nil
+	}
+	return "", refusef("Refused: %s is outside the team's documents folder and this run's worktrees; this member %s.", arg, takes)
+}
+
+// insideTeamFolders reports whether a path, links already followed, is in the team's documents
+// folder or a worktree of this run.
+func (p *plugin) insideTeamFolders(real string) bool {
 	var roots []string
 	if p.docs != "" {
 		roots = append(roots, p.docs)
@@ -75,22 +98,17 @@ func (p *plugin) readAllowed(arg string) (string, []byte, error) {
 		if err != nil {
 			continue
 		}
-		if rel, err := filepath.Rel(r, real); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
-			info, err := os.Stat(real)
-			if err != nil || !info.Mode().IsRegular() {
-				return "", nil, refusef("Refused: %s is not a file.", arg)
-			}
-			if info.Size() > 4<<20 {
-				return "", nil, refusef("Refused: %s is larger than 4 MB, Azure's limit for a template.", arg)
-			}
-			raw, err := os.ReadFile(real)
-			if err != nil {
-				return "", nil, refusef("Refused: %s cannot be read.", arg)
-			}
-			return real, raw, nil
+		if within(r, real) {
+			return true
 		}
 	}
-	return "", nil, refusef("Refused: %s is outside the team's documents folder and this run's worktrees; this member deploys only templates from those.", arg)
+	return false
+}
+
+// within reports whether path is root or below it.
+func within(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
 // secretFunctions are the template functions that read keys or connection strings. A template
@@ -202,7 +220,7 @@ func (p *plugin) prepare(args []string) (*deployment, error) {
 	switch strings.ToLower(filepath.Ext(file)) {
 	case ".bicep":
 		p.progress("azure: compiling " + filepath.Base(file) + " with bicep")
-		raw, err = compileBicep(file)
+		raw, err = compileBicep(p, file)
 		if err != nil {
 			return nil, err
 		}

@@ -1,6 +1,6 @@
 ---
 name: plugin-azure
-description: Use when a team needs Azure resources - resource groups, Bicep or ARM deployments, DNS zones and records, role assignments for its managed identities, budgets - through the Azure plugin member: its commands, whatif versus apply, the ownership rule, and where app secrets go.
+description: Use when a team needs Azure resources - resource groups, Bicep or ARM deployments, image builds, Azure SQL databases and SQL, storage blobs, tables and queues, Key Vault, Container Apps and their logs and domains, DNS, role assignments for its managed identities, budgets - through the Azure plugin member: its commands, whatif versus apply, the ownership rule, and where app secrets go.
 roles: manager member
 ---
 
@@ -28,9 +28,10 @@ Everything the member creates carries the tags `yawble-owner: <team id>` and
 
 - a resource carrying this team's tags, or anything inside a resource group that does;
 - a new database on a server in `sharedSqlServers`, which is tagged and then owned;
-- images pushed to, and AcrPull granted on, a registry in `sharedRegistries`.
+- images built in, and AcrPull granted on, a registry in `sharedRegistries`.
 
-It reads anything the person can read. Anything else is refused, naming the resource, and
+SQL runs only on a database the team owns, even on a shared server. Blob, table and queue changes
+go only to storage accounts the team owns. It reads anything the person can read. Anything else is refused, naming the resource, and
 `plugin.azure.refused` is published.
 
 ## Commands
@@ -72,6 +73,72 @@ Quote a value with spaces (`"Storage Blob Data Contributor"`).
 - `dns record delete <zone> <name> <type>` - needs `allowDelete`.
 - `delete <resource id or resource group>` - owned only, with `allowDelete` on.
 
+A path (template, build folder, SQL file, file to upload) is in the team's documents folder or a
+worktree of this run; a relative path is the documents folder's.
+
+Registries:
+
+- `acr create <resource group> <registry> [Basic|Standard|Premium]` - admin user off.
+- `acr build <registry> <image:tag> <folder>` - into an owned registry or one in
+  `sharedRegistries`. Uploads the folder (without `.git` and what `.dockerignore` leaves out),
+  builds its `Dockerfile` in the registry, and answers the digest and the end of the log.
+
+Azure SQL (Microsoft Entra sign-in only; no SQL password exists):
+
+- `sql server create <resource group> <server>` - the signed-in person is its administrator. A
+  person adds this instance's address to its firewall before `sql exec` reaches it.
+- `sql db create <server> <database> <sku>` - on an owned server, or tagged on a server in
+  `sharedSqlServers`. A sku such as `Basic`, `S0` or `GP_S_Gen5_1`.
+- `sql exec <server>/<database> <file.sql>` - runs the file's batches (split at `GO` lines) in
+  order, stopping at the first that fails; answers rows affected, or each result capped at 200
+  rows. On owned databases only. In whatif it does not connect, even for a SELECT.
+- `sql grant <server>/<database> <managed identity id> <role...>` - makes a managed identity the
+  team created a database user with `db_datareader`, `db_datawriter` and/or `db_ddladmin`.
+
+Storage (in accounts the team owns; reads anywhere the person has a Storage Data role):
+
+- `storage create <resource group> <account> [sku]` - StorageV2, shared key access off, no
+  public blob access.
+- `storage container|table|queue create <account> <name>`.
+- `blob list <account> <container> [prefix]` (first 200), `blob get <account> <container> <blob>
+  [path]` (writes into the team's documents), `blob put <account> <container> <blob> <file>`,
+  `blob delete <account> <container> <blob>`.
+- `table query <account> <table> [filter]` (first 200, an OData filter such as
+  `PartitionKey eq 'orders'`), `table upsert <account> <table> <partition key> <row key>
+  '<JSON>'` (the JSON in single quotes), `table delete <account> <table> <partition key> <row
+  key>`.
+- `queue send <account> <queue> <text>` (base64, as Azure Functions reads it), `queue peek
+  <account> <queue> [count]`, `queue receive <account> <queue> [count]` (hides the messages for
+  5 minutes and answers each pop receipt), `queue delete <account> <queue> <message id> <pop
+  receipt>`.
+- Every `delete` needs `allowDelete`.
+
+Key Vault:
+
+- `keyvault create <resource group> <vault>` - access by Azure roles.
+- `keyvault secrets <vault>` - the secret names only, never a value.
+
+Container Apps:
+
+- `containerapp env create <resource group> <environment>` - with its own Log Analytics
+  workspace `<environment>-logs`.
+- `containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag>
+  [port=<n>] [env=<NAME>=<value>]... [secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name>]...`
+  - in an owned environment, from an owned or shared registry. Creates the identity
+  `<app>-id`, grants it AcrPull on the registry and Key Vault Secrets User on each owned vault a
+  `secret=` names, then creates or updates the app (0 to 1 replicas, 0.5 CPU, 1 GiB). `port=`
+  gives it public HTTPS ingress. Each secret must already be in the vault. An `env=` that looks
+  like a secret is refused.
+- `containerapp show <app>`, `containerapp revisions <app>`, `containerapp logs <app> [minutes]`
+  (default 30, at most 500 lines) - reads.
+- `containerapp restart <app>` - restarts the latest ready revision.
+- `domain bind <app> <hostname>` - says the TXT and CNAME (A for a domain's apex) records the
+  domain needs, and sets them when the team owns its Azure DNS zone. Once they resolve, run it
+  again: it creates the managed certificate and binds it. Pass the records to the person when the
+  zone is elsewhere.
+
+The first `deploy` of a Bicep file downloads the pinned bicep compiler (about 120 MB) once.
+
 ## Events
 
 - `plugin.azure.planned` - what a changing command would do, or a deployment's what-if: counts
@@ -88,6 +155,7 @@ accounts with shared key access off. Apps reach storage, Key Vault and SQL with 
 identity and a role from the list above.
 
 An app secret (a third-party API key, a webhook signing secret) goes in Key Vault, set by a person
-or by another plugin. It never goes in a template, a parameters file, the repository or a message.
-A template refers to it with a Key Vault reference, and the app reads it with its managed identity
-(Key Vault Secrets User).
+or by another plugin. It never goes in a template, a parameters file, the repository, a command or
+a message. A template refers to it with a Key Vault reference; a container app with
+`secret=<NAME>=<the secret's address>`. The app reads it with its managed identity (Key Vault
+Secrets User).

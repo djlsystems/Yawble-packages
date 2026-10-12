@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "azure",
   "name": "Azure",
-  "description": "Builds and runs a team's own Azure resources, signed in as the person: resource groups, Bicep and ARM deployments checked by what-if first, DNS zones, budgets and role assignments for its managed identities.\n\nIt changes only what it created, which carries the tags yawble-owner and yawble-plugin, plus the shared SQL servers and registries a person lists. It acts with the person's own Azure rights, never more. What-if by default: every changing command says what it would do and changes nothing until a person sets mode to apply. It never reads a key, a connection string or a secret value, and no token reaches its output.",
+  "description": "Builds and runs a team's own Azure resources, signed in as the person: resource groups, Bicep and ARM deployments checked by what-if first, registry builds, Azure SQL databases and SQL, storage blobs, tables and queues, Key Vault, Container Apps with their logs and custom domains, DNS zones, budgets and role assignments for its managed identities.\n\nIt changes only what it created, which carries the tags yawble-owner and yawble-plugin, plus the shared SQL servers and registries a person lists. It acts with the person's own Azure rights, never more. What-if by default: every changing command says what it would do and changes nothing until a person sets mode to apply. It never reads a key, a connection string or a secret value, and no token reaches its output.",
   "version": "1.0.0",
   "protocol": "harness.member/1",
   "executable": {
@@ -180,7 +180,7 @@
       },
       {
         "type": "refused",
-        "summary": "A command was refused: outside what the team owns, a role or principal not allowed, a delete with allowDelete off, a path outside the team's folders, or bad arguments.",
+        "summary": "A command was refused: outside what the team owns, a role or principal not allowed, a delete with allowDelete off, a path outside the team's folders, a secret outside Key Vault, or bad arguments.",
         "highVolume": false,
         "fields": [
           {

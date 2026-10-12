@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -39,8 +40,16 @@ var (
 )
 
 func fakeJWT(tag string) string {
-	return "ey" + "J" + strings.Repeat(tag, 24) + "." + "ey" + "J" + strings.Repeat(tag, 40) + "." + strings.Repeat(strings.ToUpper(tag), 20)
+	enc := func(v map[string]any) string {
+		raw, _ := json.Marshal(v)
+		return base64.RawURLEncoding.EncodeToString(raw)
+	}
+	head := enc(map[string]any{"alg": "none", "typ": "JWT", "kid": strings.Repeat(tag, 24)})
+	body := enc(map[string]any{"oid": zeroGUID, "tid": zeroGUID, "upn": "person@example.com", "uti": strings.Repeat(tag, 40)})
+	return head + "." + body + "." + strings.Repeat(strings.ToUpper(tag), 20)
 }
+
+const zeroGUID = "00000000-0000-0000-0000-000000000000"
 
 var testNow = time.Date(2026, 10, 9, 15, 0, 0, 0, time.UTC)
 
@@ -74,6 +83,8 @@ type fake struct {
 	whatIf     []map[string]any // the changes the next what-if answers
 	echoToken  bool             // answer the subscription read with an error quoting the token
 	hosts      map[string]http.HandlerFunc
+	runPolls   int    // how often a registry build was read
+	runStatus  string // how a registry build ends
 }
 
 func newFake(t *testing.T) *fake {
@@ -87,6 +98,7 @@ func newFake(t *testing.T) *fake {
 		providers: map[string]string{},
 		locations: []string{"westeurope", "eastus2"},
 		hosts:     map[string]http.HandlerFunc{},
+		runStatus: "Succeeded",
 	}
 	for _, ns := range providers {
 		f.providers[ns] = "Registered"
@@ -175,6 +187,11 @@ func (f *fake) serve(w http.ResponseWriter, r *http.Request) {
 	f.calls = append(f.calls, call{Host: host, Method: r.Method, Path: path, Query: r.URL.RawQuery, Token: token, Body: body})
 	f.mu.Unlock()
 
+	// NEVER A KEY: no request of any test asks Azure for a key, a connection string or a secret.
+	if l := strings.ToLower(path); strings.Contains(l, "listkeys") || strings.Contains(l, "sharedkeys") ||
+		strings.Contains(l, "listconnectionstrings") || strings.Contains(l, "listcredentials") || strings.Contains(l, "listsecrets") {
+		f.t.Errorf("the plugin asked for a key: %s %s", r.Method, path)
+	}
 	if h, ok := f.hosts[host]; ok {
 		h(w, r)
 		return
@@ -268,7 +285,7 @@ func (f *fake) arm(w http.ResponseWriter, method, path string, body []byte) {
 		var list []map[string]any
 		for _, r := range f.resources {
 			if strings.EqualFold(r.Type, typ) {
-				list = append(list, map[string]any{"id": r.ID, "name": r.ID[strings.LastIndex(r.ID, "/")+1:], "type": r.Type, "tags": r.Tags})
+				list = append(list, map[string]any{"id": r.ID, "name": r.ID[strings.LastIndex(r.ID, "/")+1:], "type": r.Type, "location": r.Location, "tags": r.Tags})
 			}
 		}
 		f.answer(w, 200, map[string]any{"value": list})
@@ -338,6 +355,9 @@ func (f *fake) group(w http.ResponseWriter, method, path string, body []byte) {
 
 	// A resource, its tags or an extension on it.
 	id := path
+	if f.armAction(w, method, path, body) {
+		return
+	}
 	if i := strings.Index(strings.ToLower(id), "/providers/microsoft.resources/tags/default"); i > 0 {
 		r := f.resources[strings.ToLower(id[:i])]
 		if r == nil {
@@ -373,6 +393,10 @@ func (f *fake) group(w http.ResponseWriter, method, path string, body []byte) {
 			Properties map[string]any    `json:"properties"`
 		}
 		_ = json.Unmarshal(body, &in)
+		var where struct {
+			Location string `json:"location"`
+		}
+		_ = json.Unmarshal(body, &where)
 		idx := strings.Index(strings.ToLower(id), "/providers/")
 		typ := id[idx+len("/providers/"):]
 		segs := strings.Split(typ, "/")
@@ -380,10 +404,17 @@ func (f *fake) group(w http.ResponseWriter, method, path string, body []byte) {
 		for i := 1; i < len(segs); i += 2 {
 			typeParts = append(typeParts, segs[i])
 		}
-		nr := &fakeResource{ID: id, Type: strings.Join(typeParts, "/"), Location: "global", Tags: in.Tags, Props: in.Properties}
+		if where.Location == "" {
+			where.Location = "global"
+		}
+		if in.Properties == nil {
+			in.Properties = map[string]any{}
+		}
+		nr := &fakeResource{ID: id, Type: strings.Join(typeParts, "/"), Location: where.Location, Tags: in.Tags, Props: in.Properties}
 		if strings.EqualFold(nr.Type, "Microsoft.Network/dnsZones") {
 			nr.Props = map[string]any{"nameServers": []string{"ns1-01.azure-dns.example", "ns2-01.azure-dns.example"}}
 		}
+		f.created(nr)
 		f.resources[strings.ToLower(id)] = nr
 		f.answer(w, 201, map[string]any{"id": id, "tags": in.Tags, "properties": nr.Props})
 	case http.MethodDelete:

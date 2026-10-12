@@ -34,5 +34,8 @@ portal.azure.com              # the Azure portal the azure package's README send
 database.windows.net          # Azure SQL (<server>.database.windows.net), an API the azure plugin signs in to
 storage.azure.com             # Azure Storage, an API the azure plugin signs in to
 api.loganalytics.io           # Log Analytics, an API the azure plugin signs in to
-azurecr.io                    # Azure Container Registry (<name>.azurecr.io), whose addresses the azure plugin's sharedRegistries setting accepts
-github.com                    # the bicep compiler's release downloads (github.com/Azure/bicep), which the azure plugin's build.sh fetches and checks by sha256
+azurecr.io                    # Azure Container Registry (<name>.azurecr.io), which the azure plugin builds images in and container apps pull from, and whose addresses its sharedRegistries setting accepts
+github.com                    # the bicep compiler's release downloads (github.com/Azure/bicep), which the azure plugin fetches once and checks by sha256
+blob.core.windows.net         # Azure Blob Storage (<account>.blob.core.windows.net), where the azure plugin reads and writes blobs and a registry build's source and log are kept
+table.core.windows.net        # Azure Table Storage (<account>.table.core.windows.net), where the azure plugin reads and writes entities
+queue.core.windows.net        # Azure Queue Storage (<account>.queue.core.windows.net), where the azure plugin sends and receives messages
