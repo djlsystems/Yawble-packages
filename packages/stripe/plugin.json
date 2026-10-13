@@ -3,7 +3,7 @@
   "id": "stripe",
   "name": "Stripe",
   "description": "Sets up Stripe products, one-time prices and webhook endpoints with a restricted key, and reads checkouts, payments, customers and events. Webhook signing secrets go straight into an Azure Key Vault, never into any output. Dry run by default; never moves money.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/stripe",
@@ -24,13 +24,13 @@
       ],
       "default": "dryrun",
       "setBy": "person",
-      "description": "dryrun looks everything up and says what it would do, and changes nothing in Stripe or Key Vault; setup in dryrun only reads, and checks each listed vault is reached. apply makes the changes; setup in apply also writes the check secret stripe-plugin-check to each listed vault to confirm it can be written."
+      "description": "dryrun looks everything up and says what it would do, and changes nothing in Stripe or Key Vault; setup in dryrun only reads, and checks each listed vault is reached through Azure management. apply makes the changes; setup in apply also writes the check secret stripe-plugin-check to each listed vault to confirm it can be written."
     },
     "keyVaults": {
       "type": "list",
       "default": [],
       "setBy": "person",
-      "description": "The Azure Key Vaults a webhook signing secret may be written to, by name, such as payments-vault, or by its address ending in vault.azure.net. Any other vault is refused. Empty: no webhook secret is written anywhere."
+      "description": "The Azure Key Vaults a webhook signing secret may be written to, by name, such as payments-vault, or by its address ending in vault.azure.net. The plugin finds each vault in the subscriptions the signed-in Microsoft account can read and writes to it through Azure management. Any other vault is refused. Empty: no webhook secret is written anywhere."
     },
     "expectedAccount": {
       "type": "string",
@@ -48,10 +48,10 @@
   },
   "connections": {
     "microsoft": {
-      "description": "Optional: a Microsoft account that may write secrets to the Key Vaults in keyVaults. Used for the Key Vault API only.",
+      "description": "Optional: a Microsoft account with the Contributor or Key Vault Contributor role on the Key Vaults in keyVaults. Used for Azure management only, to write secrets to the Key Vaults in keyVaults.",
       "providers": ["microsoft"],
       "scopes": {
-        "microsoft": ["https://vault.azure.net/user_impersonation", "offline_access"]
+        "microsoft": ["https://management.azure.com/user_impersonation", "offline_access"]
       },
       "required": false
     }

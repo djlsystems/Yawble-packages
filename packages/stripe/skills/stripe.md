@@ -20,6 +20,8 @@ The first words are the command. Quote a value with spaces (`"Pro plan"`).
   does next) or `Ready:`. Pass the `Next:` line to the person as it is. In dryrun setup only reads:
   it sends no write to Stripe or Key Vault and says the writes are confirmed in apply. In apply it
   writes the check secret `stripe-plugin-check` to each vault to confirm the vault can be written.
+  The plugin reaches each vault through Azure management with the person's Microsoft sign-in; the
+  account needs the Contributor or Key Vault Contributor role on the vault, which a person gives.
 - `whoami` - the account, `test` or `live`, and the key's prefix only.
 - `product ensure <lookup key> <name> [description]` - the product whose lookup key this is exists
   with this name (and description, when given).
@@ -68,7 +70,9 @@ reason. The reasons, in the plugin's words: an `sk_` or other non-restricted key
 account than `expectedAccount` or than the account setup kept (a person fixes the key, or sets
 `expectedAccount` and runs `setup`); `setup` not yet run; a vault not in `keyVaults`; no Microsoft
 connection on the `microsoft` slot; arguments of the wrong shape (the sentence shows the right one).
-A missing permission makes Stripe answer 403; run `setup` to see which one.
+A missing permission makes Stripe answer 403; run `setup` to see which one. A vault the signed-in
+Microsoft account cannot see, or cannot write (403), is named with the role the account needs; pass
+that sentence to the person.
 
 ## Events
 

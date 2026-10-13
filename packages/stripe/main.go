@@ -1,20 +1,20 @@
 // STRIPE: a plugin member, protocol harness.member/1, that sets up Stripe products, one-time prices
 // and webhook endpoints through a restricted key, and reads checkouts, payments, customers and
-// events. A webhook signing secret goes from Stripe's answer straight into an Azure Key Vault and is
-// never written anywhere else.
+// events. A webhook signing secret goes from Stripe's answer straight into an Azure Key Vault,
+// written through Azure Resource Manager, and is never written anywhere else.
 //
 // In:  ONE JSON request on stdin - { work: [{ instruction }], config, secrets: { apiKey },
 //
-//	connections: { microsoft: { accessToken } }, workingDirectory, ... }.
+//	connections: { microsoft: { accessToken, tokens } }, workingDirectory, ... }.
 //
 // Out: JSON Lines on stdout - progress, publish, then exactly one result.
 //
 // One command per instruction; the first words are the command (commands.go lists them). Changes
 // happen only in mode=apply; dryrun looks everything up and says what it would do.
 //
-// Self-contained: standard library only, built with CGO_ENABLED=0 (build.sh). The Stripe and Key
-// Vault base URLs are package variables only tests change; the shipped binary has no way to point
-// elsewhere.
+// Self-contained: standard library only, built with CGO_ENABLED=0 (build.sh). The Stripe and Azure
+// management base URLs are package variables only tests change; the shipped binary has no way to
+// point elsewhere.
 package main
 
 import (
@@ -40,12 +40,30 @@ type workItem struct {
 	Payload     json.RawMessage `json:"payload"`
 }
 
+// connection is a bound slot on stdin. accessToken is the first API's token; tokens, when present,
+// holds a token per API, keyed by the API's address (https://management.azure.com/).
 type connection struct {
-	Provider    string `json:"provider"`
+	Provider    string              `json:"provider"`
+	AccessToken string              `json:"accessToken"`
+	Tokens      map[string]apiToken `json:"tokens"`
+}
+
+type apiToken struct {
 	AccessToken string `json:"accessToken"`
 }
 
-// slot is the manifest's one connection slot, for the Key Vault API only.
+// managementToken answers the token for Azure management: tokens' entry for it when there is one,
+// else accessToken.
+func (c connection) managementToken() string {
+	for api, t := range c.Tokens {
+		if strings.TrimSuffix(strings.ToLower(api), "/") == strings.TrimSuffix(armAPI, "/") && t.AccessToken != "" {
+			return t.AccessToken
+		}
+	}
+	return c.AccessToken
+}
+
+// slot is the manifest's one connection slot, for Azure management only.
 const slot = "microsoft"
 
 // refusal is a sentence the plugin refuses a command with, word for word. A refusal publishes
@@ -59,7 +77,7 @@ type plugin struct {
 	cfg     settings
 	key     string
 	env     string // test or live, from the key
-	vault   string // the Microsoft access token for Key Vault, "" when the slot is unbound
+	vault   string // the Microsoft access token for Azure management, "" when the slot is unbound
 	workdir string
 	api     *stripeClient
 	kv      *vaultClient
@@ -96,8 +114,11 @@ func run(in io.Reader, out io.Writer, now func() time.Time) int {
 	p.key = strings.TrimSpace(req.Secrets["apiKey"])
 	p.hide(p.key)
 	if c, ok := req.Connections[slot]; ok {
-		p.vault = c.AccessToken
-		p.hide(p.vault)
+		p.vault = c.managementToken()
+		p.hide(c.AccessToken)
+		for _, t := range c.Tokens {
+			p.hide(t.AccessToken)
+		}
 	}
 	p.workdir = req.WorkingDirectory
 	p.api = &stripeClient{key: p.key}

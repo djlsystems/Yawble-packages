@@ -110,6 +110,13 @@ func (p *plugin) createWithSecret(target string, events []string, to vaultTarget
 	for _, e := range events {
 		form.Add("enabled_events[]", e)
 	}
+	// The vault is found first, so no endpoint is made whose secret has nowhere to go.
+	if _, err := p.kv.idOf(to.vault); err != nil {
+		if _, ok := err.(refusal); ok {
+			return endpoint{}, "", err
+		}
+		return endpoint{}, "", fmt.Errorf("%v. Nothing was changed", err)
+	}
 	var made endpoint
 	if err := p.api.do(http.MethodPost, "/v1/webhook_endpoints", form, "", &made); err != nil {
 		return endpoint{}, "", err

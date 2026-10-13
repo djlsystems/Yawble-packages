@@ -103,13 +103,17 @@ func TestSetupInDryRunWritesNothingAnywhere(t *testing.T) {
 		t.Fatalf("setup failed: %s", r.text())
 	}
 	mustContain(t, r.text(),
-		"- Key Vault "+allowedKV+": reached with the Microsoft connection; dryrun writes nothing, so setup confirms the vault can be written when it runs with mode apply",
+		"- Key Vault "+allowedKV+": reached through Azure management with the Microsoft connection; dryrun writes nothing, so setup confirms the vault can be written when it runs with mode apply",
 		"setup confirms Products, Prices and Webhook Endpoints (write) when it runs with mode apply")
 	if sent := f.sent(); len(sent) != 0 {
 		t.Fatalf("setup in dryrun sent a write to Stripe or Key Vault: %v", sent)
 	}
-	if len(f.vaultCalls) != 1 || f.vaultCalls[0].Method != http.MethodGet {
-		t.Fatalf("vault calls = %v", f.vaultCalls)
+	if len(f.vaultCalls) == 0 || len(f.vaultWrites()) != 0 {
+		t.Fatalf("Azure management calls = %v", f.vaultCalls)
+	}
+	last := f.vaultCalls[len(f.vaultCalls)-1]
+	if last.Path != allowedVaultID+"/secrets/"+checkSecret || last.Query != "api-version=2023-07-01" {
+		t.Fatalf("setup in dryrun read %s?%s, want the check secret's resource", last.Path, last.Query)
 	}
 	if len(f.secrets) != 0 {
 		t.Fatalf("setup in dryrun left secrets in the vault: %v", f.secrets)
@@ -161,7 +165,7 @@ func TestSetupKeepsTheAccountChecksTheVaultAndSaysTheNextStep(t *testing.T) {
 		"- account: "+accountA+", kept for this member",
 		"expectedAccount (Advanced settings) to "+accountA,
 		"- permissions: all 9 present",
-		"- Key Vault "+allowedKV+": reached with the Microsoft connection",
+		"- Key Vault "+allowedKV+": reached through Azure management with the Microsoft connection",
 		"- mode: dryrun",
 		"Next: When the dry runs say what you want, a person sets mode to apply and runs setup again to confirm the writes.")
 	if len(f.secrets) != 0 {
@@ -178,7 +182,10 @@ func TestSetupSaysAVaultThatCannotBeWritten(t *testing.T) {
 
 	r := runPlugin(t, runOpts{vault: true, config: apply(nil)}, "setup")
 
-	mustContain(t, r.text(), "- Key Vault "+allowedKV+": cannot be written", "Key Vault Secrets Officer", "Next: Fix Key Vault "+allowedKV)
+	mustContain(t, r.text(), "- Key Vault "+allowedKV+": cannot be written", "(403)", "Contributor or Key Vault Contributor role on the vault", "Next: Fix Key Vault "+allowedKV)
+	if strings.Contains(r.text(), "Secrets Officer") || strings.Contains(r.text(), "access policy") {
+		t.Fatalf("setup names a Key Vault data role:\n%s", r.text())
+	}
 }
 
 func TestSetupSaysToBindTheConnectionWhenAVaultIsListed(t *testing.T) {
@@ -517,7 +524,7 @@ func TestAFailedVaultWriteRemovesTheNewEndpoint(t *testing.T) {
 	if r.ok() {
 		t.Fatalf("result = %s", r.text())
 	}
-	mustContain(t, r.text(), "Key Vault Secrets Officer", "removed again")
+	mustContain(t, r.text(), "(403)", "Contributor or Key Vault Contributor role on the vault", "needs no Key Vault data role", "removed again")
 	if len(f.endpoints) != 0 || strings.Contains(r.raw, f.webhookSecs[0]) {
 		t.Fatalf("endpoints left: %v", f.endpoints)
 	}

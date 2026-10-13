@@ -1,9 +1,10 @@
-# Stripe 1.0.0
+# Stripe 1.1.0
 
 A plugin member that sets up a team's Stripe objects - products, one-time prices and webhook
 endpoints - and reads checkouts, payments, customers and events. It works through a **restricted
 key**, never a secret key. A webhook's signing secret goes from Stripe straight into an Azure Key
-Vault, so no agent, output, event or file ever holds it. One member per Stripe account. It never
+Vault, written through Azure management (Azure Resource Manager), so no agent, output, event or
+file ever holds it. One member per Stripe account. It never
 moves money: no charges, refunds or payouts.
 
 Everything starts in **dry run**: each command looks things up and says what it would do, and
@@ -22,8 +23,10 @@ changes nothing until a person sets `mode` to `apply`.
    - the key is restricted (`rk_`), not a secret key (`sk_`, refused);
    - it has each permission the plugin needs, naming any that is missing;
    - whether it is a test or a live key;
-   - each vault in `keyVaults` is reached with the Microsoft connection. In dry run setup only
-     reads: it sends no write to Stripe or Key Vault, checks the write permissions by reading, and
+   - each vault in `keyVaults` is found and reached through Azure management with the Microsoft
+     connection. In dry run setup only reads: it sends no write to Stripe or Key Vault, reads the
+     resource of the secret `stripe-plugin-check` (a read that answers no value), checks the write
+     permissions by reading, and
      says the writes are confirmed when it runs with `mode` set to `apply`. In apply it also
      confirms each vault can be written by writing a secret named `stripe-plugin-check` holding
      the words `write check`, and confirms each write permission with an update of an object that
@@ -75,13 +78,23 @@ switch off, and bind it instead.
 1. In the Azure portal, make a Key Vault, or choose one the application already reads. Its name
    goes in `keyVaults`, as the name (`payments-vault`) or the address
    (`https://<name>.vault.azure.net`). The plugin writes to no vault outside that list.
-2. Give the Microsoft account you will sign in with the **Key Vault Secrets Officer** role on that
-   vault (or, on a vault that uses access policies, a policy with **Get** and **Set** on secrets).
-3. On the member's `microsoft` connection slot, sign in with that account. The slot asks for the
-   Key Vault API only (`https://vault.azure.net/user_impersonation`); the plugin uses the
+2. Give the Microsoft account you will sign in with the **Contributor** or **Key Vault
+   Contributor** role on that vault (Access control (IAM), Add role assignment). The plugin writes
+   secrets through Azure management, which needs no Key Vault data role (such as Key Vault Secrets
+   Officer) and no access policy, whichever permission model the vault uses.
+3. On the member's `microsoft` connection slot, sign in with that account. The slot asks for
+   Azure management only (`https://management.azure.com/user_impersonation`); the plugin uses the
    connection for nothing else.
-4. Run `setup` again. In dry run it answers `- Key Vault payments-vault: reached with the
-   Microsoft connection`; in apply it answers `- Key Vault payments-vault: can be written`.
+4. Run `setup` again. In dry run it answers `- Key Vault payments-vault: reached through Azure
+   management with the Microsoft connection`; in apply it answers
+   `- Key Vault payments-vault: can be written`.
+
+The plugin finds each vault by its name: it lists the subscriptions the signed-in account can read
+and the Key Vaults in each. A vault in none of them is refused with a sentence saying the account
+cannot see a Key Vault of that name and needs a role on it, or that the name in `keyVaults` is
+wrong. A secret is written with `PUT` on the vault's resource
+(`.../providers/Microsoft.KeyVault/vaults/<name>/secrets/<secret name>`); its value is in that
+request's body and nowhere else, and Azure management never answers it back.
 
 The application reads the signing secret from Key Vault at runtime, with its own identity (a
 managed identity, or a Key Vault reference in its configuration). The secret is never copied into
@@ -136,9 +149,10 @@ create also carries an idempotency key, so a retried request cannot make a secon
 ## Build and test
 
 ```sh
-packages/stripe/build.sh ~/plugins-build/stripe/1.0.0
+packages/stripe/build.sh ~/plugins-build/stripe/1.1.0
 (cd packages/stripe && go test ./...)
 ```
 
-The tests run the plugin against a fake Stripe API and a fake Key Vault on a local test server;
-they reach no real service.
+The tests run the plugin against a fake Stripe API and a fake Azure Resource Manager (subscriptions,
+each subscription's Key Vaults, and a vault's secrets) on a local test server; they reach no real
+service.

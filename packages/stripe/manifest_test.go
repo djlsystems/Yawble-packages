@@ -35,7 +35,7 @@ func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
 	}
-	if m.ID != "stripe" || m.Version != "1.0.0" {
+	if m.ID != "stripe" || m.Version != "1.1.0" {
 		t.Fatalf("id %q version %q", m.ID, m.Version)
 	}
 	for _, name := range []string{"mode", "keyVaults", "expectedAccount"} {
@@ -53,10 +53,9 @@ func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 	if !ok || c.Required || !slices.Equal(c.Providers, []string{"microsoft"}) {
 		t.Fatalf("connection slot = %+v", c)
 	}
-	for _, s := range c.Scopes["microsoft"] {
-		if s != "offline_access" && s != "https://vault.azure.net/user_impersonation" {
-			t.Fatalf("the microsoft slot asks for %q, beyond the Key Vault API", s)
-		}
+	// Azure management only: a sign-in that asks for one API is granted with one device code.
+	if want := []string{"https://management.azure.com/user_impersonation", "offline_access"}; !slices.Equal(c.Scopes["microsoft"], want) || len(c.Scopes) != 1 {
+		t.Fatalf("the microsoft slot asks for %v, want exactly %v", c.Scopes, want)
 	}
 	want := map[string][]string{
 		"changed": {"objectType", "id", "lookupKey", "environment", "action"},

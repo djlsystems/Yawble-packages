@@ -33,7 +33,8 @@ var permissions = []permission{
 }
 
 // checkSecret is the secret setup writes to each listed vault in apply to prove it can be written,
-// and reads in dryrun to prove the vault is reached. Its value is a fixed phrase, not a secret.
+// and whose resource it reads in dryrun to prove the vault is reached through Azure management (a
+// read that answers no value). Its value is a fixed phrase, not a secret.
 const checkSecret = "stripe-plugin-check"
 
 // setup checks each thing in order and says the next step in words.
@@ -90,7 +91,7 @@ func (p *plugin) setup() (string, error) {
 		next = append(next, "To create webhook endpoints, a person adds the Key Vault's name to keyVaults and binds a Microsoft connection to the microsoft slot, then runs setup again.")
 	case p.vault == "":
 		lines = append(lines, "- Key Vault: "+strings.Join(p.cfg.KeyVaults, ", ")+" listed, but no Microsoft connection is bound to the microsoft slot")
-		next = append(next, "A person binds a Microsoft connection that may set secrets in "+strings.Join(p.cfg.KeyVaults, ", ")+" to the microsoft slot in this member's settings, then runs setup again.")
+		next = append(next, "A person binds a Microsoft connection whose account has the Contributor or Key Vault Contributor role on "+strings.Join(p.cfg.KeyVaults, ", ")+" to the microsoft slot in this member's settings, then runs setup again.")
 	default:
 		for _, vault := range p.cfg.KeyVaults {
 			if !p.applying() {
@@ -98,7 +99,7 @@ func (p *plugin) setup() (string, error) {
 					lines = append(lines, "- Key Vault "+vault+": cannot be reached: "+err.Error())
 					next = append(next, "Fix Key Vault "+vault+" as the line above says, then run setup again.")
 				} else {
-					lines = append(lines, "- Key Vault "+vault+": reached with the Microsoft connection; dryrun writes nothing, so setup confirms the vault can be written when it runs with mode apply")
+					lines = append(lines, "- Key Vault "+vault+": reached through Azure management with the Microsoft connection; dryrun writes nothing, so setup confirms the vault can be written when it runs with mode apply")
 				}
 				continue
 			}

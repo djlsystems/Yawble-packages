@@ -17,16 +17,29 @@ import (
 	"time"
 )
 
-// The fakes: one TLS server answering Stripe's API under /v1 and every Key Vault under
-// /vault/<name>, so a test sees every request the plugin makes and nothing reaches a network.
+// The fakes: one TLS server answering Stripe's API under /v1 and Azure Resource Manager under
+// /subscriptions (the subscriptions list, each subscription's Key Vaults and a vault's secrets), so a
+// test sees every request the plugin makes and nothing reaches a network. A second server stands for
+// any host other than Azure management, which a nextLink may name and the plugin must not follow.
 
 const (
 	accountA   = "acct_1TestAccountAaaa"
 	accountB   = "acct_1TestAccountBbbb"
-	vaultToken = "eyJ0eXAiOiJKV1QifakeVaultAccessToken0000"
+	armToken   = "eyJ0eXAiOiJKV1QifakeManagementAccessToken0"
+	graphToken = "eyJ0eXAiOiJKV1QifakeGraphAccessToken00000"
 	allowedKV  = "payments-vault"
 	otherKV    = "other-vault"
+
+	// Placeholder subscriptions: the first holds other-vault, the second payments-vault, and the
+	// subscriptions list names the second on its next page.
+	subOne = "00000000-0000-0000-0000-000000000001"
+	subTwo = "00000000-0000-0000-0000-000000000002"
 )
+
+// allowedVaultID is the resource id the fake answers for payments-vault, its name in another case.
+const allowedVaultID = "/subscriptions/" + subTwo + "/resourceGroups/rg-example/providers/Microsoft.KeyVault/vaults/Payments-Vault"
+
+const otherVaultID = "/subscriptions/" + subOne + "/resourceGroups/rg-other/providers/Microsoft.KeyVault/vaults/other-vault"
 
 // Fake keys are put together at run time, so no file holds a value shaped like a real key.
 var (
@@ -47,6 +60,8 @@ type call struct {
 	Method, Path string
 	Form         url.Values
 	Idem         string
+	Query        string // the raw query, for Azure management's calls
+	Body         string // the raw body, for Azure management's calls
 }
 
 type fakeKey struct {
@@ -61,14 +76,16 @@ type fake struct {
 
 	keys        map[string]fakeKey
 	calls       []call
-	vaultCalls  []call
+	vaultCalls  []call // every call to Azure management
+	foreign     *httptest.Server
+	foreignHits int
 	products    map[string]map[string]any
 	prices      []map[string]any
 	endpoints   []map[string]any
 	events      []map[string]any
 	idem        map[string][]byte
 	secrets     map[string][]string // vault/name -> versions' values
-	vaultStatus map[string]int      // vault -> status to answer
+	vaultStatus map[string]int      // vault -> status to answer on its secrets
 	nextID      int
 	webhookSecs []string // every signing secret the fake handed out
 	payment     map[string]any
@@ -89,12 +106,20 @@ func newFake(t *testing.T) *fake {
 	}
 	f.srv = httptest.NewTLSServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
+	f.foreign = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.foreignHits++
+		f.mu.Unlock()
+		f.answer(w, 200, map[string]any{"value": []any{}})
+	}))
+	t.Cleanup(f.foreign.Close)
 
-	oldBase, oldVault, oldClient := stripeBase, vaultBase, httpClient
+	oldBase, oldARM, oldClient := stripeBase, armBase, httpClient
 	stripeBase = f.srv.URL
-	vaultBase = func(vault string) string { return f.srv.URL + "/vault/" + vault }
+	armBase = f.srv.URL
+	// The two servers share one test certificate authority, so one client trusts both.
 	httpClient = f.srv.Client()
-	t.Cleanup(func() { stripeBase, vaultBase, httpClient = oldBase, oldVault, oldClient })
+	t.Cleanup(func() { stripeBase, armBase, httpClient = oldBase, oldARM, oldClient })
 	return f
 }
 
@@ -144,8 +169,8 @@ func (f *fake) serve(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	raw, _ := io.ReadAll(r.Body)
 
-	if strings.HasPrefix(r.URL.Path, "/vault/") {
-		f.serveVault(w, r, raw)
+	if strings.HasPrefix(r.URL.Path, "/subscriptions") {
+		f.serveARM(w, r, raw)
 		return
 	}
 
@@ -331,47 +356,120 @@ func (f *fake) route(w http.ResponseWriter, r *http.Request, form url.Values) {
 	}
 }
 
-func (f *fake) serveVault(w http.ResponseWriter, r *http.Request, raw []byte) {
-	rest := strings.TrimPrefix(r.URL.Path, "/vault/")
-	vault, path, _ := strings.Cut(rest, "/")
-	f.vaultCalls = append(f.vaultCalls, call{Method: r.Method, Path: r.URL.Path})
-	if r.Header.Get("Authorization") != "Bearer "+vaultToken {
-		w.WriteHeader(401)
+// vaultNames maps each fake vault's resource id, in lower case, to its name as keyVaults lists it.
+var vaultNames = map[string]string{
+	strings.ToLower(allowedVaultID): allowedKV,
+	strings.ToLower(otherVaultID):   otherKV,
+}
+
+func (f *fake) serveARM(w http.ResponseWriter, r *http.Request, raw []byte) {
+	f.vaultCalls = append(f.vaultCalls, call{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: string(raw)})
+	if r.Header.Get("Authorization") != "Bearer "+armToken {
+		f.answer(w, 401, map[string]any{"error": map[string]any{"code": "InvalidAuthenticationToken"}})
+		return
+	}
+	q := r.URL.Query()
+	version := q.Get("api-version")
+	path := r.URL.Path
+
+	switch {
+	case path == "/subscriptions" && r.Method == http.MethodGet:
+		if version != "2022-12-01" {
+			w.WriteHeader(400)
+			return
+		}
+		if q.Get("page") == "2" {
+			f.answer(w, 200, map[string]any{"value": []any{
+				map[string]any{"id": "/subscriptions/" + subTwo, "subscriptionId": subTwo, "state": "Enabled"},
+			}})
+			return
+		}
+		f.answer(w, 200, map[string]any{
+			"value":    []any{map[string]any{"id": "/subscriptions/" + subOne, "subscriptionId": subOne, "state": "Enabled"}},
+			"nextLink": f.srv.URL + "/subscriptions?api-version=2022-12-01&page=2",
+		})
+		return
+	case strings.HasSuffix(path, "/resources") && r.Method == http.MethodGet:
+		if version != "2021-04-01" || q.Get("$filter") != "resourceType eq 'Microsoft.KeyVault/vaults'" || strings.Contains(r.URL.RawQuery, "+") {
+			w.WriteHeader(400)
+			return
+		}
+		switch strings.TrimSuffix(strings.TrimPrefix(path, "/subscriptions/"), "/resources") {
+		case subOne:
+			// Its next page is on another host, which the plugin must not follow with the token.
+			f.answer(w, 200, map[string]any{
+				"value":    []any{map[string]any{"id": otherVaultID, "name": "other-vault", "type": "Microsoft.KeyVault/vaults"}},
+				"nextLink": f.foreign.URL + "/subscriptions/" + subOne + "/resources?page=2",
+			})
+		case subTwo:
+			f.answer(w, 200, map[string]any{"value": []any{
+				map[string]any{"id": allowedVaultID, "name": "Payments-Vault", "type": "Microsoft.KeyVault/vaults"},
+			}})
+		default:
+			w.WriteHeader(404)
+		}
+		return
+	}
+
+	vaultPath, name, ok := strings.Cut(path, "/secrets/")
+	vault, known := vaultNames[strings.ToLower(vaultPath)]
+	if !ok || !known || name == "" || strings.Contains(name, "/") {
+		f.answer(w, 404, map[string]any{"error": map[string]any{"code": "ResourceNotFound"}})
+		return
+	}
+	if version != "2023-07-01" {
+		w.WriteHeader(400)
 		return
 	}
 	if st := f.vaultStatus[vault]; st != 0 {
-		w.WriteHeader(st)
-		return
-	}
-	name, ok := strings.CutPrefix(path, "secrets/")
-	if r.Method == http.MethodGet && ok && r.URL.Query().Get("api-version") != "" {
-		versions := f.secrets[vault+"/"+name]
-		if len(versions) == 0 {
-			f.answer(w, 404, map[string]any{"error": map[string]any{"code": "SecretNotFound"}})
-			return
-		}
-		f.answer(w, 200, map[string]any{"value": versions[len(versions)-1], "id": "https://" + vault + ".vault.azure.net/secrets/" + name})
-		return
-	}
-	if r.Method != http.MethodPut || !ok || r.URL.Query().Get("api-version") == "" {
-		w.WriteHeader(400)
-		return
-	}
-	var body struct {
-		Value string `json:"value"`
-	}
-	if json.Unmarshal(raw, &body) != nil || body.Value == "" {
-		w.WriteHeader(400)
+		f.answer(w, st, map[string]any{"error": map[string]any{"code": "AuthorizationFailed"}})
 		return
 	}
 	key := vault + "/" + name
-	f.secrets[key] = append(f.secrets[key], body.Value)
-	version := fmt.Sprintf("v%031d", len(f.secrets[key]))
-	// Key Vault echoes the value in its answer; the plugin must read the id only.
-	f.answer(w, 200, map[string]any{"value": body.Value, "id": "https://" + vault + ".vault.azure.net/secrets/" + name + "/" + version})
+	uri := "https://" + vault + ".vault.azure.net/secrets/" + name
+	switch r.Method {
+	case http.MethodGet:
+		versions := f.secrets[key]
+		if len(versions) == 0 {
+			f.answer(w, 404, map[string]any{"error": map[string]any{"code": "ResourceNotFound"}})
+			return
+		}
+		// Azure management answers a secret's properties, never its value.
+		f.answer(w, 200, map[string]any{"id": path, "name": name, "properties": map[string]any{"secretUri": uri}})
+	case http.MethodPut:
+		var body struct {
+			Properties struct {
+				Value       string `json:"value"`
+				ContentType string `json:"contentType"`
+			} `json:"properties"`
+		}
+		if json.Unmarshal(raw, &body) != nil || body.Properties.Value == "" {
+			w.WriteHeader(400)
+			return
+		}
+		f.secrets[key] = append(f.secrets[key], body.Properties.Value)
+		v := fmt.Sprintf("v%031d", len(f.secrets[key]))
+		f.answer(w, 200, map[string]any{"id": path, "name": name, "type": "Microsoft.KeyVault/vaults/secrets",
+			"properties": map[string]any{"contentType": body.Properties.ContentType, "secretUri": uri, "secretUriWithVersion": uri + "/" + v}})
+	default:
+		w.WriteHeader(405)
+	}
 }
 
-// sent are the requests to Stripe and to Key Vault that are not a GET.
+// vaultWrites are the calls to Azure management that are not a GET.
+func (f *fake) vaultWrites() []call {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []call
+	for _, c := range f.vaultCalls {
+		if c.Method != http.MethodGet {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// sent are the requests to Stripe and to Azure management that are not a GET.
 func (f *fake) sent() []call {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -402,7 +500,8 @@ func (f *fake) writes() []call {
 type runOpts struct {
 	key     string
 	config  map[string]any
-	vault   bool // bind the microsoft connection
+	vault   bool // bind the microsoft connection, its token as accessToken
+	tokens  bool // with vault: Azure management's token in tokens, and another API's as accessToken
 	workdir string
 }
 
@@ -447,8 +546,14 @@ func runPlugin(t *testing.T, o runOpts, instructions ...string) records {
 		work = append(work, map[string]any{"seq": i + 1, "instruction": in, "payload": map[string]any{"instruction": in}})
 	}
 	conns := map[string]any{}
-	if o.vault {
-		conns["microsoft"] = map[string]any{"provider": "microsoft", "account": "person@example.com", "accessToken": vaultToken}
+	if o.vault && o.tokens {
+		conns["microsoft"] = map[string]any{"provider": "microsoft", "account": "person@example.com", "accessToken": graphToken,
+			"tokens": map[string]any{
+				"https://graph.microsoft.com/":  map[string]any{"accessToken": graphToken, "scopes": []string{"User.Read"}},
+				"https://management.azure.com/": map[string]any{"accessToken": armToken, "scopes": []string{"https://management.azure.com/user_impersonation"}},
+			}}
+	} else if o.vault {
+		conns["microsoft"] = map[string]any{"provider": "microsoft", "account": "person@example.com", "accessToken": armToken}
 	}
 	cfg := o.config
 	if cfg == nil {
