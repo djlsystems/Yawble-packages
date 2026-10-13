@@ -61,6 +61,9 @@ func init() {
 	)
 }
 
+// storageDataRoles are what the signed-in person is given on a storage account the team creates.
+var storageDataRoles = []string{roleBlobDataContributor, roleTableDataContributor, roleQueueDataContributor}
+
 func (p *plugin) storageCreate(args []string) (string, error) {
 	if err := argsExactly(args, 2, 3, "storage create", "<resource group> <account> [sku]"); err != nil {
 		return "", err
@@ -87,7 +90,7 @@ func (p *plugin) storageCreate(args []string) (string, error) {
 	if err := p.mustOwn(change{id: id, kind: changeCreate}); err != nil {
 		return "", err
 	}
-	what := fmt.Sprintf("create storage account %s (%s) in %s with shared key access off, tagged for this team", name, sku, rg)
+	what := fmt.Sprintf("create storage account %s (%s) in %s with shared key access off, tagged for this team, and give the signed-in person Storage Blob, Table and Queue Data Contributor on it", name, sku, rg)
 	if !p.cfg.apply() {
 		return p.whatif("storage create", id, what, map[string]int{"create": 1}), nil
 	}
@@ -108,8 +111,25 @@ func (p *plugin) storageCreate(args []string) (string, error) {
 	if _, err := p.put(id, body, "the storage account "+name); err != nil {
 		return "", err
 	}
-	p.applied("storage create", id, what, []string{id})
-	return fmt.Sprintf("Storage account %s is ready in %s, with shared key access off: everything reaches it signed in. Grant a managed identity a Storage Data Contributor role with role assign for an app to use it.", name, rg), nil
+	// THE PERSON READS AND WRITES IT TOO. An Owner of the subscription holds no data rights on a
+	// storage account, and with shared key access off every blob, table and queue command this
+	// member runs signed in as them would be refused. So the account it creates, and only that,
+	// grants the signed-in person the three Data Contributor roles; it never grants a user anything
+	// on any other scope.
+	ids := []string{id}
+	oid, _, account, err := p.signedIn()
+	if err != nil {
+		return "", err
+	}
+	for _, role := range storageDataRoles {
+		assignment, _, err := p.grantRoleTo(id, role, oid, "User")
+		if err != nil {
+			return "", fmt.Errorf("storage account %s was created, but %s could not be given %s on it: %w; run storage create again", name, account, grantable[role], err)
+		}
+		ids = append(ids, assignment)
+	}
+	p.applied("storage create", id, what, ids)
+	return fmt.Sprintf("Storage account %s is ready in %s, with shared key access off: everything reaches it signed in. %s holds Storage Blob, Table and Queue Data Contributor on it, which can take a few minutes to apply. Grant a managed identity a Storage Data Contributor role with role assign for an app to use it.", name, rg, account), nil
 }
 
 // storageChild creates a blob container, a table or a queue in an account the team owns.

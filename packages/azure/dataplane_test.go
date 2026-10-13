@@ -340,6 +340,36 @@ func TestStorageCreateTurnsSharedKeyAccessOff(t *testing.T) {
 		t.Fatalf("the account was created as %s", put[0].Body)
 	}
 	mustContain(t, r.text(), "shared key access off")
+
+	// The signed-in person is given the three data roles on that account, and on nothing else.
+	grants := w.f.callsContaining(http.MethodPut, "/storageAccounts/newstore/providers/Microsoft.Authorization/roleAssignments/")
+	if len(grants) != 3 {
+		t.Fatalf("role assignment PUTs = %d, want 3", len(grants))
+	}
+	roles := map[string]bool{}
+	for _, g := range grants {
+		var a struct {
+			Properties struct {
+				RoleDefinitionID string `json:"roleDefinitionId"`
+				PrincipalID      string `json:"principalId"`
+				PrincipalType    string `json:"principalType"`
+			} `json:"properties"`
+		}
+		_ = json.Unmarshal(g.Body, &a)
+		if a.Properties.PrincipalID != zeroGUID || a.Properties.PrincipalType != "User" {
+			t.Fatalf("granted to %s (%s)", a.Properties.PrincipalID, a.Properties.PrincipalType)
+		}
+		roles[roleOf(a.Properties.RoleDefinitionID)] = true
+	}
+	for _, want := range storageDataRoles {
+		if !roles[want] {
+			t.Fatalf("%s was not granted; got %v", grantable[want], roles)
+		}
+	}
+	if all := w.f.callsContaining(http.MethodPut, "/roleAssignments/"); len(all) != 3 {
+		t.Fatalf("a role was granted elsewhere: %d assignments", len(all))
+	}
+	mustContain(t, r.text(), "Storage Blob, Table and Queue Data Contributor")
 }
 
 func TestNoCodeAsksAzureForAKeyOrASecretValue(t *testing.T) {

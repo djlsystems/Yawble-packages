@@ -168,6 +168,19 @@ func (f *fake) callsTo(method, suffix string) []call {
 	return out
 }
 
+// callsContaining answers the calls of a method whose path holds the text, in any case.
+func (f *fake) callsContaining(method, text string) []call {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []call
+	for _, c := range f.calls {
+		if c.Method == method && strings.Contains(strings.ToLower(c.Path), strings.ToLower(text)) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 func (f *fake) answer(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

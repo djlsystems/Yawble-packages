@@ -169,12 +169,18 @@ func (p *plugin) roleAssign(args []string) (string, error) {
 // grantRole assigns a role to a managed identity's principal on a scope the guard has allowed, and
 // answers the assignment's id, and whether the identity held the role already.
 func (p *plugin) grantRole(scope, role, principal string) (string, bool, error) {
+	return p.grantRoleTo(scope, role, principal, "ServicePrincipal")
+}
+
+// grantRoleTo is grantRole for a principal of the type named: ServicePrincipal for a managed
+// identity, User only for the signed-in person on a storage account the team just created.
+func (p *plugin) grantRoleTo(scope, role, principal, principalType string) (string, bool, error) {
 	r, _ := parseID(scope)
 	assignment := scope + "/providers/Microsoft.Authorization/roleAssignments/" + assignmentName(scope, role, principal)
 	body := map[string]any{"properties": map[string]any{
 		"roleDefinitionId": "/subscriptions/" + r.sub + "/providers/Microsoft.Authorization/roleDefinitions/" + role,
 		"principalId":      principal,
-		"principalType":    "ServicePrincipal",
+		"principalType":    principalType,
 	}}
 	_, err := p.az.arm(http.MethodPut, assignment+"?api-version="+roleAPIVersion, body, nil)
 	if isStatus(err, http.StatusConflict) {

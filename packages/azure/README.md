@@ -117,7 +117,10 @@ It **will not**:
 - deploy a template that would change anything outside what the team owns: every deployment is
   checked with Azure's what-if first, and one change outside refuses the whole deployment,
   naming each resource, including a resource the what-if marks as ignored;
-- grant any role to a user or a group, or any other role;
+- grant any role to a user or a group, or any other role, except that a storage account it creates
+  gives you, the signed-in person, Storage Blob, Table and Queue Data Contributor on that account
+  alone (a subscription Owner holds no data rights, and with shared key access off you would
+  otherwise be refused your own blobs);
 - read a storage key, a connection string, a registry password or a Key Vault secret value;
   storage accounts are created with shared key access off, registries with their admin user off,
   and SQL servers with Microsoft Entra sign-in only, so no SQL password exists;
