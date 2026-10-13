@@ -14,11 +14,12 @@ type manifest struct {
 	ID      string `json:"id"`
 	Version string `json:"version"`
 	Config  map[string]struct {
-		Type        string `json:"type"`
-		Default     any    `json:"default"`
-		SetBy       string `json:"setBy"`
-		Advanced    bool   `json:"advanced"`
-		Description string `json:"description"`
+		Type        string   `json:"type"`
+		Enum        []string `json:"enum"`
+		Default     any      `json:"default"`
+		SetBy       string   `json:"setBy"`
+		Advanced    bool     `json:"advanced"`
+		Description string   `json:"description"`
 	} `json:"config"`
 	Secrets map[string]struct {
 		Description string `json:"description"`
@@ -53,7 +54,7 @@ func readManifest(t *testing.T) manifest {
 
 func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 	m := readManifest(t)
-	if m.ID != "azure" || m.Version != "1.1.0" {
+	if m.ID != "azure" || m.Version != "1.1.1" {
 		t.Fatalf("id %q version %q", m.ID, m.Version)
 	}
 	settingNames := []string{"subscription", "regions", "mode", "allowDelete", "sharedSqlServers", "sharedRegistries", "monthlyBudget", "budgetEmails", "namePrefix"}
@@ -72,6 +73,11 @@ func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 	}
 	if m.Config["mode"].Default != "whatif" || m.Config["allowDelete"].Default != false || m.Config["namePrefix"].Default != "" || !m.Config["namePrefix"].Advanced {
 		t.Fatalf("defaults: mode %v, allowDelete %v, namePrefix %v", m.Config["mode"].Default, m.Config["allowDelete"].Default, m.Config["namePrefix"].Default)
+	}
+
+	// Regions are chosen from a list, eastus2 unless a person picks others.
+	if r := m.Config["regions"]; !slices.Contains(r.Enum, "eastus2") || !slices.Equal(listOf(r.Default), []string{"eastus2"}) {
+		t.Fatalf("regions: enum %v, default %v", r.Enum, r.Default)
 	}
 
 	if len(m.Connections) != 1 {
@@ -190,4 +196,15 @@ func TestNothingInThePackageNamesARealTenant(t *testing.T) {
 			}
 		}
 	}
+}
+
+// listOf reads a JSON list of strings, as a manifest default arrives.
+func listOf(v any) []string {
+	items, _ := v.([]any)
+	out := make([]string, 0, len(items))
+	for _, i := range items {
+		s, _ := i.(string)
+		out = append(out, s)
+	}
+	return out
 }

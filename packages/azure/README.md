@@ -36,8 +36,8 @@ until you set `mode` to `apply`.
    management, so they need no sign-in of their own.
 3. **Tell the member `setup`.** With no subscription set yet, it lists every subscription your
    account can read, by id and name.
-4. **Settings.** In the member's settings, put the subscription's id in `subscription` and the
-   regions you want resource groups in under `regions`. Everything else has a default (below).
+4. **Settings.** In the member's settings, put the subscription's id in `subscription` and pick the
+   regions you want resource groups in from `regions` (eastus2 unless you choose others). Everything else has a default (below).
 5. **Tell the member `setup` again.** It checks each thing and says the next step in words:
    - you are signed in, with a token for each API;
    - the subscription can be read;
@@ -61,7 +61,7 @@ until you set `mode` to `apply`.
 | Setting | Default | What it does |
 |---|---|---|
 | `subscription` | empty | The id of the Azure subscription this member works in; `setup` lists the ones your account can read. |
-| `regions` | empty | The Azure regions resource groups may be created in, such as `westeurope`. |
+| `regions` | `eastus2` | The Azure regions resource groups may be created in, chosen from a list of Azure regions. |
 | `mode` | `whatif` | `whatif` answers what each changing command would do and changes nothing; `apply` makes the changes. |
 | `allowDelete` | off | Off: every delete is refused, in whatif and apply; on: the member may delete what its team owns. |
 | `sharedSqlServers` | empty | Existing SQL servers, by name, on which the member may create its own databases. |

@@ -514,7 +514,7 @@ func runPlugin(t *testing.T, o runOpts, instruction string) *result {
 	}
 	req := map[string]any{
 		"protocol":         "harness.member/1",
-		"plugin":           map[string]any{"id": "azure", "version": "1.1.0"},
+		"plugin":           map[string]any{"id": "azure", "version": "1.1.1"},
 		"member":           map[string]any{"id": testTeam + "/Azure", "team": testTeam, "name": "Azure"},
 		"work":             []map[string]any{{"seq": 1, "instruction": instruction, "payload": map[string]any{"instruction": instruction}}},
 		"config":           cfg,
