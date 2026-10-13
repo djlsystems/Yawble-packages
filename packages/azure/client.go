@@ -19,16 +19,12 @@ const (
 	apiARM     api = "https://management.azure.com/"
 	apiSQL     api = "https://database.windows.net/"
 	apiStorage api = "https://storage.azure.com/"
-	apiVault   api = "https://vault.azure.net/"
-	apiLogs    api = "https://api.loganalytics.io/"
 )
 
 var apiNames = map[api]string{
 	apiARM:     "Azure management",
 	apiSQL:     "Azure SQL",
 	apiStorage: "Azure Storage",
-	apiVault:   "Key Vault",
-	apiLogs:    "Log Analytics",
 }
 
 // armBase is Azure Resource Manager's address.
@@ -296,7 +292,7 @@ func anonymous(method, url string, body []byte, headers map[string]string, timeo
 	return &answer{status: resp.StatusCode, header: resp.Header, body: raw}, nil
 }
 
-// data sends one request to a data-plane API (storage, Key Vault, Log Analytics) with that API's
+// data sends one request to a data-plane API (Azure Storage) with that API's
 // token, and decodes a JSON answer into into when it is not nil.
 func (c *client) data(a api, method, url string, body any, headers map[string]string, into any) (*answer, error) {
 	ans, err := c.send(a, method, url, body, headers)

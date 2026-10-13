@@ -31,8 +31,9 @@ until you set `mode` to `apply`.
 1. **Marketplace**, **Get** Azure, then **Add member** on a team and choose the Azure plugin.
 2. **Sign in.** The member's `microsoft` connection slot asks you to sign in with Microsoft: it
    shows a link and a code. Open the link, enter the code, sign in with the account you use in the
-   Azure portal, and accept. Microsoft asks once for all five APIs the member uses: Azure
-   management, Azure SQL, Azure Storage, Key Vault and Log Analytics.
+   Azure portal, and accept. Microsoft asks once for the three APIs the member uses: Azure
+   management, Azure SQL and Azure Storage. Key Vault and the apps' logs are reached through Azure
+   management, so they need no sign-in of their own.
 3. **Tell the member `setup`.** With no subscription set yet, it lists every subscription your
    account can read, by id and name.
 4. **Settings.** In the member's settings, put the subscription's id in `subscription` and the
@@ -84,7 +85,10 @@ Data inside a resource needs a data role of its own, even for a subscription's O
 
 - reading and writing blobs, tables and queues needs Storage Blob, Table or Queue Data Contributor
   on the storage account (or its resource group);
-- listing a Key Vault's secret names needs Key Vault Secrets User or Key Vault Reader on the vault;
+- listing a Key Vault's secret names needs Reader (or more) on the vault, since the member lists
+  them through Azure management, which answers names and never a value;
+- reading an app's logs needs Log Analytics Reader (or Reader, or more) on its environment's
+  workspace, which the member queries through Azure management;
 - running SQL needs your account to be the SQL server's Microsoft Entra administrator (true of a
   server the member creates) or a user in the database, and the server's firewall to let this
   instance in (Azure portal, SQL server, Networking).
@@ -166,7 +170,7 @@ keyvault create <resource group> <vault>
 keyvault secrets <vault>
 
 containerapp env create <resource group> <environment>
-containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>]...
+containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>|appSecret<1-8>]...
 containerapp show <app>
 containerapp revisions <app>
 containerapp restart <app>
@@ -211,7 +215,8 @@ domain bind my-app www.example.com
   end of the build's log.
 - `containerapp create` makes a managed identity for the app and grants it AcrPull on the registry
   and Key Vault Secrets User on each vault a `secret=` names. The app pulls its image and reads its
-  secrets with that identity; no password is involved. Each secret must already be in the vault.
+  Key Vault secrets with that identity; no password is involved. Each secret must already be in the
+  vault.
 - `domain bind` answers the TXT and CNAME (or, for a domain's apex, A) records the domain needs. In
   a DNS zone the team owns it sets them itself. Once they resolve, `domain bind` again creates a
   free managed certificate, which Azure renews, and binds it.
@@ -221,7 +226,9 @@ and answers the rows each changed, or each result capped at 200 rows. In whatif 
 would run and does not connect.
 
 `containerapp logs` reads the app's console lines from the environment's Log Analytics workspace,
-the last 30 minutes unless told otherwise, at most 500 lines.
+the last 30 minutes unless told otherwise, at most 500 lines. It queries the workspace through
+Azure management: the workspace the environment's diagnostic settings name, or, for an environment
+that names only a workspace's customer id, the workspace in the subscription with that id.
 
 ## App secrets
 
@@ -235,7 +242,20 @@ template that is not valid JSON, a parameters file that holds a secret's
 value, and an `env=` whose name or value looks like a secret. A container app
 points at the secret with `secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name>`, and
 reads it with its managed identity; `keyvault secrets <vault>` lists the names a vault holds,
-never their values.
+never their values. The member never calls Key Vault itself: Azure reads the secret with the
+app's identity.
+
+An app's secret can also come from this member's own keys. The member has eight optional secret
+fields, `appSecret1` to `appSecret8`. A person binds one to a key and sets that key's value on the
+screen, in this member's settings, under the field (or with `yawble secret set <KEY>` and
+`yawble up`). `containerapp create ... secret=<NAME>=appSecret<N>` then puts that value in the
+app's own secrets, named after `<NAME>` in lower case with hyphens for underscores, and the app
+reads it as the environment variable `<NAME>`. The value goes only to Azure, in the app's
+configuration: no what-if, answer, event or progress line holds it, and every value the member is
+given is redacted from what it writes. The what-if and the answer count these as "secrets from
+this member's keys", apart from the Key Vault secrets. A field that is not one of the eight, one
+the member does not bind, or one whose key is not set is refused before anything changes, naming
+the field and the key, and saying a person sets it on the screen first.
 
 ## Events
 
@@ -251,4 +271,5 @@ go test ./...
 ```
 
 runs every command against fakes of Azure Resource Manager, the registry, Azure SQL (a local TDS
-server), storage, Key Vault and Log Analytics; nothing reaches a network.
+server) and storage; nothing reaches a network, and a request to Key Vault or Log Analytics
+fails the test.

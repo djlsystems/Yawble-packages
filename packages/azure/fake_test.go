@@ -34,9 +34,8 @@ var (
 	tokARM     = fakeJWT("m")
 	tokSQL     = fakeJWT("q")
 	tokStorage = fakeJWT("s")
-	tokVault   = fakeJWT("v")
-	tokLogs    = fakeJWT("l")
-	allTokens  = []string{tokARM, tokSQL, tokStorage, tokVault, tokLogs}
+	tokOther   = fakeJWT("v") // a token for no API the plugin asks for
+	allTokens  = []string{tokARM, tokSQL, tokStorage, tokOther}
 )
 
 func fakeJWT(tag string) string {
@@ -83,22 +82,25 @@ type fake struct {
 	whatIf     []map[string]any // the changes the next what-if answers
 	echoToken  bool             // answer the subscription read with an error quoting the token
 	hosts      map[string]http.HandlerFunc
-	runPolls   int    // how often a registry build was read
-	runStatus  string // how a registry build ends
+	runPolls   int                 // how often a registry build was read
+	runStatus  string              // how a registry build ends
+	logLines   []string            // what a workspace query answers, oldest first
+	vaultNames map[string][]string // lower-case vault id -> its secrets' names
 }
 
 func newFake(t *testing.T) *fake {
 	f := &fake{
-		t:         t,
-		subs:      map[string]string{testSub: "My Subscription"},
-		subState:  "Enabled",
-		rgs:       map[string]*fakeResource{},
-		resources: map[string]*fakeResource{},
-		actions:   []string{"*"},
-		providers: map[string]string{},
-		locations: []string{"westeurope", "eastus2"},
-		hosts:     map[string]http.HandlerFunc{},
-		runStatus: "Succeeded",
+		t:          t,
+		subs:       map[string]string{testSub: "My Subscription"},
+		subState:   "Enabled",
+		rgs:        map[string]*fakeResource{},
+		resources:  map[string]*fakeResource{},
+		actions:    []string{"*"},
+		providers:  map[string]string{},
+		locations:  []string{"westeurope", "eastus2"},
+		hosts:      map[string]http.HandlerFunc{},
+		runStatus:  "Succeeded",
+		vaultNames: map[string][]string{},
 	}
 	for _, ns := range providers {
 		f.providers[ns] = "Registered"
@@ -285,7 +287,7 @@ func (f *fake) arm(w http.ResponseWriter, method, path string, body []byte) {
 		var list []map[string]any
 		for _, r := range f.resources {
 			if strings.EqualFold(r.Type, typ) {
-				list = append(list, map[string]any{"id": r.ID, "name": r.ID[strings.LastIndex(r.ID, "/")+1:], "type": r.Type, "location": r.Location, "tags": r.Tags})
+				list = append(list, map[string]any{"id": r.ID, "name": r.ID[strings.LastIndex(r.ID, "/")+1:], "type": r.Type, "location": r.Location, "tags": r.Tags, "properties": r.Props})
 			}
 		}
 		f.answer(w, 200, map[string]any{"value": list})
@@ -454,10 +456,12 @@ func (f *fake) deployment(w http.ResponseWriter, method, path string, body []byt
 // ---- running the plugin ----
 
 type runOpts struct {
-	config    map[string]any
-	noConnect bool              // no microsoft slot bound
-	tokens    map[string]string // the slot's tokens map; nil: one per API
-	trees     []string
+	config     map[string]any
+	secrets    map[string]string // the request's secrets: field -> value
+	secretKeys map[string]string // the request's secretKeys: field -> key name
+	noConnect  bool              // no microsoft slot bound
+	tokens     map[string]string // the slot's tokens map; nil: one per API
+	trees      []string
 }
 
 type result struct {
@@ -489,8 +493,6 @@ func runPlugin(t *testing.T, o runOpts, instruction string) *result {
 				"https://management.azure.com/": tokARM,
 				"https://database.windows.net/": tokSQL,
 				"https://storage.azure.com/":    tokStorage,
-				"https://vault.azure.net/":      tokVault,
-				"https://api.loganalytics.io/":  tokLogs,
 			}
 		}
 		tm := map[string]any{}
@@ -512,11 +514,12 @@ func runPlugin(t *testing.T, o runOpts, instruction string) *result {
 	}
 	req := map[string]any{
 		"protocol":         "harness.member/1",
-		"plugin":           map[string]any{"id": "azure", "version": "1.0.0"},
+		"plugin":           map[string]any{"id": "azure", "version": "1.1.0"},
 		"member":           map[string]any{"id": testTeam + "/Azure", "team": testTeam, "name": "Azure"},
 		"work":             []map[string]any{{"seq": 1, "instruction": instruction, "payload": map[string]any{"instruction": instruction}}},
 		"config":           cfg,
-		"secrets":          map[string]any{},
+		"secrets":          orEmpty(o.secrets),
+		"secretKeys":       orEmpty(o.secretKeys),
 		"connections":      conns,
 		"workingDirectory": t.TempDir(),
 		"worktrees":        trees,
@@ -540,6 +543,13 @@ func runPlugin(t *testing.T, o runOpts, instruction string) *result {
 		t.Fatalf("the last record is not the result: %v", last)
 	}
 	return r
+}
+
+func orEmpty(m map[string]string) map[string]string {
+	if m == nil {
+		return map[string]string{}
+	}
+	return m
 }
 
 func assertNoToken(t *testing.T, raw string) {

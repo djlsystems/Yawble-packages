@@ -4,6 +4,7 @@
 // In:  ONE JSON request on stdin - { member: { team }, work: [{ instruction }], config,
 //
 //	connections: { microsoft: { account, accessToken, tokens: { <API>: { accessToken } } } },
+//	secrets: { appSecret<N>: <value> }, secretKeys: { appSecret<N>: <key name> },
 //	workingDirectory, worktrees: [{ path }], siteFiles: [{ folder }], ... }.
 //
 // Out: JSON Lines on stdout - progress, publish, then exactly one result.
@@ -37,6 +38,8 @@ type request struct {
 	Work             []workItem                 `json:"work"`
 	Config           map[string]json.RawMessage `json:"config"`
 	Connections      map[string]connection      `json:"connections"`
+	Secrets          map[string]string          `json:"secrets"`
+	SecretKeys       map[string]string          `json:"secretKeys"`
 	WorkingDirectory string                     `json:"workingDirectory"`
 	Worktrees        []struct {
 		Path string `json:"path"`
@@ -89,7 +92,14 @@ type plugin struct {
 	trees   []string // the run's worktrees
 	now     func() time.Time
 
-	// hidden holds every value that must never be written out: each API's token.
+	// appSecrets holds the values of the app secret fields this member binds and whose keys are
+	// set, by field (appSecret1 to appSecret8); appSecretKeys the key name each bound field is
+	// bound to, set or not. A value is only ever put in a container app's configuration.
+	appSecrets    map[string]string
+	appSecretKeys map[string]string
+
+	// hidden holds every value that must never be written out: each API's token and each app
+	// secret's value.
 	hidden []string
 	// tags caches the tags read this run, by lower-case resource id; nil for a resource not found.
 	tags map[string]map[string]string
@@ -124,6 +134,19 @@ func run(in io.Reader, out io.Writer, now func() time.Time) int {
 		p.hide(c.AccessToken)
 	}
 	p.az = &client{tokens: tokens, progress: p.progress}
+
+	p.appSecrets, p.appSecretKeys = map[string]string{}, map[string]string{}
+	for field, value := range req.Secrets {
+		p.hide(value)
+		if _, ok := appSecretField(field); ok && value != "" {
+			p.appSecrets[field] = value
+		}
+	}
+	for field, key := range req.SecretKeys {
+		if _, ok := appSecretField(field); ok {
+			p.appSecretKeys[field] = key
+		}
+	}
 
 	cfg, problem := parseSettings(req.Config)
 	if problem != "" {

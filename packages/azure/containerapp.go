@@ -12,25 +12,43 @@ import (
 
 // Container Apps: an environment whose logs go to its own Log Analytics workspace, and apps in it
 // that pull their image with a managed identity the plugin creates for each, and read their secrets
-// from Key Vault through that identity. No registry password, and no secret value, is ever part of
-// an app.
+// from Key Vault through that identity, or from this member's own keys (appSecret1 to appSecret8,
+// which a person binds and sets on the screen). No registry password is ever part of an app, and a
+// secret's value is put only in the app's configuration, never in what the plugin writes out.
+// Logs are read through Azure management's query on the workspace resource.
 
 const (
-	diagAPIVersion = "2021-05-01-preview"
-	logsBase       = "https://api.loganalytics.io/v1/workspaces/"
-	maxLogLines    = 500
+	diagAPIVersion  = "2021-05-01-preview"
+	logsAPIVersion  = "2017-01-01-preview"
+	maxLogLines     = 500
+	appSecretFields = 8
 )
 
 var (
 	appName    = regexp.MustCompile(`^[a-z](?:[a-z0-9]|-[a-z0-9]){0,29}[a-z0-9]?$`)
 	envVarName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 	acrImage   = regexp.MustCompile(`^([a-z0-9]{5,50})\.azurecr\.io/(.+)$`)
+	appSecretN = regexp.MustCompile(`(?i)^appsecret([0-9]+)$`)
 )
+
+// appSecretField answers the canonical field name (appSecret1 to appSecret8) of a value such as
+// appSecret3, and whether it names one of the eight.
+func appSecretField(v string) (string, bool) {
+	m := appSecretN.FindStringSubmatch(v)
+	if m == nil {
+		return "", false
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil || n < 1 || n > appSecretFields || strconv.Itoa(n) != m[1] {
+		return "", false
+	}
+	return "appSecret" + m[1], true
+}
 
 func init() {
 	register(
 		command{words: []string{"containerapp", "env", "create"}, usage: "<resource group> <environment>", run: (*plugin).envCreate},
-		command{words: []string{"containerapp", "create"}, usage: "<resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>]...", run: (*plugin).appCreate},
+		command{words: []string{"containerapp", "create"}, usage: "<resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>|appSecret<1-8>]...", run: (*plugin).appCreate},
 		command{words: []string{"containerapp", "show"}, usage: "<app>", run: (*plugin).appShow},
 		command{words: []string{"containerapp", "revisions"}, usage: "<app>", run: (*plugin).appRevisions},
 		command{words: []string{"containerapp", "restart"}, usage: "<app>", run: (*plugin).appRestart},
@@ -89,17 +107,28 @@ func (p *plugin) envCreate(args []string) (string, error) {
 		return "", fmt.Errorf("environment %s is ready, but its logs could not be sent to %s-logs: %w", name, name, err)
 	}
 	p.applied("containerapp env create", env, what, []string{ws, env, diag})
-	return fmt.Sprintf("Container Apps environment %s is ready in %s; its apps' logs go to workspace %s-logs, which containerapp logs reads.", name, rg, name), nil
+	return fmt.Sprintf("Container Apps environment %s is ready in %s; its apps' logs go to workspace %s-logs, which containerapp logs reads through Azure management.", name, rg, name), nil
 }
 
-// appSecret is one secret=NAME=<address> argument: an environment variable read from Key Vault.
+// appSecret is one secret=NAME=... argument: an environment variable read from Key Vault (address,
+// vault and secret set), or from one of this member's own keys (field set, value its value).
 type appSecret struct {
 	env, name, address, vault, secret string
+	field, value                      string
+}
+
+// keyRefusal is the sentence for secret=NAME=appSecretN when the member has no value for the field.
+// It names the key when the request names it, and never a value.
+func (p *plugin) keyRefusal(env, field string) refusal {
+	if key := p.appSecretKeys[field]; key != "" {
+		return refusef("Refused: secret=%s=%s names this member's %s, which is bound to the key %s, and that key is not set. A person sets %s on the screen first (this member's settings), then runs containerapp create again. Nothing was changed.", env, field, field, key, key)
+	}
+	return refusef("Refused: secret=%s=%s names this member's %s, which this member does not bind to a key. A person binds %s to a key and sets it on the screen first (this member's settings), then runs containerapp create again. Nothing was changed.", env, field, field, field)
 }
 
 func (p *plugin) appCreate(args []string) (string, error) {
 	if len(args) < 4 {
-		return "", refusal("Refused: containerapp create takes <resource group> <app> <environment> <registry>.azurecr.io/<image:tag>, then optionally port=<n>, env=<NAME>=<value> and secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name>.")
+		return "", refusal("Refused: containerapp create takes <resource group> <app> <environment> <registry>.azurecr.io/<image:tag>, then optionally port=<n>, env=<NAME>=<value> and secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name> or secret=<NAME>=appSecret<1-8>.")
 	}
 	if err := p.needSubscription(); err != nil {
 		return "", err
@@ -115,7 +144,7 @@ func (p *plugin) appCreate(args []string) (string, error) {
 	port := 0
 	var envs []map[string]any
 	var secrets []appSecret
-	seen := map[string]bool{}
+	seen, secretSeen := map[string]bool{}, map[string]bool{}
 	for _, a := range args[4:] {
 		key, value, _ := strings.Cut(a, "=")
 		switch strings.ToLower(key) {
@@ -136,16 +165,33 @@ func (p *plugin) appCreate(args []string) (string, error) {
 			seen[v] = true
 			if strings.EqualFold(key, "env") {
 				if secretParam.MatchString(v) || credentialShaped[0].MatchString(val) || credentialShaped[1].MatchString(val) {
-					return "", refusef("Refused: %s looks like a secret. App secrets go in Key Vault, set by a person or another plugin; pass it as secret=%s=https://<vault>.vault.azure.net/secrets/<name>.", v, v)
+					return "", refusef("Refused: %s looks like a secret. App secrets go in Key Vault or in this member's own keys: pass it as secret=%s=https://<vault>.vault.azure.net/secrets/<name> for a Key Vault secret, set by a person or another plugin, or as secret=%s=appSecret<1-8> for one of this member's keys, which a person binds and sets on the screen (this member's settings).", v, v, v)
 				}
 				envs = append(envs, map[string]any{"name": v, "value": val})
 				continue
 			}
+			sname := strings.ReplaceAll(strings.ToLower(v), "_", "-")
+			if secretSeen[sname] {
+				return "", refusef("Refused: %s would be the app's secret %s, which another secret= already names.", v, sname)
+			}
+			secretSeen[sname] = true
+			if appSecretN.MatchString(val) {
+				field, ok := appSecretField(val)
+				if !ok {
+					return "", refusef("Refused: secret=%s=%s names no field of this member; its own keys are appSecret1 to appSecret%d.", v, val, appSecretFields)
+				}
+				value := p.appSecrets[field]
+				if value == "" {
+					return "", p.keyRefusal(v, field)
+				}
+				secrets = append(secrets, appSecret{env: v, name: sname, field: field, value: value})
+				continue
+			}
 			sm := secretRefForm.FindStringSubmatch(val)
 			if sm == nil {
-				return "", refusef("Refused: secret=%s takes a Key Vault secret's address, https://<vault>.vault.azure.net/secrets/<name>, never a value.", v)
+				return "", refusef("Refused: secret=%s takes a Key Vault secret's address, https://<vault>.vault.azure.net/secrets/<name>, or one of this member's own keys, appSecret1 to appSecret%d; never a value.", v, appSecretFields)
 			}
-			secrets = append(secrets, appSecret{env: v, name: strings.ReplaceAll(strings.ToLower(v), "_", "-"), address: val, vault: sm[1], secret: sm[2]})
+			secrets = append(secrets, appSecret{env: v, name: sname, address: val, vault: sm[1], secret: sm[2]})
 		default:
 			return "", refusef("Refused: %s is not port=, env= or secret=.", a)
 		}
@@ -173,7 +219,13 @@ func (p *plugin) appCreate(args []string) (string, error) {
 		return "", refusef("Refused: %s. This member runs images only from registries its team owns and those in sharedRegistries. Nothing was changed.", why)
 	}
 	vaults := map[string]resource{}
+	vaultSecrets, keySecrets := 0, 0
 	for _, s := range secrets {
+		if s.field != "" {
+			keySecrets++
+			continue
+		}
+		vaultSecrets++
 		if _, ok := vaults[strings.ToLower(s.vault)]; ok {
 			continue
 		}
@@ -186,13 +238,13 @@ func (p *plugin) appCreate(args []string) (string, error) {
 		} else if why != "" {
 			return "", refusef("Refused: %s. An app reads secrets only from a Key Vault its team owns. Nothing was changed.", why)
 		}
-		names, err := p.secretNames(v.Name)
+		names, err := p.secretNames(v)
 		if err != nil {
 			return "", err
 		}
 		vaults[strings.ToLower(s.vault)] = v
 		for _, s2 := range secrets {
-			if strings.EqualFold(s2.vault, s.vault) && !contains(names, s2.secret) {
+			if s2.field == "" && strings.EqualFold(s2.vault, s.vault) && !contains(names, s2.secret) {
 				return "", refusef("Refused: Key Vault %s holds no secret %s. A person (or another plugin) sets it there first; this member never sets or reads a secret's value.", v.Name, s2.secret)
 			}
 		}
@@ -210,7 +262,7 @@ func (p *plugin) appCreate(args []string) (string, error) {
 	if port > 0 {
 		ingress = fmt.Sprintf("public HTTPS ingress to port %d", port)
 	}
-	steps = append(steps, fmt.Sprintf("create or update container app %s in environment %s running %s, with %s, %d settings and %d Key Vault secrets", name, env.Name, image, ingress, len(envs), len(secrets)))
+	steps = append(steps, fmt.Sprintf("create or update container app %s in environment %s running %s, with %s, %d settings, %d Key Vault secrets and %d secrets from this member's keys", name, env.Name, image, ingress, len(envs), vaultSecrets, keySecrets))
 	what := strings.Join(steps, "; ")
 	if !p.cfg.apply() {
 		return p.whatif("containerapp create", appID, what, map[string]int{"create": 2 + 1 + len(vaults)}), nil
@@ -249,7 +301,11 @@ func (p *plugin) appCreate(args []string) (string, error) {
 
 	var appSecrets []map[string]any
 	for _, s := range secrets {
-		appSecrets = append(appSecrets, map[string]any{"name": s.name, "keyVaultUrl": s.address, "identity": identityID})
+		if s.field != "" {
+			appSecrets = append(appSecrets, map[string]any{"name": s.name, "value": s.value})
+		} else {
+			appSecrets = append(appSecrets, map[string]any{"name": s.name, "keyVaultUrl": s.address, "identity": identityID})
+		}
 		envs = append(envs, map[string]any{"name": s.env, "secretRef": s.name})
 	}
 	sort.Slice(envs, func(i, j int) bool { return envs[i]["name"].(string) < envs[j]["name"].(string) })
@@ -462,16 +518,21 @@ func (p *plugin) appLogs(args []string) (string, error) {
 		return "", err
 	}
 	query := fmt.Sprintf(`union isfuzzy=true (ContainerAppConsoleLogs | where ContainerAppName == '%s' | project TimeGenerated, Log), (ContainerAppConsoleLogs_CL | where ContainerAppName_s == '%s' | project TimeGenerated, Log = Log_s) | top %d by TimeGenerated desc`, r.Name, r.Name, maxLogLines)
+	// Azure management's query answers each column's name as ColumnName; name is read too.
 	var out struct {
 		Tables []struct {
 			Columns []struct {
-				Name string `json:"name"`
+				ColumnName string `json:"ColumnName"`
+				Name       string `json:"name"`
 			} `json:"columns"`
 			Rows [][]any `json:"rows"`
 		} `json:"tables"`
 	}
 	body := map[string]any{"query": query, "timespan": fmt.Sprintf("PT%dM", minutes)}
-	if _, err := p.az.data(apiLogs, http.MethodPost, logsBase+workspace+"/query", body, nil, &out); err != nil {
+	if _, err := p.az.arm(http.MethodPost, workspace+"/api/query?api-version="+logsAPIVersion, body, &out); err != nil {
+		if isStatus(err, http.StatusForbidden) {
+			return "", refusef("Refused: the signed-in account cannot query the logs of %s. It needs Log Analytics Reader (or Reader, or more) on the workspace %s; its owner gives it in the Azure portal (the workspace, Access control (IAM), Add role assignment).", r.Name, workspace[strings.LastIndex(workspace, "/")+1:])
+		}
 		return "", err
 	}
 	var lines []string
@@ -479,7 +540,11 @@ func (p *plugin) appLogs(args []string) (string, error) {
 		t := out.Tables[0]
 		ti, li := -1, -1
 		for i, c := range t.Columns {
-			switch c.Name {
+			col := c.ColumnName
+			if col == "" {
+				col = c.Name
+			}
+			switch col {
 			case "TimeGenerated":
 				ti = i
 			case "Log":
@@ -500,7 +565,10 @@ func (p *plugin) appLogs(args []string) (string, error) {
 	return fmt.Sprintf("Logs of %s, the last %d minutes (%d lines, at most %d, oldest first):\n%s", r.Name, minutes, len(lines), maxLogLines, strings.Join(lines, "\n")), nil
 }
 
-// logWorkspace answers the workspace id (its customerId, not a secret) an environment's logs go to.
+// logWorkspace answers the Azure Resource Manager id of the Log Analytics workspace an environment's
+// logs go to: for an environment that names the workspace's customerId (not a secret), the
+// workspace in the subscription with that customerId; otherwise the workspace its diagnostic
+// settings name.
 func (p *plugin) logWorkspace(envID string) (string, error) {
 	if envID == "" {
 		return "", refusal("Refused: the app names no environment.")
@@ -517,8 +585,26 @@ func (p *plugin) logWorkspace(envID string) (string, error) {
 	if _, err := p.az.get(envID+"?api-version="+versionOf("Microsoft.App/managedEnvironments"), &env); err != nil {
 		return "", err
 	}
-	if id := env.Properties.Logs.LogAnalytics.CustomerID; id != "" {
-		return id, nil
+	if cid := env.Properties.Logs.LogAnalytics.CustomerID; cid != "" {
+		found := ""
+		err := p.az.list("/subscriptions/"+p.cfg.Subscription+"/providers/Microsoft.OperationalInsights/workspaces?api-version="+versionOf("Microsoft.OperationalInsights/workspaces"), func(raw json.RawMessage) {
+			var ws struct {
+				ID         string `json:"id"`
+				Properties struct {
+					CustomerID string `json:"customerId"`
+				} `json:"properties"`
+			}
+			if json.Unmarshal(raw, &ws) == nil && found == "" && strings.EqualFold(ws.Properties.CustomerID, cid) {
+				found = ws.ID
+			}
+		})
+		if err != nil {
+			return "", err
+		}
+		if id, ok := workspaceID(found); ok {
+			return id, nil
+		}
+		return "", refusef("Refused: the app's environment sends its logs to the Log Analytics workspace %s, which this sign-in cannot see in the subscription. Its owner gives this account Log Analytics Reader (or Reader) on that workspace.", cid)
 	}
 	var diags struct {
 		Value []struct {
@@ -531,20 +617,20 @@ func (p *plugin) logWorkspace(envID string) (string, error) {
 		return "", err
 	}
 	for _, d := range diags.Value {
-		if d.Properties.WorkspaceID == "" {
-			continue
-		}
-		var ws struct {
-			Properties struct {
-				CustomerID string `json:"customerId"`
-			} `json:"properties"`
-		}
-		if _, err := p.az.get(d.Properties.WorkspaceID+"?api-version="+versionOf("Microsoft.OperationalInsights/workspaces"), &ws); err != nil {
-			return "", err
-		}
-		if ws.Properties.CustomerID != "" {
-			return ws.Properties.CustomerID, nil
+		if id, ok := workspaceID(d.Properties.WorkspaceID); ok {
+			return id, nil
 		}
 	}
 	return "", refusal("Refused: the app's environment sends its logs to no Log Analytics workspace. Create environments with containerapp env create, which does.")
+}
+
+// workspaceID answers id, without a trailing slash, when it is the Azure Resource Manager id of a
+// Log Analytics workspace.
+func workspaceID(id string) (string, bool) {
+	id = strings.TrimSuffix(id, "/")
+	r, ok := parseID(id)
+	if !ok || !strings.HasPrefix(strings.ToLower(id), "/subscriptions/") || !strings.EqualFold(r.typ(), "Microsoft.OperationalInsights/workspaces") {
+		return "", false
+	}
+	return id, true
 }

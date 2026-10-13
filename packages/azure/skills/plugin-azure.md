@@ -120,21 +120,25 @@ Storage (in accounts the team owns; reads anywhere the person has a Storage Data
 Key Vault:
 
 - `keyvault create <resource group> <vault>` - access by Azure roles.
-- `keyvault secrets <vault>` - the secret names only, never a value.
+- `keyvault secrets <vault>` - the secret names only, never a value, listed through Azure
+  management. The signed-in account needs Reader (or more) on the vault.
 
 Container Apps:
 
 - `containerapp env create <resource group> <environment>` - with its own Log Analytics
   workspace `<environment>-logs`.
 - `containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag>
-  [port=<n>] [env=<NAME>=<value>]... [secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name>]...`
+  [port=<n>] [env=<NAME>=<value>]... [secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name>]...
+  [secret=<NAME>=appSecret<1-8>]...`
   - in an owned environment, from an owned or shared registry. Creates the identity
   `<app>-id`, grants it AcrPull on the registry and Key Vault Secrets User on each owned vault a
   `secret=` names, then creates or updates the app (0 to 1 replicas, 0.5 CPU, 1 GiB). `port=`
-  gives it public HTTPS ingress. Each secret must already be in the vault. An `env=` that looks
-  like a secret is refused.
+  gives it public HTTPS ingress. Each Key Vault secret must already be in the vault, and each
+  `appSecret<N>` must be bound and set (see Secrets). An `env=` that looks like a secret is
+  refused.
 - `containerapp show <app>`, `containerapp revisions <app>`, `containerapp logs <app> [minutes]`
-  (default 30, at most 500 lines) - reads.
+  (default 30, at most 500 lines) - reads. The logs are queried through Azure management on the
+  environment's workspace; the account needs Log Analytics Reader (or Reader) on it.
 - `containerapp restart <app>` - restarts the latest ready revision.
 - `domain bind <app> <hostname>` - says the TXT and CNAME (A for a domain's apex) records the
   domain needs, and sets them when the team owns its Azure DNS zone. Once they resolve, run it
@@ -162,4 +166,11 @@ An app secret (a third-party API key, a webhook signing secret) goes in Key Vaul
 or by another plugin. It never goes in a template, a parameters file, the repository, a command or
 a message. A template refers to it with a Key Vault reference; a container app with
 `secret=<NAME>=<the secret's address>`. The app reads it with its managed identity (Key Vault
-Secrets User).
+Secrets User). The member never calls Key Vault for a value.
+
+An app secret can also come from this member's own keys, `appSecret1` to `appSecret8`: a person
+binds the field to a key and sets the key's value on the screen (this member's settings).
+`secret=<NAME>=appSecret<N>` on `containerapp create` puts the value in the app's own secrets and
+nowhere else; the member never writes it out. When the field is unbound or its key is not set, the
+command is refused naming the key: tell the person to set it in this member's settings, then run
+the command again. Never put a secret's value in an instruction.

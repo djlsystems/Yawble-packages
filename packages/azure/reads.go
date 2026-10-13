@@ -47,7 +47,7 @@ func (p *plugin) whoami(args []string) (string, error) {
 		}
 	}
 	var apis []string
-	for _, a := range []api{apiARM, apiSQL, apiStorage, apiVault, apiLogs} {
+	for _, a := range []api{apiARM, apiSQL, apiStorage} {
 		if p.az.has(a) {
 			apis = append(apis, apiNames[a])
 		}

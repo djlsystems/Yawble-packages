@@ -12,8 +12,9 @@ import (
 )
 
 // The fake's data planes and actions: a registry's build, container apps and their environments,
-// storage accounts' blobs, tables and queues, Key Vault's secret names and Log Analytics' query.
-// Each data-plane host answers only its own API's token.
+// storage accounts' blobs, tables and queues, and through Azure management a vault's secret names
+// and a workspace's log query. Each data-plane host answers only its own API's token, and no
+// Key Vault or Log Analytics host is served at all.
 
 // Values shaped like the short-lived permissions Azure hands out, put together at run time. No
 // output may carry them.
@@ -130,6 +131,36 @@ func (f *fake) armAction(w http.ResponseWriter, method, path string, body []byte
 			cfg["ingress"] = in.Properties.Configuration.Ingress
 		}
 		f.answer(w, 200, map[string]any{"id": r.ID, "properties": r.Props})
+	case method == http.MethodGet && strings.Contains(lower, "/providers/microsoft.keyvault/vaults/") && strings.HasSuffix(lower, "/secrets"):
+		// Azure management's list of a vault's secrets: names and attributes, never a value.
+		id := strings.TrimSuffix(lower, "/secrets")
+		if f.resources[id] == nil {
+			f.answer(w, 404, armError("ResourceNotFound", "No vault."))
+			return true
+		}
+		var list []map[string]any
+		for _, s := range f.vaultNames[id] {
+			list = append(list, map[string]any{"id": f.resources[id].ID + "/secrets/" + s, "name": s, "type": "Microsoft.KeyVault/vaults/secrets",
+				"properties": map[string]any{"attributes": map[string]any{"enabled": true}}})
+		}
+		f.answer(w, 200, map[string]any{"value": list})
+	case strings.Contains(lower, "/providers/microsoft.keyvault/vaults/") && strings.Contains(lower, "/secrets/"):
+		f.t.Errorf("the plugin read or changed a secret: %s %s", method, path)
+		f.answer(w, 403, armError("Forbidden", "No."))
+	case method == http.MethodPost && strings.HasSuffix(lower, "/api/query"):
+		// Azure management's query on a workspace resource; it answers its columns as ColumnName.
+		ws := f.resources[strings.TrimSuffix(lower, "/api/query")]
+		if ws == nil || !strings.EqualFold(ws.Type, "Microsoft.OperationalInsights/workspaces") {
+			f.answer(w, 404, armError("ResourceNotFound", "No workspace."))
+			return true
+		}
+		var rows [][]any
+		for i := len(f.logLines) - 1; i >= 0; i-- { // newest first, as the query asks
+			rows = append(rows, []any{fmt.Sprintf("2026-10-09T14:%02d:00Z", i), "ContainerAppConsoleLogs", f.logLines[i]})
+		}
+		f.answer(w, 200, map[string]any{"tables": []map[string]any{{"name": "PrimaryResult",
+			"columns": []map[string]any{{"ColumnName": "TimeGenerated", "ColumnType": "datetime"}, {"ColumnName": "$table", "ColumnType": "string"}, {"ColumnName": "Log", "ColumnType": "string"}},
+			"rows":    rows}}})
 	case method == http.MethodGet && strings.HasSuffix(lower, "/providers/microsoft.insights/diagnosticsettings"):
 		var list []map[string]any
 		for k, r := range f.resources {
@@ -272,44 +303,18 @@ func (st *fakeStorage) serve(f *fake, svc string, w http.ResponseWriter, r *http
 
 // ---- Key Vault ----
 
-// addVault puts a vault in a group, and serves the names of its secrets. Reading a secret's value
-// fails the test.
+// addVault puts a vault in a group, whose secrets' names Azure management lists. Reading or
+// changing a secret fails the test.
 func (f *fake) addVault(rg, name string, tags map[string]string, secrets ...string) *fakeResource {
 	r := f.add(rg, "Microsoft.KeyVault/vaults", name, tags)
-	f.hosts[name+".vault.azure.net"] = func(w http.ResponseWriter, req *http.Request) {
-		if req.Header.Get("Authorization") != "Bearer "+tokVault {
-			f.answer(w, 401, armError("Unauthorized", "Wrong token."))
-			return
-		}
-		if req.URL.Path != "/"+name+".vault.azure.net/secrets" {
-			f.t.Errorf("the plugin read a secret's value: %s", req.URL.Path)
-			f.answer(w, 403, nil)
-			return
-		}
-		var list []map[string]any
-		for _, s := range secrets {
-			list = append(list, map[string]any{"id": "https://" + name + ".vault.azure.net/secrets/" + s, "attributes": map[string]any{"enabled": true}})
-		}
-		f.answer(w, 200, map[string]any{"value": list})
-	}
+	f.vaultNames[strings.ToLower(r.ID)] = secrets
 	return r
 }
 
-// ---- Log Analytics, and the addresses a registry hands out ----
+// ---- a workspace's log lines, and the addresses a registry hands out ----
 
 func (f *fake) serveLogsAndBuilds(logLines []string) {
-	f.hosts["api.loganalytics.io"] = func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer "+tokLogs || r.URL.Path != "/api.loganalytics.io/v1/workspaces/"+workspaceCID+"/query" {
-			f.answer(w, 403, armError("Forbidden", "Wrong token or workspace."))
-			return
-		}
-		var rows [][]any
-		for i := len(logLines) - 1; i >= 0; i-- { // newest first, as the query asks
-			rows = append(rows, []any{fmt.Sprintf("2026-10-09T14:%02d:00Z", i), logLines[i]})
-		}
-		f.answer(w, 200, map[string]any{"tables": []map[string]any{{"name": "PrimaryResult",
-			"columns": []map[string]any{{"name": "TimeGenerated"}, {"name": "Log"}}, "rows": rows}}})
-	}
+	f.logLines = logLines
 	sas := func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "" {
 			f.t.Errorf("a token went to an address that carries its own permission: %s", r.URL.Path)

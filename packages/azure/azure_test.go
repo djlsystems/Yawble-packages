@@ -61,8 +61,8 @@ func TestSetupNamesEachMissingStep(t *testing.T) {
 		t.Fatalf("setup failed: %s", r.text())
 	}
 	mustContain(t, r.text(),
-		"- tokens: none for Azure Storage, Key Vault, Log Analytics",
-		"Reconnect the Microsoft connection in Admin, Connections and accept Azure Storage, Key Vault, Log Analytics",
+		"- tokens: none for Azure Storage",
+		"Reconnect the Microsoft connection in Admin, Connections and accept Azure Storage;",
 		"- subscription: My Subscription ("+testSub+"), readable",
 		"- role: does not allow creating resource groups",
 		"give this account the Contributor role on the subscription",

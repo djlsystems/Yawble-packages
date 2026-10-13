@@ -20,6 +20,10 @@ type manifest struct {
 		Advanced    bool   `json:"advanced"`
 		Description string `json:"description"`
 	} `json:"config"`
+	Secrets map[string]struct {
+		Description string `json:"description"`
+		Required    bool   `json:"required"`
+	} `json:"secrets"`
 	Connections map[string]struct {
 		Providers []string            `json:"providers"`
 		Scopes    map[string][]string `json:"scopes"`
@@ -49,7 +53,7 @@ func readManifest(t *testing.T) manifest {
 
 func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 	m := readManifest(t)
-	if m.ID != "azure" || m.Version != "1.0.0" {
+	if m.ID != "azure" || m.Version != "1.1.0" {
 		t.Fatalf("id %q version %q", m.ID, m.Version)
 	}
 	settingNames := []string{"subscription", "regions", "mode", "allowDelete", "sharedSqlServers", "sharedRegistries", "monthlyBudget", "budgetEmails", "namePrefix"}

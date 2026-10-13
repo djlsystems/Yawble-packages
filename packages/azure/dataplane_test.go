@@ -619,10 +619,11 @@ func TestContainerAppReadsAndRestart(t *testing.T) {
 	mustContain(t, runPlugin(t, runOpts{}, "containerapp revisions my-app").text(), "- my-app--rev1: active, running, healthy, 1 replicas, 100% of traffic")
 	r = runPlugin(t, runOpts{}, "containerapp logs my-app 60")
 	mustContain(t, r.text(), "Logs of my-app, the last 60 minutes (2 lines", "14:00:00Z  started\n2026-10-09T14:01:00Z  listening on 8080")
-	for _, c := range w.f.calls {
-		if c.Host == "api.loganalytics.io" && (c.Token != tokLogs || !strings.Contains(string(c.Body), `"timespan":"PT60M"`)) {
-			t.Fatalf("the logs query = %s with the wrong token or timespan", c.Body)
-		}
+	ws := inRG(ownedRG, "Microsoft.OperationalInsights/workspaces/my-app-env-logs")
+	q := w.f.callsTo(http.MethodPost, "/api/query")
+	if len(q) != 1 || q[0].Host != armHost || q[0].Path != ws+"/api/query" || q[0].Token != tokARM ||
+		q[0].Query != "api-version="+logsAPIVersion || !strings.Contains(string(q[0].Body), `"timespan":"PT60M"`) {
+		t.Fatalf("the logs query = %+v", q)
 	}
 	r = runPlugin(t, runOpts{config: apply(nil)}, "containerapp restart my-app")
 	mustContain(t, r.text(), "Restarted revision my-app--rev1 of my-app.")
@@ -740,7 +741,7 @@ func TestSQLErrorsStopTheFileAndSayWhichBatch(t *testing.T) {
 
 func TestSQLSignInWithTheWrongTokenIsRefusedWithTheNextStep(t *testing.T) {
 	w := newWorld(t)
-	tokens := map[string]string{"https://management.azure.com/": tokARM, "https://database.windows.net/": tokVault}
+	tokens := map[string]string{"https://management.azure.com/": tokARM, "https://database.windows.net/": tokOther}
 	r := runPlugin(t, runOpts{config: apply(nil), tokens: tokens}, "sql exec my-sql/my-db "+w.sqlFile)
 	mustContain(t, r.text(), "Azure SQL refused the sign-in: error 18456", "needs to be the server's Microsoft Entra administrator")
 }

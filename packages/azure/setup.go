@@ -103,7 +103,7 @@ func (p *plugin) setup(args []string) (string, error) {
 	}
 	say("signed in: yes, as " + account)
 	var missing []string
-	for _, a := range []api{apiSQL, apiStorage, apiVault, apiLogs} {
+	for _, a := range []api{apiSQL, apiStorage} {
 		if !p.az.has(a) {
 			missing = append(missing, apiNames[a])
 		}
@@ -112,7 +112,7 @@ func (p *plugin) setup(args []string) (string, error) {
 		say("tokens: none for " + strings.Join(missing, ", "))
 		step("Reconnect the Microsoft connection in Admin, Connections and accept " + strings.Join(missing, ", ") + "; the commands that use them fail until then.")
 	} else {
-		say("tokens: Azure management, Azure SQL, Azure Storage, Key Vault and Log Analytics")
+		say("tokens: Azure management, Azure SQL and Azure Storage")
 	}
 
 	// THE SUBSCRIPTION.
