@@ -6,7 +6,8 @@
 #
 # A solution zip's root is the package folder's content (solution.json at the root) with each
 # plugins/<id>/ replaced by the version its build.sh builds. A plugin zip's root is the version the
-# package's build.sh builds (plugin.json and what it names). Needs Go and sh.
+# package's build.sh builds (plugin.json and what it names). Both also hold LICENSE and NOTICE at
+# their root. Needs Go and sh.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -58,6 +59,8 @@ for dir in "$root"/packages/*/; do
       sh "$dir/build.sh" "$out"
       ;;
   esac
+  # Every zip carries the licence and the notice, at its root, as the Apache License asks of a copy.
+  cp "$root/LICENSE" "$root/NOTICE" "$out/"
   "$pkgtool" zip "$out" "$dist/$id-$version.zip"
 done
 

@@ -136,3 +136,13 @@ To make a new version of a package, raise `version` in its manifest (and in each
 
 A package is published by uploading its zip, `dist/<id>-<version>.zip`, on the yawble.ai
 Marketplace's admin page, after `scripts/check.sh` passes. Upload each zip whose version is new.
+
+## License
+
+The packages are open source under the [Apache License 2.0](LICENSE) (SPDX: Apache-2.0): use,
+copy, modify and redistribute them, including commercially, as the License allows. Every zip the
+build makes carries `LICENSE` and `NOTICE`. Yawble itself is licensed separately, under the
+Functional Source License (see its own repository). "Yawble" and the Yawble logo are trademarks of
+DJL Systems, Inc. and are not licensed with the code ([NOTICE](NOTICE)).
+
+Copyright 2026 DJL Systems, Inc.
