@@ -104,7 +104,7 @@ func (p *plugin) signedIn() (oid, tenant, name string, err error) {
 				if name == "" {
 					name = p.account
 				}
-				// A guest's unique name carries its home's prefix (live.com#person@example.com).
+				// A guest's unique name carries its home's prefix (home.example#person@example.com).
 				if i := strings.LastIndex(name, "#"); i >= 0 {
 					name = name[i+1:]
 				}

@@ -671,7 +671,7 @@ func TestAGuestsSignInNameDropsItsHomePrefix(t *testing.T) {
 		raw, _ := json.Marshal(v)
 		return base64.RawURLEncoding.EncodeToString(raw)
 	}
-	tok := enc(map[string]any{"alg": "none"}) + "." + enc(map[string]any{"oid": zeroGUID, "tid": zeroGUID, "unique_name": "live.com#guest@example.com"}) + ".x"
+	tok := enc(map[string]any{"alg": "none"}) + "." + enc(map[string]any{"oid": zeroGUID, "tid": zeroGUID, "unique_name": "home.example#guest@example.com"}) + ".x"
 	p := &plugin{az: &client{tokens: map[api]string{apiARM: tok}}}
 	if _, _, name, err := p.signedIn(); err != nil || name != "guest@example.com" {
 		t.Fatalf("name = %q, %v", name, err)
