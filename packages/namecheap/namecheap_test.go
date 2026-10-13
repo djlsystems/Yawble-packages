@@ -493,3 +493,27 @@ func TestASecondSPFOnAHostIsRefused(t *testing.T) {
 		t.Errorf("wrote: %v", n.fake.commands)
 	}
 }
+
+// Namecheap takes a CAA value unquoted and answers it quoted: a CAA record typed either way is
+// written unquoted, checked present after the write, found again by a second ensure, and removed.
+func TestACAARecordIsWrittenUnquotedReadBackQuotedAndFoundAgain(t *testing.T) {
+	for _, typed := range []string{`'0 issue "ca.example.net"'`, `"0 issue ca.example.net"`} {
+		n := newHarness(t)
+		n.fake.add("example.com", true, hr("@", "A", "203.0.113.10", 1799))
+		r := n.run(`ensure example.com CAA @ ` + typed)
+		if !r.ok {
+			t.Fatalf("ensure %s failed: %s", typed, r.output)
+		}
+		mustContain(t, r.output, "every earlier record checked present")
+		got := n.fake.hosts("example.com")
+		if len(got) != 2 || got[1].Type != "CAA" || got[1].Address != `0 issue "ca.example.net"` {
+			t.Fatalf("records after %s: %+v", typed, got)
+		}
+		if again := n.run(`ensure example.com CAA @ ` + typed); !again.ok || n.fake.count(setHosts) != 1 {
+			t.Fatalf("a second ensure of %s wrote again: %s", typed, again.output)
+		}
+		if gone := n.run(`remove example.com CAA @ ` + typed); !gone.ok || len(n.fake.hosts("example.com")) != 1 {
+			t.Fatalf("remove %s: %s %+v", typed, gone.output, n.fake.hosts("example.com"))
+		}
+	}
+}

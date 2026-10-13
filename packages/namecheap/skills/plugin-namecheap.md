@@ -71,8 +71,9 @@ The hosting service names the exact hosts and values; use them as given.
 - Ownership verification: a `TXT` record on the host the service names (often `@`, or a name such
   as `_verify` or `asuid.www`), with its token as the value.
 - Certificates: a `CAA` record on `@` allowing the service's certificate authority, as
-  `0 issue "ca.example.net"`, when the domain has CAA records already (with none, every authority
-  may issue). A DNS-01 check asks for a `TXT` on `_acme-challenge` (or `_acme-challenge.www`).
+  `ensure example.com CAA @ "0 issue ca.example.net"`, when the domain has CAA records already (with
+  none, every authority may issue). Namecheap stores the value as `0 issue "ca.example.net"` and
+  `list` shows it so; the plugin takes it typed either way. A DNS-01 check asks for a `TXT` on `_acme-challenge` (or `_acme-challenge.www`).
 
 ## Records a mailbox usually needs
 

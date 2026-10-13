@@ -52,11 +52,33 @@ func normaliseHost(h, domain string) string {
 	return h
 }
 
-// sameValue compares two values the way DNS does: TXT and CAA exactly, names without case or a
-// trailing dot.
+// caaValue is a CAA value in the one form Namecheap's setHosts accepts: flag, tag and value with
+// the value unquoted, "0 issue ca.example.net". Namecheap refuses the value quoted, yet getHosts
+// answers it quoted ("0 issue \"ca.example.net\""), so every CAA value read, typed or restored is
+// put in this form before it is compared or written back.
+func caaValue(v string) string {
+	parts := strings.SplitN(strings.TrimSpace(v), " ", 3)
+	if len(parts) != 3 {
+		return strings.TrimSpace(v)
+	}
+	value := strings.TrimSpace(parts[2])
+	if len(value) >= 2 && strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
+		if unquoted, err := strconv.Unquote(value); err == nil {
+			value = unquoted
+		} else {
+			value = value[1 : len(value)-1]
+		}
+	}
+	return parts[0] + " " + strings.ToLower(parts[1]) + " " + value
+}
+
+// sameValue compares two values the way DNS does: TXT exactly, CAA in Namecheap's one form, names
+// without case or a trailing dot.
 func sameValue(typ, a, b string) bool {
 	switch typ {
-	case "TXT", "CAA", "URL", "URL301", "FRAME":
+	case "CAA":
+		return caaValue(a) == caaValue(b)
+	case "TXT", "URL", "URL301", "FRAME":
 		return a == b
 	}
 	norm := func(s string) string { return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(s)), ".") }
@@ -101,7 +123,7 @@ func checkValue(typ, value string) string {
 		}
 	case "CAA":
 		if !caaPattern.MatchString(value) {
-			return `a CAA record's value is a flag, a tag and a value, such as '0 issue "ca.example.net"'`
+			return `a CAA record's value is a flag, a tag and a value, such as '0 issue ca.example.net'`
 		}
 	}
 	return ""

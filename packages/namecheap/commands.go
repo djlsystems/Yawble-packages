@@ -137,6 +137,9 @@ func (p *plugin) ensure(args []string) (string, error) {
 		return "", err
 	}
 	want := record{Type: typ, Host: normaliseHost(args[2], domain), Value: strings.TrimSpace(args[3])}
+	if typ == "CAA" {
+		want.Value = caaValue(want.Value)
+	}
 	if problem := p.checkHost(want.Host); problem != "" {
 		return "", refusal(problem)
 	}

@@ -95,10 +95,10 @@ holds records only: never the API user or key.
 ## Build and test
 
 ```sh
-packages/namecheap/build.sh ~/plugins-build/namecheap/1.0.0     # one installable version
+packages/namecheap/build.sh ~/plugins-build/namecheap/1.0.1     # one installable version
 (cd packages/namecheap && go test ./...)                        # against a fake Namecheap API
 ```
 
-`scripts/build.sh` puts the package zip in `dist/namecheap-1.0.0.zip`. The tests run the plugin
+`scripts/build.sh` puts the package zip in `dist/namecheap-1.0.1.zip`. The tests run the plugin
 against a fake Namecheap API and a fake address service on the test machine; they never reach the
 network.

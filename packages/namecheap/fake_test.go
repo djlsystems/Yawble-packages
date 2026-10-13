@@ -192,6 +192,16 @@ func (f *fakeNamecheap) serve(w http.ResponseWriter, r *http.Request) {
 			if strings.EqualFold(x.Name, f.dropOnSet) {
 				continue
 			}
+			// AS THE REAL API DOES (measured on 13 October 2026): a CAA record's value is written
+			// unquoted, "0 issue ca.example.net", refused quoted, and read back quoted.
+			if strings.EqualFold(x.Type, "CAA") {
+				parts := strings.SplitN(x.Address, " ", 3)
+				if len(parts) != 3 || strings.HasPrefix(parts[2], `"`) {
+					f.fail(w, "2050900", fmt.Sprintf("CAA record with tag %q has incorrect value.", parts[min(1, len(parts)-1)]))
+					return
+				}
+				x.Address = parts[0] + " " + parts[1] + " " + strconv.Quote(parts[2])
+			}
 			hosts = append(hosts, x)
 		}
 		d.hosts = hosts

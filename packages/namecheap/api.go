@@ -219,6 +219,9 @@ func (c *client) getHosts(domain string) (*hostSet, error) {
 	set := &hostSet{EmailType: h.EmailType, OurDNS: strings.EqualFold(h.IsUsingOurDNS, "true"), Records: []record{}}
 	for _, x := range h.Hosts {
 		rec := record{Type: strings.ToUpper(x.Type), Host: normaliseHost(x.Name, domain), Value: x.Address}
+		if rec.Type == "CAA" {
+			rec.Value = caaValue(rec.Value)
+		}
 		rec.MXPref, _ = strconv.Atoi(x.MXPref)
 		rec.TTL, _ = strconv.Atoi(x.TTL)
 		if rec.Type != "MX" {
@@ -240,7 +243,11 @@ func (c *client) setHosts(domain, emailType string, records []record) error {
 		n := strconv.Itoa(i + 1)
 		params.Set("HostName"+n, r.Host)
 		params.Set("RecordType"+n, r.Type)
-		params.Set("Address"+n, r.Value)
+		value := r.Value
+		if r.Type == "CAA" {
+			value = caaValue(value) // a backup taken before CAA values were read in this form
+		}
+		params.Set("Address"+n, value)
 		if r.TTL > 0 {
 			params.Set("TTL"+n, strconv.Itoa(r.TTL))
 		}
