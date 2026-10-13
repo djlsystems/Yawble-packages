@@ -23,9 +23,18 @@ import (
 // sqlDial opens the TLS connection to a SQL host. Only tests change it.
 var sqlDial = func(host string, port int) (net.Conn, error) {
 	d := &net.Dialer{Timeout: 30 * time.Second}
-	return tls.DialWithDialer(d, "tcp", net.JoinHostPort(host, strconv.Itoa(port)), &tls.Config{
+	return tls.DialWithDialer(d, "tcp", net.JoinHostPort(host, strconv.Itoa(port)), sqlTLS(host))
+}
+
+// sqlTLS is the TLS a SQL connection uses. ONE TLS RECORD PER TDS PACKET: Azure SQL resets a
+// connection whose packet arrives split across records, and Go's dynamic record sizing splits the
+// first writes after the handshake into small records, so the login, which carries the token and
+// is several KB, never arrived whole. Packets are also kept to maxSQLPacket, inside one record.
+func sqlTLS(host string) *tls.Config {
+	return &tls.Config{
 		ServerName: host, NextProtos: []string{"tds/8.0"}, MinVersion: tls.VersionTLS12,
-	})
+		DynamicRecordSizingDisabled: true,
+	}
 }
 
 const (
@@ -35,6 +44,7 @@ const (
 	tdsPrelogin = 0x12
 
 	maxSQLRows     = 200
+	maxSQLPacket   = 16383 // the largest TDS packet that fits one TLS record
 	maxReplyBytes  = 64 << 20
 	maxCellRunes   = 200
 	sqlBatchWindow = 4 * time.Minute
@@ -106,8 +116,8 @@ func tdsOpen(host string, port int, database, token string) (*tdsConn, *tdsRoute
 	if !out.loggedIn {
 		return fail(fmt.Errorf("Azure SQL did not accept the sign-in"))
 	}
-	if out.packetSize >= 512 && out.packetSize <= 32767 {
-		c.packetSize = out.packetSize
+	if out.packetSize >= 512 {
+		c.packetSize = min(out.packetSize, maxSQLPacket)
 	}
 	return c, nil, nil
 }

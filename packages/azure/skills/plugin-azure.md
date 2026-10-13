@@ -89,8 +89,10 @@ Registries:
 
 Azure SQL (Microsoft Entra sign-in only; no SQL password exists):
 
-- `sql server create <resource group> <server>` - the signed-in person is its administrator. A
-  person adds this instance's address to its firewall before `sql exec` reaches it.
+- `sql server create <resource group> <server>` - the signed-in person is its administrator. Its
+  firewall lets nothing in: deploy `Microsoft.Sql/servers/firewallRules` in a template
+  (`AllowAzureServices`, 0.0.0.0 to 0.0.0.0, for apps in Azure, and this instance's address, which
+  the first refused `sql exec` names) before `sql exec` reaches it.
 - `sql db create <server> <database> <sku>` - on an owned server, or tagged on a server in
   `sharedSqlServers`. A sku such as `Basic`, `S0` or `GP_S_Gen5_1`.
 - `sql exec <server>/<database> <file.sql>` - runs the file's batches (split at `GO` lines) in

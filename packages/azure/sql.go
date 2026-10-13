@@ -74,7 +74,7 @@ func (p *plugin) sqlServerCreate(args []string) (string, error) {
 		return "", err
 	}
 	p.applied("sql server create", id, what, []string{id})
-	return fmt.Sprintf("SQL server %s is ready in %s at %s; it accepts only Microsoft Entra sign-ins, and %s is its administrator. Its firewall lets nothing in until a person adds an address in the Azure portal (SQL server, Networking).", name, rg, sqlHost(name), account), nil
+	return fmt.Sprintf("SQL server %s is ready in %s at %s; it accepts only Microsoft Entra sign-ins, and %s is its administrator. Its firewall lets nothing in until a rule is added: deploy Microsoft.Sql/servers/firewallRules in a template (AllowAzureServices, 0.0.0.0, for apps in Azure, and this instance's address, which a refused sql exec names), or a person adds an address in the Azure portal (SQL server, Networking).", name, rg, sqlHost(name), account), nil
 }
 
 func (p *plugin) sqlDBCreate(args []string) (string, error) {
@@ -275,7 +275,7 @@ func sqlHint(err error) error {
 	msg := err.Error()
 	switch {
 	case strings.Contains(msg, "error 40615"):
-		return fmt.Errorf("%s. A person adds this instance's address to the server's firewall (Azure portal, SQL server, Networking)", msg)
+		return fmt.Errorf("%s. Add this instance's address to the server's firewall: deploy a Microsoft.Sql/servers/firewallRules rule for it on a server the team owns, or a person adds it in the Azure portal (SQL server, Networking)", msg)
 	case strings.Contains(msg, "error 18456"), strings.Contains(msg, "error 33134"):
 		return fmt.Errorf("%s. The signed-in account needs to be the server's Microsoft Entra administrator, or a user in the database", msg)
 	}
