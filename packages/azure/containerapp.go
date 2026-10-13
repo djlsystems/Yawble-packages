@@ -48,7 +48,7 @@ func appSecretField(v string) (string, bool) {
 func init() {
 	register(
 		command{words: []string{"containerapp", "env", "create"}, usage: "<resource group> <environment>", run: (*plugin).envCreate},
-		command{words: []string{"containerapp", "create"}, usage: "<resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>|appSecret<1-8>]...", run: (*plugin).appCreate},
+		command{words: []string{"containerapp", "create"}, usage: "<resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [cpu=<0.25 to 2>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>|appSecret<1-8>]...", run: (*plugin).appCreate},
 		command{words: []string{"containerapp", "show"}, usage: "<app>", run: (*plugin).appShow},
 		command{words: []string{"containerapp", "revisions"}, usage: "<app>", run: (*plugin).appRevisions},
 		command{words: []string{"containerapp", "restart"}, usage: "<app>", run: (*plugin).appRestart},
@@ -128,7 +128,7 @@ func (p *plugin) keyRefusal(env, field string) refusal {
 
 func (p *plugin) appCreate(args []string) (string, error) {
 	if len(args) < 4 {
-		return "", refusal("Refused: containerapp create takes <resource group> <app> <environment> <registry>.azurecr.io/<image:tag>, then optionally port=<n>, env=<NAME>=<value> and secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name> or secret=<NAME>=appSecret<1-8>.")
+		return "", refusal("Refused: containerapp create takes <resource group> <app> <environment> <registry>.azurecr.io/<image:tag>, then optionally port=<n>, cpu=<0.25 to 2> (its memory is twice that in GiB; 0.5 by default), env=<NAME>=<value> and secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name> or secret=<NAME>=appSecret<1-8>.")
 	}
 	if err := p.needSubscription(); err != nil {
 		return "", err
@@ -142,6 +142,7 @@ func (p *plugin) appCreate(args []string) (string, error) {
 		return "", refusef("Refused: %q is not an image in an Azure container registry, such as <registry>.azurecr.io/my-app:1.0. This member runs images only from registries its team owns and those in sharedRegistries.", image)
 	}
 	port := 0
+	cpu := 0.5
 	var envs []map[string]any
 	var secrets []appSecret
 	seen, secretSeen := map[string]bool{}, map[string]bool{}
@@ -154,6 +155,14 @@ func (p *plugin) appCreate(args []string) (string, error) {
 				return "", refusef("Refused: %s is not a port.", a)
 			}
 			port = n
+		case "cpu":
+			// The sizes a Consumption environment runs: a quarter of a CPU at a time, with twice as
+			// many GiB of memory.
+			n, err := strconv.ParseFloat(value, 64)
+			if err != nil || n < 0.25 || n > 2 || n*4 != float64(int(n*4)) {
+				return "", refusef("Refused: %s is not a size Azure runs: cpu takes 0.25, 0.5, 0.75 and so on up to 2, and the app gets twice that in GiB of memory.", a)
+			}
+			cpu = n
 		case "env", "secret":
 			v, val, ok := strings.Cut(value, "=")
 			if !ok || !envVarName.MatchString(v) {
@@ -193,7 +202,7 @@ func (p *plugin) appCreate(args []string) (string, error) {
 			}
 			secrets = append(secrets, appSecret{env: v, name: sname, address: val, vault: sm[1], secret: sm[2]})
 		default:
-			return "", refusef("Refused: %s is not port=, env= or secret=.", a)
+			return "", refusef("Refused: %s is not port=, cpu=, env= or secret=.", a)
 		}
 	}
 
@@ -262,7 +271,7 @@ func (p *plugin) appCreate(args []string) (string, error) {
 	if port > 0 {
 		ingress = fmt.Sprintf("public HTTPS ingress to port %d", port)
 	}
-	steps = append(steps, fmt.Sprintf("create or update container app %s in environment %s running %s, with %s, %d settings, %d Key Vault secrets and %d secrets from this member's keys", name, env.Name, image, ingress, len(envs), vaultSecrets, keySecrets))
+	steps = append(steps, fmt.Sprintf("create or update container app %s in environment %s running %s on %s, with %s, %d settings, %d Key Vault secrets and %d secrets from this member's keys", name, env.Name, image, appSize(cpu), ingress, len(envs), vaultSecrets, keySecrets))
 	what := strings.Join(steps, "; ")
 	if !p.cfg.apply() {
 		return p.whatif("containerapp create", appID, what, map[string]int{"create": 2 + 1 + len(vaults)}), nil
@@ -326,7 +335,7 @@ func (p *plugin) appCreate(args []string) (string, error) {
 			"managedEnvironmentId": env.ID,
 			"configuration":        config,
 			"template": map[string]any{
-				"containers": []map[string]any{{"name": name, "image": image, "env": envs, "resources": map[string]any{"cpu": 0.5, "memory": "1Gi"}}},
+				"containers": []map[string]any{{"name": name, "image": image, "env": envs, "resources": map[string]any{"cpu": cpu, "memory": appMemory(cpu)}}},
 				"scale":      map[string]any{"minReplicas": 0, "maxReplicas": 1},
 			},
 		},
@@ -633,4 +642,14 @@ func workspaceID(id string) (string, bool) {
 		return "", false
 	}
 	return id, true
+}
+
+// appMemory is the memory a Consumption app of that many CPUs gets: twice as many GiB.
+func appMemory(cpu float64) string {
+	return strconv.FormatFloat(cpu*2, 'f', -1, 64) + "Gi"
+}
+
+// appSize says an app's size in words.
+func appSize(cpu float64) string {
+	return strconv.FormatFloat(cpu, 'f', -1, 64) + " CPU and " + strings.TrimSuffix(appMemory(cpu), "Gi") + " GiB of memory"
 }

@@ -102,7 +102,8 @@ Azure SQL (Microsoft Entra sign-in only; no SQL password exists):
 Storage (in accounts the team owns; reads anywhere the person has a Storage Data role):
 
 - `storage create <resource group> <account> [sku]` - StorageV2, shared key access off, no
-  public blob access.
+  public blob access; the signed-in person gets Storage Blob, Table and Queue Data Contributor on
+  it (a few minutes to apply), and running it again on an account the team owns grants them again.
 - `storage container|table|queue create <account> <name>`.
 - `blob list <account> <container> [prefix]` (first 200), `blob get <account> <container> <blob>
   [path]` (writes into the team's documents), `blob put <account> <container> <blob> <file>`,
@@ -128,17 +129,20 @@ Container Apps:
 - `containerapp env create <resource group> <environment>` - with its own Log Analytics
   workspace `<environment>-logs`.
 - `containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag>
-  [port=<n>] [env=<NAME>=<value>]... [secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name>]...
+  [port=<n>] [cpu=<0.25 to 2>] [env=<NAME>=<value>]... [secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name>]...
   [secret=<NAME>=appSecret<1-8>]...`
   - in an owned environment, from an owned or shared registry. Creates the identity
   `<app>-id`, grants it AcrPull on the registry and Key Vault Secrets User on each owned vault a
-  `secret=` names, then creates or updates the app (0 to 1 replicas, 0.5 CPU, 1 GiB). `port=`
+  `secret=` names, then creates or updates the app (0 to 1 replicas, 0.5 CPU and 1 GiB unless `cpu=` names
+  another size, which gets twice as many GiB). `port=`
   gives it public HTTPS ingress. Each Key Vault secret must already be in the vault, and each
   `appSecret<N>` must be bound and set (see Secrets). An `env=` that looks like a secret is
   refused.
 - `containerapp show <app>`, `containerapp revisions <app>`, `containerapp logs <app> [minutes]`
   (default 30, at most 500 lines) - reads. The logs are queried through Azure management on the
-  environment's workspace; the account needs Log Analytics Reader (or Reader) on it.
+  environment's workspace; the account needs Log Analytics Reader (or Reader) on it. An
+  environment deployed with its logs sent to a storage account has no workspace: read its logs
+  with `blob list` and `blob get` on that account's `insights-logs-*` containers.
 - `containerapp restart <app>` - restarts the latest ready revision.
 - `domain bind <app> <hostname>` - says the TXT and CNAME (A for a domain's apex) records the
   domain needs, and sets them when the team owns its Azure DNS zone. Once they resolve, run it

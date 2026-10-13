@@ -664,3 +664,16 @@ func sortedKeys(m map[string]bool) []string {
 	sort.Strings(out)
 	return out
 }
+
+// A guest account's unique name carries its home's prefix, which the person's name never shows.
+func TestAGuestsSignInNameDropsItsHomePrefix(t *testing.T) {
+	enc := func(v map[string]any) string {
+		raw, _ := json.Marshal(v)
+		return base64.RawURLEncoding.EncodeToString(raw)
+	}
+	tok := enc(map[string]any{"alg": "none"}) + "." + enc(map[string]any{"oid": zeroGUID, "tid": zeroGUID, "unique_name": "live.com#guest@example.com"}) + ".x"
+	p := &plugin{az: &client{tokens: map[api]string{apiARM: tok}}}
+	if _, _, name, err := p.signedIn(); err != nil || name != "guest@example.com" {
+		t.Fatalf("name = %q, %v", name, err)
+	}
+}

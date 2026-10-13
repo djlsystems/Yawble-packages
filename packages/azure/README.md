@@ -173,7 +173,7 @@ keyvault create <resource group> <vault>
 keyvault secrets <vault>
 
 containerapp env create <resource group> <environment>
-containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>|appSecret<1-8>]...
+containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [cpu=<0.25 to 2>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>|appSecret<1-8>]...
 containerapp show <app>
 containerapp revisions <app>
 containerapp restart <app>

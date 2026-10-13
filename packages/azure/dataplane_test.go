@@ -613,7 +613,9 @@ func TestContainerAppCreateRefusesSecretsOutsideKeyVault(t *testing.T) {
 		"env=CONN=Server=x;Password=" + "p" + "w1":    "CONN looks like a secret",
 		"secret=DB_PASSWORD=hunter2":                  "takes a Key Vault secret's address",
 		"secret=API_TOKEN=" + w.vaultURL + "-missing": "Key Vault myvault holds no secret db-password-missing",
-		"image=" + acrRef("myregistry", "x:1"):        "is not port=, env= or secret=",
+		"image=" + acrRef("myregistry", "x:1"):        "is not port=, cpu=, env= or secret=",
+		"cpu=0.3":                                     "is not a size Azure runs",
+		"cpu=4":                                       "is not a size Azure runs",
 	} {
 		r := runPlugin(t, runOpts{config: apply(nil)}, "containerapp create "+ownedRG+" new-app my-app-env "+acrRef("myregistry", "my-app:1.0")+" "+line)
 		mustContain(t, r.text(), "Refused", want)
@@ -831,4 +833,22 @@ func TestSetupChecksTheDataPlaneProviders(t *testing.T) {
 	f.providers["Microsoft.Insights"] = "NotRegistered"
 	r := runPlugin(t, runOpts{}, "setup")
 	mustContain(t, r.text(), "providers not registered: Microsoft.Storage, Microsoft.ContainerRegistry, Microsoft.Sql, Microsoft.Insights; whatif registers nothing")
+}
+
+// An app is 0.5 CPU and 1 GiB unless cpu= names another size, which gets twice as many GiB.
+func TestContainerAppCreateTakesASize(t *testing.T) {
+	for cpu, want := range map[string]string{"": `"resources":{"cpu":0.5,"memory":"1Gi"}`, " cpu=0.25": `"resources":{"cpu":0.25,"memory":"0.5Gi"}`, " cpu=1.5": `"resources":{"cpu":1.5,"memory":"3Gi"}`} {
+		w := newWorld(t)
+		r := runPlugin(t, runOpts{config: apply(nil)}, "containerapp create "+ownedRG+" new-app my-app-env "+acrRef("myregistry", "my-app:1.0")+" port=8080"+cpu)
+		if !r.ok() {
+			t.Fatal(r.text())
+		}
+		put := w.f.callsTo(http.MethodPut, "/containerApps/new-app")
+		if len(put) != 1 || !strings.Contains(string(put[0].Body), want) {
+			t.Fatalf("cpu%q: the app was created as %s", cpu, put[len(put)-1].Body)
+		}
+	}
+	newWorld(t)
+	r := runPlugin(t, runOpts{}, "containerapp create "+ownedRG+" new-app my-app-env "+acrRef("myregistry", "my-app:1.0")+" cpu=0.25")
+	mustContain(t, r.text(), "0.25 CPU and 0.5 GiB of memory")
 }
