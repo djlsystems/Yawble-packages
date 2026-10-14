@@ -2,7 +2,7 @@
   "format": 1,
   "id": "customer-support",
   "name": "Customer Support",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A team that watches your mailbox, sorts new mail by your rules and texts you about it: a short summary of each batch of new mail, an alert for each inquiry at once, and a reminder every hour until you reply to it. Text \"summary\" from your cell to get the current counts and open inquiries back.\n\nIt files spam in Junk and new-customer mail in New Customers, counts new-customer, order and other mail on its page, and never marks mail read, sends email or deletes anything. Its rules are a team skill, support-playbook, that you edit in Team settings, Skills. It uses the mail plugin for your mailbox and the twilio plugin for your Twilio number, and texts only the numbers you allow.",
 
   "team": {
