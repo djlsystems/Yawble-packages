@@ -40,6 +40,33 @@ func (p *plugin) readSet(domain string) (*hostSet, error) {
 	return set, nil
 }
 
+// managedMail names a mail setting in which Namecheap itself serves the domain's mail records
+// (MX, and SPF with them), so none of them is in the host records this plugin reads and writes.
+// Any other setting (none, MX, MXE) is the host records' own.
+func managedMail(emailType string) (string, bool) {
+	switch strings.ToUpper(emailType) {
+	case "OX":
+		return "Namecheap Private Email", true
+	case "FWD":
+		return "Namecheap email forwarding", true
+	case "GMAIL":
+		return "Google Workspace through Namecheap", true
+	}
+	return "", false
+}
+
+// mailSwitch refuses a change that would move a domain off a mail setting Namecheap manages: an MX
+// record added to a Private Email or forwarding domain switches it to custom MX, which stops the
+// mail records Namecheap serves for it. restore is exempt: it puts back the setting a backup was
+// saved with, on purpose.
+func mailSwitch(command, domain, from, to string) error {
+	name, managed := managedMail(from)
+	if command == "restore" || !managed || strings.EqualFold(from, to) {
+		return nil
+	}
+	return refusal(fmt.Sprintf("Refused: %s's mail setting is %s (%s), so Namecheap serves its mail records itself. This change would switch it to %s and stop them, so it is not made. A person who means to move the domain's mail changes its mail setting in Namecheap (Domain List, Manage, Advanced DNS, Mail Settings) first. Nothing was changed.", domain, name, from, orNone(to)))
+}
+
 func notListed(domain string) error {
 	return refusal(fmt.Sprintf("Refused: %s is not in this member's domains setting, so it may not read or change it. A person adds it to domains to allow it. Nothing was changed.", domain))
 }
@@ -51,6 +78,9 @@ func (p *plugin) apply(command, domain string, set *hostSet, c change, mailBase 
 	newEmail := emailType(mailBase, c.after)
 	if c.none() {
 		return fmt.Sprintf("%s: already as asked; nothing was changed (%d records).", domain, len(c.before)), nil
+	}
+	if err := mailSwitch(command, domain, set.EmailType, newEmail); err != nil {
+		return "", err
 	}
 
 	summary := summarise(c)

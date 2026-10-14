@@ -79,6 +79,11 @@ The hosting service names the exact hosts and values; use them as given.
 
 The mail provider names the values.
 
+First `list` the domain: when its mail setting is `OX` (Namecheap Private Email), `FWD` (Namecheap
+email forwarding) or `GMAIL`, Namecheap itself serves the MX and SPF records and they are not host
+records. Add none of them: an MX record would switch the setting to custom MX, and the plugin
+refuses it, saying so. Only DKIM (when the provider does not already hold it) and DMARC are added.
+
 - `MX` on `@`, one per mail host the provider lists, each with its preference. Adding MX records
   switches the domain's mail setting to custom MX; the answer says so when it changes.
 - SPF: one `TXT` on `@` starting `v=spf1`, such as `"v=spf1 include:_spf.example.net ~all"`. To

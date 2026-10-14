@@ -517,3 +517,33 @@ func TestACAARecordIsWrittenUnquotedReadBackQuotedAndFoundAgain(t *testing.T) {
 		}
 	}
 }
+
+// A Private Email domain's mail records are Namecheap's own: an MX record would switch its mail
+// setting to custom MX, so it is refused in dry run and apply alike and nothing is written; any
+// other record is written with the mail setting kept; a restore may still put back a backup's.
+func TestAChangeThatWouldSwitchAPrivateEmailDomainsMailSettingIsRefused(t *testing.T) {
+	for _, mode := range []string{"dryrun", "apply"} {
+		n := newHarness(t)
+		n.fake.add("example.com", true, hr("privateemail._domainkey", "TXT", "v=DKIM1; k=rsa; p=placeholder", 1800))
+		n.fake.domains["example.com"].emailType = "OX"
+		n.cfg["mode"] = mode
+		r := n.run(`ensure example.com MX @ mx.example.net 1799 10`)
+		if r.ok || !strings.Contains(r.output, "Namecheap Private Email (OX)") || !strings.Contains(r.output, "Nothing was changed") {
+			t.Fatalf("%s: an MX on a Private Email domain was not refused: %s", mode, r.output)
+		}
+		if n.fake.count(setHosts) != 0 || n.fake.domains["example.com"].emailType != "OX" {
+			t.Fatalf("%s: the refused change wrote: %v, mail setting %s", mode, n.fake.commands, n.fake.domains["example.com"].emailType)
+		}
+	}
+
+	n := newHarness(t)
+	n.fake.add("example.com", true, hr("privateemail._domainkey", "TXT", "v=DKIM1; k=rsa; p=placeholder", 1800))
+	n.fake.domains["example.com"].emailType = "OX"
+	n.cfg["mode"] = "apply"
+	if r := n.run(`ensure example.com TXT _dmarc "v=DMARC1; p=none"`); !r.ok {
+		t.Fatalf("a DMARC record on a Private Email domain was refused: %s", r.output)
+	}
+	if got := n.fake.domains["example.com"].emailType; got != "OX" {
+		t.Fatalf("a TXT write changed the mail setting to %s", got)
+	}
+}

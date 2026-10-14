@@ -78,6 +78,10 @@ Namecheap's `setHosts` replaces a domain's whole record set. Every change theref
 
 - reads the current set and changes only the named record;
 - refuses when the read fails, the domain does not use Namecheap DNS, or it is not in `domains`;
+- refuses a change that would switch the domain off a mail setting Namecheap manages itself
+  (Private Email `OX`, email forwarding `FWD`, `GMAIL`), such as an MX record on a Private Email
+  domain: a person changes the mail setting in Namecheap first when that is meant. `restore` may
+  still put back the setting a backup was saved with;
 - saves the set before the change as a backup in the member's workspace
   (`namecheap-backups/<domain>/<id>.json`) and answers its id;
 - writes the whole set back, reads it again, and checks every record that was there is still
@@ -95,10 +99,10 @@ holds records only: never the API user or key.
 ## Build and test
 
 ```sh
-packages/namecheap/build.sh ~/plugins-build/namecheap/1.0.1     # one installable version
+packages/namecheap/build.sh ~/plugins-build/namecheap/1.0.2     # one installable version
 (cd packages/namecheap && go test ./...)                        # against a fake Namecheap API
 ```
 
-`scripts/build.sh` puts the package zip in `dist/namecheap-1.0.1.zip`. The tests run the plugin
+`scripts/build.sh` puts the package zip in `dist/namecheap-1.0.2.zip`. The tests run the plugin
 against a fake Namecheap API and a fake address service on the test machine; they never reach the
 network.

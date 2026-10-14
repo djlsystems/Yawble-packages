@@ -36,8 +36,10 @@ counts and open inquiries back within a minute.
   - `moveTo`: `Junk` and `New Customers` by default. New Customers is created at the top level
     of your mailbox the first time a message is moved there; Junk is your mailbox's own.
 
-The three Twilio secrets are bound by key name, as the Twilio package binds them. The operator
-sets each value on the machine that runs the platform:
+The three Twilio secrets are bound by key name, as the Twilio package binds them. A person sets
+each value on the screen: the install's secrets step, or the member's settings, shows a value box
+under each key name, and the next run reads it with no restart. The operator CLI sets them too, on
+the machine that runs the platform:
 
 ```
 yawble secret set TWILIO_ACCOUNT_SID

@@ -13,10 +13,10 @@ changes nothing until a person sets `mode` to `apply`.
 ## Set up, with no script
 
 1. **Marketplace**, **Get** Stripe, then **Add member** on a team and choose the Stripe plugin.
-2. Make a restricted key in the Stripe Dashboard (below) and put it in the member's `apiKey` field.
-   The field takes the name of an instance secret, such as `STRIPE_RESTRICTED_KEY`; its value is
-   set on the instance with `yawble secret set STRIPE_RESTRICTED_KEY`, and the Host reads it at its
-   next start.
+2. Make a restricted key in the Stripe Dashboard (below). In the member's `apiKey` field type a key
+   name, such as `STRIPE_RESTRICTED_KEY`, paste the key into the value box under it, and press Add
+   member (or Save). The next run reads it; nothing restarts. The operator CLI's
+   `yawble secret set STRIPE_RESTRICTED_KEY`, then `yawble up`, sets it too.
 3. Optional, to create webhook endpoints: make a Key Vault ready (below), add its name to
    `keyVaults`, and sign in with Microsoft on the member's `microsoft` connection slot.
 4. Tell the member `setup`. It checks each thing and says the next step in words:
@@ -39,14 +39,17 @@ changes nothing until a person sets `mode` to `apply`.
 A restricted key can do only what its permissions allow. Make one key for this member, in test
 mode first.
 
-1. Sign in to the Stripe Dashboard and open **Developers**, **API keys**
-   (https://dashboard.stripe.com/apikeys). The **Test mode** switch decides whether the key is a
-   test key (`rk_test_...`) or a live key (`rk_live_...`).
-2. Under **Restricted keys**, press **Create restricted key**. If Stripe first asks how the key will
-   be used, choose the option that lets you set the permissions yourself.
+1. Sign in to the Stripe Dashboard and choose the account, and the sandbox or live mode, the key
+   is for: a key made in a sandbox (or test mode) is a test key (`rk_test_...`), one made in the
+   live account a live key (`rk_live_...`). Open **Developers**, **API keys**
+   (https://dashboard.stripe.com/apikeys).
+2. Press **Create secret key**. For how the key will be used, choose **Sharing with a third-party
+   service** (vendor name `Yawble`); for its permissions, choose **Custom permissions**, never
+   Standard, which grants far more than this plugin needs. (An older Dashboard has a
+   **Create restricted key** button under Restricted keys instead.)
 3. Name it after the team, such as `Yawble stripe member`.
 4. Set exactly these permissions, and leave every other one at **None**. The filter box above the
-   list finds each row.
+   list finds each row. The review screen should read 9 permissions, 6 read and 3 write.
 
 ### The restricted key's permissions
 
@@ -62,8 +65,8 @@ mode first.
 | Events | Read | `events` |
 | Balance | Read | `setup` checks the key with it |
 
-5. Press **Create key**. Stripe may show the whole key only once: copy it now and set it on the
-   instance as in step 2 of the setup. Never paste it into a chat, a card or a file in a
+5. Press **Create key**. Stripe may show the whole key only once: copy it now into the member's
+   value box as in step 2 of the setup. Never paste it into a chat, a card or a file in a
    repository.
 6. Tell the member `setup`. A missing permission is named, such as
    `- permissions: missing Prices (write)`, and setup publishes `plugin.stripe.refused` naming it;
