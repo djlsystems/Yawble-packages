@@ -1,4 +1,4 @@
-# Twilio SMS/MMS 1.4.2
+# Twilio SMS/MMS 1.5.0
 
 A team that texts through your Twilio account. The **Texting Assistant** guides you through
 Twilio setup, writes texts for you and sends them through the **twilio** plugin member, and tells
@@ -55,6 +55,15 @@ text not answered is counted in one progress line per poll, by reason, without n
 The twilio page shows each auto-reply exactly as sent, with an `auto-reply` tag beside it. The
 Texting Assistant still tells you about the texts and never sends a second reply to one twilio
 answered.
+
+## What the Monitor shows
+
+twilio publishes `plugin.twilio.sent` for each text it actually sent: an `sms` or `mms` command in
+`send` mode, and each auto-reply a poll sends (one poll can send several). It carries our number,
+the recipient (`to`), the text's SID and `autoReply`, never the text itself. The Monitor shows each
+one briefly off the twilio member as an `sms` icon, marked created and labelled with the recipient's
+number. A dry run sends nothing and shows nothing; neither do refusals, reads, polls that send no
+auto-reply, `optout`, or received texts, opt-outs, opt-ins, delivery results and owner commands.
 
 ## Owner commands
 

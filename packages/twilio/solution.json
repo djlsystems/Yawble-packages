@@ -2,7 +2,7 @@
   "format": 1,
   "id": "twilio",
   "name": "Twilio SMS/MMS",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "description": "A team that texts through your Twilio account: the Texting Assistant guides you through Twilio setup one step at a time, writes texts for you and sends them through the twilio plugin, and tells you about replies, opt-outs and failed messages. It starts in dry run and only ever texts your own cell, until you switch mode to send and later add consented recipients yourself on the twilio page.",
   "team": {
     "name": "Twilio",

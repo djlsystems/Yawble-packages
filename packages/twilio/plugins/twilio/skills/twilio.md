@@ -109,7 +109,8 @@ message. Site files cannot be used as media: Twilio cannot fetch them.
 Each `poll` re-checks outbound texts that are not final (up to 72 hours old), lists new
 inbound texts to our number (the first poll starts from now), applies opt-out and opt-in keywords,
 answers new texts itself when `autoReply` is on (below), and publishes at most one event of each
-type, except `plugin.twilio.command`: one for each owner command. A poll with nothing new finishes
+type, except `plugin.twilio.command` (one for each owner command) and `plugin.twilio.sent` (one
+for each auto-reply sent). A poll with nothing new finishes
 quietly and wakes nobody; neither does one whose only news is how its own auto-replies went (a
 failed one is published as any failed text), or owner commands (their events wake their trigger). If one step fails the
 others still run and a progress line names it.
@@ -126,6 +127,12 @@ others still run and a progress line names it.
   It does not re-activate anyone: a person does that on the twilio page.
 - `plugin.twilio.delivery` - `delivered` count, `failed` (each: sid, to, status, error_code and the
   failure sentence below). Published when a text failed, or when the setup test text was delivered.
+
+- `plugin.twilio.sent` - `number` (ours), `to` (the recipient, E.164), `sid`, `autoReply` (true for
+  an auto-reply). One per text actually sent: each `sms` or `mms` in `send` mode, and each auto-reply
+  a poll sends. Never the text itself. It wakes no one; the Monitor shows each as an `sms` icon off
+  this member, marked created and labelled with the recipient's number. No other event is shown on
+  the Monitor.
 
 Every event carries `dryRun: false`; dry runs publish nothing.
 

@@ -419,6 +419,8 @@ func (p *plugin) deliver(req sendRequest, replyTo string) (string, error) {
 		doc.Tag = autoReplyTag
 	}
 	p.st.putMessage(p, doc)
+	// One sent event per text Twilio accepted, an auto-reply included; never the body.
+	p.publish("sent", map[string]any{"number": from, "to": to, "sid": m.Sid, "autoReply": replyTo != ""})
 	status := m.Status
 	if status == "" {
 		status = "queued"
