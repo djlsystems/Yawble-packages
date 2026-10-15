@@ -350,12 +350,19 @@ func (p *plugin) planned(pl plan) {
 	})
 }
 
-// applied publishes plugin.azure.applied for a change made in apply mode.
+// applied publishes plugin.azure.applied for a change made in apply mode, then a resource event for
+// each resource it touched.
 func (p *plugin) applied(command, target, summary string, ids []string) {
+	p.appliedAs(command, target, summary, ids, func(id string) string { return actionOf(command, id) })
+}
+
+// appliedAs is applied with each resource's action given.
+func (p *plugin) appliedAs(command, target, summary string, ids []string, action func(id string) string) {
 	if ids == nil {
 		ids = []string{}
 	}
 	p.publish("applied", map[string]any{"command": command, "target": target, "summary": summary, "resourceIds": ids})
+	p.resourceEvents(command, ids, action)
 }
 
 // whatif reports a single-change command in whatif mode: the plan event, and the answer saying

@@ -273,13 +273,24 @@ func (p *plugin) deploy(args []string) (string, error) {
 	if !strings.EqualFold(result.Properties.ProvisioningState, "Succeeded") {
 		return "", fmt.Errorf("the deployment %s ended %s: %s %s", d.name, result.Properties.ProvisioningState, result.Properties.Error.Code, result.Properties.Error.Message)
 	}
+	// Each resource's action is what the what-if said of it; a resource the what-if did not name as
+	// a create or a change gets no resource event.
+	actions := map[string]string{}
+	for _, c := range changes {
+		switch strings.ToLower(c.ChangeType) {
+		case "create":
+			actions[strings.ToLower(c.ResourceID)] = actionCreated
+		case "modify", "deploy":
+			actions[strings.ToLower(c.ResourceID)] = actionChanged
+		}
+	}
 	if len(result.Properties.OutputResources) > 0 {
 		ids = ids[:0]
 		for _, r := range result.Properties.OutputResources {
 			ids = append(ids, r.ID)
 		}
 	}
-	p.applied("deploy", rgID, summary, ids)
+	p.appliedAs("deploy", rgID, summary, ids, func(id string) string { return actions[strings.ToLower(id)] })
 	return fmt.Sprintf("Deployed %s into %s as %s (sha256 %s): %d created, %d modified.\n%s",
 		filepath.Base(d.file), d.rg, d.name, d.sum[:12], counts["create"], counts["modify"], strings.Join(report, "\n")), nil
 }

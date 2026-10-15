@@ -266,6 +266,61 @@
         ]
       },
       {
+        "type": "resource",
+        "summary": "One Azure resource a command created, changed or deleted in apply mode, beside that command's applied summary; at most 25 a command, and past that the summary alone covers the rest.",
+        "highVolume": true,
+        "fields": [
+          {
+            "name": "resourceId",
+            "kind": "string",
+            "summary": "The resource's Azure id."
+          },
+          {
+            "name": "resourceType",
+            "kind": "string",
+            "summary": "Its kind: resource-group, sql-server, sql-database, container-app, container-app-environment, container-registry, key-vault, secret, storage-account, managed-identity, role-assignment, log-analytics, budget, dns-zone or other."
+          },
+          {
+            "name": "name",
+            "kind": "string",
+            "summary": "The resource's own name, read from its id; never a secret's value."
+          },
+          {
+            "name": "action",
+            "kind": "string",
+            "summary": "created, changed or deleted."
+          },
+          {
+            "name": "command",
+            "kind": "string",
+            "summary": "The command, such as deploy or rg create, without its arguments."
+          }
+        ],
+        "monitor": {
+          "iconBy": "resourceType",
+          "icons": {
+            "resource-group": "folder",
+            "sql-server": "dns",
+            "sql-database": "database",
+            "container-app": "deployed_code",
+            "container-app-environment": "lan",
+            "container-registry": "inventory_2",
+            "key-vault": "key",
+            "secret": "key",
+            "storage-account": "hard_drive",
+            "managed-identity": "badge",
+            "role-assignment": "admin_panel_settings",
+            "log-analytics": "monitoring",
+            "budget": "savings",
+            "dns-zone": "language",
+            "other": "cloud"
+          },
+          "fallbackIcon": "cloud",
+          "actionField": "action",
+          "label": "{name}"
+        }
+      },
+      {
         "type": "refused",
         "summary": "A command was refused: outside what the team owns, a role or principal not allowed, a delete with allowDelete off, a path outside the team's folders, a secret outside Key Vault and this member's own keys, or bad arguments.",
         "highVolume": false,
