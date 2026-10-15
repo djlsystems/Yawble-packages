@@ -54,7 +54,7 @@ func readManifest(t *testing.T) manifest {
 
 func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 	m := readManifest(t)
-	if m.ID != "azure" || m.Version != "1.1.1" {
+	if m.ID != "azure" || m.Version != "1.1.2" {
 		t.Fatalf("id %q version %q", m.ID, m.Version)
 	}
 	settingNames := []string{"subscription", "regions", "mode", "allowDelete", "sharedSqlServers", "sharedRegistries", "monthlyBudget", "budgetEmails", "namePrefix"}

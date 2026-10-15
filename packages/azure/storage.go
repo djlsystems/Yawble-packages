@@ -285,16 +285,13 @@ func (p *plugin) blobGet(args []string) (string, error) {
 	if err := checkBlobArgs(args[1], args[2]); err != nil {
 		return "", err
 	}
-	if p.docs == "" {
-		return "", refusal("Refused: this run names no documents folder for the team to write the blob to.")
-	}
 	dest := filepath.Base(args[2])
 	if len(args) == 4 {
 		dest = args[3]
 	}
-	target := filepath.Clean(filepath.Join(p.docs, dest))
-	if filepath.IsAbs(dest) || !within(p.docs, target) || target == filepath.Clean(p.docs) {
-		return "", refusef("Refused: %s is not a path inside the team's documents folder; blob get writes only there.", dest)
+	target, rel, err := p.documentsTarget(dest, "blob get")
+	if err != nil {
+		return "", err
 	}
 	account, err := p.storageAccount(args[0], false)
 	if err != nil {
@@ -316,7 +313,6 @@ func (p *plugin) blobGet(args []string) (string, error) {
 	if err := os.WriteFile(target, ans.body, 0o644); err != nil {
 		return "", fmt.Errorf("%s could not be written", dest)
 	}
-	rel, _ := filepath.Rel(p.docs, target)
 	return fmt.Sprintf("Copied %s/%s/%s (%d bytes) to %s in the team's documents.", account.Name, args[1], args[2], len(ans.body), rel), nil
 }
 

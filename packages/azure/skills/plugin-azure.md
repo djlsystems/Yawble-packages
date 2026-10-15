@@ -6,10 +6,11 @@ roles: manager member
 
 # Azure (plugin member)
 
-A plugin member, not an agent: it runs no model. Send it commands with `tell`, one per line; it
-acts in one Azure subscription, signed in as the person who connected it, and hands back one
-result. It can never do more than that person can in Azure. You never see a token, and never ask
-anybody for one.
+A plugin member, not an agent: it runs no model. Send it commands with `tell`, one per line and
+nothing else: a line that is not a command (a sentence of context, a note on what not to repeat)
+is refused and fails the run, though the commands beside it still run. It acts in one Azure
+subscription, signed in as the person who connected it, and hands back one result. It can never
+do more than that person can in Azure. You never see a token, and never ask anybody for one.
 
 ## whatif and apply
 
@@ -78,7 +79,9 @@ Quote a value with spaces (`"Storage Blob Data Contributor"`).
 - `delete <resource id or resource group>` - owned only, with `allowDelete` on.
 
 A path (template, build folder, SQL file, file to upload) is in the team's documents folder or a
-worktree of this run; a relative path is the documents folder's.
+worktree of this run; a relative path is the documents folder's, and an absolute one is taken as
+it is. `blob get` writes only in the documents folder, to a path relative to it or absolute
+inside it.
 
 Registries:
 
@@ -97,7 +100,7 @@ Azure SQL (Microsoft Entra sign-in only; no SQL password exists):
   `sharedSqlServers`. A sku such as `Basic`, `S0` or `GP_S_Gen5_1`.
 - `sql exec <server>/<database> <file.sql>` - runs the file's batches (split at `GO` lines) in
   order, stopping at the first that fails; answers rows affected, or each result capped at 200
-  rows. On owned databases only. In whatif it does not connect, even for a SELECT.
+  rows. A byte-order mark at the file's start is dropped. On owned databases only. In whatif it does not connect, even for a SELECT.
 - `sql grant <server>/<database> <managed identity id> <role...>` - makes a managed identity the
   team created a database user with `db_datareader`, `db_datawriter` and/or `db_ddladmin`.
 
@@ -143,8 +146,9 @@ Container Apps:
 - `containerapp show <app>`, `containerapp revisions <app>`, `containerapp logs <app> [minutes]`
   (default 30, at most 500 lines) - reads. The logs are queried through Azure management on the
   environment's workspace; the account needs Log Analytics Reader (or Reader) on it. An
-  environment deployed with its logs sent to a storage account has no workspace: read its logs
-  with `blob list` and `blob get` on that account's `insights-logs-*` containers.
+  environment with no workspace whose diagnostic setting archives its logs to a storage account
+  has them read from that account's hourly blobs instead (console lines, and the platform's own
+  lines marked `system:`); the account needs Storage Blob Data Reader (or more) on it.
 - `containerapp restart <app>` - restarts the latest ready revision.
 - `domain bind <app> <hostname>` - says the TXT and CNAME (A for a domain's apex) records the
   domain needs, and sets them when the team owns its Azure DNS zone. Once they resolve, run it

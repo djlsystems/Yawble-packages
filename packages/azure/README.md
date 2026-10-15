@@ -1,4 +1,4 @@
-# Azure 1.0.0
+# Azure 1.1.2
 
 A plugin member that builds and runs a team's own Azure resources: resource groups, deployments
 from Bicep or ARM templates, container registries and image builds, Azure SQL databases and the SQL
@@ -88,7 +88,8 @@ Data inside a resource needs a data role of its own, even for a subscription's O
 - listing a Key Vault's secret names needs Reader (or more) on the vault, since the member lists
   them through Azure management, which answers names and never a value;
 - reading an app's logs needs Log Analytics Reader (or Reader, or more) on its environment's
-  workspace, which the member queries through Azure management;
+  workspace, which the member queries through Azure management, or, for an environment whose logs
+  are archived to a storage account instead, Storage Blob Data Reader (or more) on that account;
 - running SQL needs your account to be the SQL server's Microsoft Entra administrator (true of a
   server the member creates) or a user in the database, and the server's firewall to let this
   instance in (Azure portal, SQL server, Networking).
@@ -182,7 +183,13 @@ domain bind <app> <hostname>
 ```
 
 A template, a build folder, a SQL file or a file to upload comes from the team's documents folder
-or a worktree of the run; any other path is refused. A relative path is the documents folder's.
+or a worktree of the run; any other path is refused. A relative path is the documents folder's,
+and an absolute one is taken as it is. `blob get` writes only in the documents folder, to a path
+relative to it or absolute inside it.
+
+An instruction holds commands only, one per line. A line that is not a command is refused in one
+sentence naming its line, and the run fails, though the commands beside it still run; an
+instruction holding no command at all is answered with the list of commands.
 
 A Bicep file is compiled by a pinned release of the bicep compiler (v0.48.1). It is not inside
 the package, which would then be over the Marketplace's 100 MB limit: the first Bicep deployment
@@ -225,13 +232,17 @@ domain bind my-app www.example.com
   free managed certificate, which Azure renews, and binds it.
 
 `sql exec` runs a file's batches (split at `GO` lines) in order, stopping at the first that fails,
-and answers the rows each changed, or each result capped at 200 rows. In whatif it says what it
-would run and does not connect.
+and answers the rows each changed, or each result capped at 200 rows. A UTF-8 byte-order mark at
+the file's start is dropped. In whatif it says what it would run and does not connect.
 
 `containerapp logs` reads the app's console lines from the environment's Log Analytics workspace,
 the last 30 minutes unless told otherwise, at most 500 lines. It queries the workspace through
 Azure management: the workspace the environment's diagnostic settings name, or, for an environment
-that names only a workspace's customer id, the workspace in the subscription with that id.
+that names only a workspace's customer id, the workspace in the subscription with that id. An
+environment with no workspace whose diagnostic setting archives its logs to a storage account has
+them read from that account instead: the hourly blobs of its `insights-logs-containerappconsolelogs`
+and `insights-logs-containerappsystemlogs` containers covering the minutes asked, the app's lines
+only, the platform's own lines marked `system:`. With neither, it is refused, saying so.
 
 ## App secrets
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Container Apps: an environment whose logs go to its own Log Analytics workspace, and apps in it
@@ -15,7 +17,9 @@ import (
 // from Key Vault through that identity, or from this member's own keys (appSecret1 to appSecret8,
 // which a person binds and sets on the screen). No registry password is ever part of an app, and a
 // secret's value is put only in the app's configuration, never in what the plugin writes out.
-// Logs are read through Azure management's query on the workspace resource.
+// Logs are read through Azure management's query on the workspace resource, or, for an environment
+// whose diagnostic setting archives its logs to a storage account instead, from that account's
+// hourly blobs.
 
 const (
 	diagAPIVersion  = "2021-05-01-preview"
@@ -522,10 +526,15 @@ func (p *plugin) appLogs(args []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	workspace, err := p.logWorkspace(str(props(app)["managedEnvironmentId"]))
+	envID := strings.TrimSuffix(str(props(app)["managedEnvironmentId"]), "/")
+	dest, err := p.logDestination(envID)
 	if err != nil {
 		return "", err
 	}
+	if dest.workspace == "" {
+		return p.archivedLogs(r.Name, envID, dest.storage, minutes)
+	}
+	workspace := dest.workspace
 	query := fmt.Sprintf(`union isfuzzy=true (ContainerAppConsoleLogs | where ContainerAppName == '%s' | project TimeGenerated, Log), (ContainerAppConsoleLogs_CL | where ContainerAppName_s == '%s' | project TimeGenerated, Log = Log_s) | top %d by TimeGenerated desc`, r.Name, r.Name, maxLogLines)
 	// Azure management's query answers each column's name as ColumnName; name is read too.
 	var out struct {
@@ -574,13 +583,21 @@ func (p *plugin) appLogs(args []string) (string, error) {
 	return fmt.Sprintf("Logs of %s, the last %d minutes (%d lines, at most %d, oldest first):\n%s", r.Name, minutes, len(lines), maxLogLines, strings.Join(lines, "\n")), nil
 }
 
-// logWorkspace answers the Azure Resource Manager id of the Log Analytics workspace an environment's
-// logs go to: for an environment that names the workspace's customerId (not a secret), the
-// workspace in the subscription with that customerId; otherwise the workspace its diagnostic
-// settings name.
-func (p *plugin) logWorkspace(envID string) (string, error) {
+// logDestination is where an environment's logs can be read: the Azure Resource Manager id of a
+// Log Analytics workspace, or when there is none, of the storage account a diagnostic setting
+// archives them to.
+type logDestination struct {
+	workspace string
+	storage   string
+}
+
+// logDestination answers where an environment's logs go: for an environment that names the
+// workspace's customerId (not a secret), the workspace in the subscription with that customerId;
+// otherwise the workspace its diagnostic settings name, and failing that the storage account they
+// name.
+func (p *plugin) logDestination(envID string) (logDestination, error) {
 	if envID == "" {
-		return "", refusal("Refused: the app names no environment.")
+		return logDestination{}, refusal("Refused: the app names no environment.")
 	}
 	var env struct {
 		Properties struct {
@@ -592,7 +609,7 @@ func (p *plugin) logWorkspace(envID string) (string, error) {
 		} `json:"properties"`
 	}
 	if _, err := p.az.get(envID+"?api-version="+versionOf("Microsoft.App/managedEnvironments"), &env); err != nil {
-		return "", err
+		return logDestination{}, err
 	}
 	if cid := env.Properties.Logs.LogAnalytics.CustomerID; cid != "" {
 		found := ""
@@ -608,29 +625,178 @@ func (p *plugin) logWorkspace(envID string) (string, error) {
 			}
 		})
 		if err != nil {
-			return "", err
+			return logDestination{}, err
 		}
 		if id, ok := workspaceID(found); ok {
-			return id, nil
+			return logDestination{workspace: id}, nil
 		}
-		return "", refusef("Refused: the app's environment sends its logs to the Log Analytics workspace %s, which this sign-in cannot see in the subscription. Its owner gives this account Log Analytics Reader (or Reader) on that workspace.", cid)
+		return logDestination{}, refusef("Refused: the app's environment sends its logs to the Log Analytics workspace %s, which this sign-in cannot see in the subscription. Its owner gives this account Log Analytics Reader (or Reader) on that workspace.", cid)
 	}
 	var diags struct {
 		Value []struct {
 			Properties struct {
-				WorkspaceID string `json:"workspaceId"`
+				WorkspaceID      string `json:"workspaceId"`
+				StorageAccountID string `json:"storageAccountId"`
 			} `json:"properties"`
 		} `json:"value"`
 	}
 	if _, err := p.az.arm(http.MethodGet, envID+"/providers/Microsoft.Insights/diagnosticSettings?api-version="+diagAPIVersion, nil, &diags); err != nil {
-		return "", err
+		return logDestination{}, err
 	}
 	for _, d := range diags.Value {
 		if id, ok := workspaceID(d.Properties.WorkspaceID); ok {
-			return id, nil
+			return logDestination{workspace: id}, nil
 		}
 	}
-	return "", refusal("Refused: the app's environment sends its logs to no Log Analytics workspace. Create environments with containerapp env create, which does.")
+	for _, d := range diags.Value {
+		if id, ok := storageAccountID(d.Properties.StorageAccountID); ok {
+			return logDestination{storage: id}, nil
+		}
+	}
+	return logDestination{}, refusal("Refused: the app's environment sends its logs neither to a Log Analytics workspace nor, through a diagnostic setting, to a storage account, so there is nothing to read them from. Create environments with containerapp env create, whose logs go to a workspace, or give the environment a diagnostic setting that archives its logs to a storage account.")
+}
+
+// storageAccountID answers id, without a trailing slash, when it is the Azure Resource Manager id
+// of a storage account.
+func storageAccountID(id string) (string, bool) {
+	id = strings.TrimSuffix(id, "/")
+	r, ok := parseID(id)
+	if !ok || !strings.HasPrefix(strings.ToLower(id), "/subscriptions/") || !strings.EqualFold(r.typ(), "Microsoft.Storage/storageAccounts") {
+		return "", false
+	}
+	return id, true
+}
+
+// logArchives are the containers a diagnostic setting archives an environment's logs to, one per
+// category, and how a line of each is marked: the apps' console lines as they are, the platform's
+// own lines about an app (a revision started, a container restarted) as system.
+var logArchives = []struct{ container, mark string }{
+	{"insights-logs-containerappconsolelogs", ""},
+	{"insights-logs-containerappsystemlogs", "system: "},
+}
+
+// archivedLogs reads an app's log lines of the last minutes from the storage account its
+// environment's diagnostic setting archives them to: one blob of JSON lines per category and hour,
+// resourceId=<ENVIRONMENT ID IN CAPITALS>/y=YYYY/m=MM/d=DD/h=HH/m=00/PT1H.json, holding every app
+// of the environment. It reads as the signed-in person, as blob get does.
+func (p *plugin) archivedLogs(app, envID, storageID string, minutes int) (string, error) {
+	account := storageID[strings.LastIndex(storageID, "/")+1:]
+	now := p.now().UTC()
+	since := now.Add(-time.Duration(minutes) * time.Minute)
+	type entry struct {
+		at   time.Time
+		text string
+	}
+	var entries []entry
+	for _, archive := range logArchives {
+		for hour := since.Truncate(time.Hour); !hour.After(now); hour = hour.Add(time.Hour) {
+			blob := fmt.Sprintf("resourceId=%s/y=%04d/m=%02d/d=%02d/h=%02d/m=00/PT1H.json", strings.ToUpper(envID), hour.Year(), int(hour.Month()), hour.Day(), hour.Hour())
+			p.progress(fmt.Sprintf("azure: reading %s/%s for %s", account, archive.container, hour.Format("2006-01-02 15:00")))
+			ans, err := p.az.send(apiStorage, http.MethodGet, blobURL(account, archive.container, blob), nil, map[string]string{"x-ms-version": blobVersion})
+			if isStatus(err, http.StatusNotFound) {
+				continue // nothing was logged that hour, or nothing of this category at all
+			}
+			if isStatus(err, http.StatusForbidden) {
+				return "", refusef("Refused: the signed-in account cannot read the logs of %s, which its environment archives to storage account %s. It needs Storage Blob Data Reader (or more) on that account; its owner gives it in the Azure portal (the storage account, Access control (IAM), Add role assignment).", app, account)
+			}
+			if err != nil {
+				return "", err
+			}
+			for _, rec := range archivedRecords(ans.body) {
+				if !strings.EqualFold(rec.app, app) {
+					continue
+				}
+				at := rec.at
+				if at.IsZero() {
+					at = hour // a record whose time cannot be read is placed at its hour
+				} else if at.Before(since) || at.After(now) {
+					continue
+				}
+				entries = append(entries, entry{at, rec.time + "  " + archive.mark + strings.TrimRight(rec.text, "\r\n")})
+			}
+		}
+	}
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].at.Before(entries[j].at) })
+	if len(entries) > maxLogLines {
+		entries = entries[len(entries)-maxLogLines:] // the newest, as the workspace query keeps them
+	}
+	if len(entries) == 0 {
+		return fmt.Sprintf("Container app %s wrote no log lines in the last %d minutes (they reach storage account %s a few minutes late).", app, minutes, account), nil
+	}
+	lines := make([]string, len(entries))
+	for i, e := range entries {
+		lines[i] = e.text
+	}
+	return fmt.Sprintf("Logs of %s, the last %d minutes, from storage account %s (%d lines, at most %d, oldest first):\n%s", app, minutes, account, len(lines), maxLogLines, strings.Join(lines, "\n")), nil
+}
+
+// archivedRecord is one log record a diagnostic setting archived: when, which app and what it said.
+type archivedRecord struct {
+	time string
+	at   time.Time
+	app  string
+	text string
+}
+
+// archivedRecords reads an archive blob: JSON records one after another (JSON lines), or an object
+// holding them in records. A record's fields sit in properties (an object, or an object written as
+// a string), its time beside them; names are matched in any case, and a console line's Log as well
+// as a system line's Msg is its text. What does not parse is passed over.
+func archivedRecords(raw []byte) []archivedRecord {
+	var out []archivedRecord
+	add := func(rec map[string]any) {
+		fields := map[string]any{}
+		for k, v := range rec {
+			fields[strings.ToLower(k)] = v
+		}
+		inner := fields["properties"]
+		if text, ok := inner.(string); ok {
+			var m map[string]any
+			if json.Unmarshal([]byte(text), &m) == nil {
+				inner = m
+			}
+		}
+		if m, ok := inner.(map[string]any); ok {
+			for k, v := range m {
+				fields[strings.ToLower(k)] = v
+			}
+		}
+		first := func(names ...string) string {
+			for _, n := range names {
+				if v := str(fields[n]); v != "" {
+					return v
+				}
+			}
+			return ""
+		}
+		r := archivedRecord{
+			time: first("time", "timegenerated", "timestamp"),
+			app:  first("containerappname", "containerappname_s"),
+			text: first("log", "log_s", "msg", "message"),
+		}
+		if t, err := time.Parse(time.RFC3339Nano, r.time); err == nil {
+			r.at = t.UTC()
+		}
+		if r.app != "" {
+			out = append(out, r)
+		}
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	for {
+		var rec map[string]any
+		if err := dec.Decode(&rec); err != nil {
+			return out
+		}
+		if list, ok := rec["records"].([]any); ok {
+			for _, item := range list {
+				if m, ok := item.(map[string]any); ok {
+					add(m)
+				}
+			}
+			continue
+		}
+		add(rec)
+	}
 }
 
 // workspaceID answers id, without a trailing slash, when it is the Azure Resource Manager id of a

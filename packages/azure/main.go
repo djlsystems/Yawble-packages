@@ -176,10 +176,26 @@ func run(in io.Reader, out io.Writer, now func() time.Time) int {
 		return 1
 	}
 
-	var texts []string
-	failed := false
+	type matched struct {
+		cmd  *command
+		args []string
+		why  error
+	}
+	found, anyCommand := make([]matched, len(lines)), false
 	for i, line := range lines {
 		cmd, args, why := match(line)
+		found[i] = matched{cmd, args, why}
+		anyCommand = anyCommand || cmd != nil
+	}
+
+	var texts []string
+	failed, listed := false, false
+	for i, line := range lines {
+		cmd, args, why := found[i].cmd, found[i].args, found[i].why
+		if why == errNotCommand {
+			why = notCommand(line, i+1, !anyCommand && !listed)
+			listed = true
+		}
 		name := commandName(line)
 		if cmd != nil {
 			name = strings.Join(cmd.words, " ")

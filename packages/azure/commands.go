@@ -18,6 +18,10 @@ var commands []command
 
 func register(cs ...command) { commands = append(commands, cs...) }
 
+// errNotCommand is what match answers for a line no command starts with; the run decides how to
+// refuse it (notCommand), knowing the instruction's other lines.
+var errNotCommand = refusal("not a command")
+
 // match finds the command a line starts with, the longest first, and answers its arguments.
 func match(line string) (*command, []string, error) {
 	words, err := split(line)
@@ -42,7 +46,7 @@ func match(line string) (*command, []string, error) {
 		}
 	}
 	if best == nil {
-		return nil, nil, refusal(usage(line))
+		return nil, nil, errNotCommand
 	}
 	return best, words[len(best.words):], nil
 }
@@ -100,6 +104,17 @@ func usage(line string) string {
 		head = fmt.Sprintf("Refused: %q is not a command this member knows.", commandName(line))
 	}
 	return head + " One command per line:\n" + strings.Join(lines, "\n")
+}
+
+// notCommand refuses line n of an instruction, which no command starts with. An instruction that
+// holds commands too gets one short sentence, so a line of prose beside them does not bury their
+// answers under the list of every command; one that holds no command at all gets the list once,
+// with its first such line.
+func notCommand(line string, n int, withList bool) refusal {
+	if withList {
+		return refusal(usage(line))
+	}
+	return refusef("Refused: line %d, starting %q, is not a command. An instruction holds only commands, one per line, with no other text; the plugin-azure skill lists them.", n, commandName(line))
 }
 
 // argsExactly refuses a command given the wrong number of arguments, quoting its usage.

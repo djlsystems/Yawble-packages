@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -851,4 +852,115 @@ func TestContainerAppCreateTakesASize(t *testing.T) {
 	newWorld(t)
 	r := runPlugin(t, runOpts{}, "containerapp create "+ownedRG+" new-app my-app-env "+acrRef("myregistry", "my-app:1.0")+" cpu=0.25")
 	mustContain(t, r.text(), "0.25 CPU and 0.5 GiB of memory")
+}
+
+// An editor may start a SQL file with a UTF-8 byte-order mark; Azure SQL would read it as part of
+// the first statement and answer error 102.
+func TestSQLExecDropsALeadingByteOrderMark(t *testing.T) {
+	w := newWorld(t)
+	bom := string(rune(0xFEFF))
+	file := docFile(t, "sql/bom.sql", bom+"CREATE TABLE tags (id int);\nGO\nSELECT 1;\n")
+	r := runPlugin(t, runOpts{config: apply(nil)}, "sql exec my-sql/my-db "+file)
+	if !r.ok() {
+		t.Fatal(r.text())
+	}
+	if len(w.sql.batches) != 2 || w.sql.batches[0] != "CREATE TABLE tags (id int);" || strings.Contains(strings.Join(w.sql.batches, ""), bom) {
+		t.Fatalf("batches = %q", w.sql.batches)
+	}
+}
+
+// blob get writes to a path relative to the team's documents folder or absolute inside it, and
+// refuses anything else naming the folder; the commands that read a path take both forms too.
+func TestADocumentsPathMayBeAbsoluteInsideTheFolder(t *testing.T) {
+	w := newWorld(t)
+	cfg := apply(nil)
+	docs := filepath.Join(documentsRoot, testTeam)
+	w.store.blobs["logs/console.json"] = []byte("a log")
+
+	inside := filepath.Join(docs, "logs", "console-copy.json")
+	r := runPlugin(t, runOpts{config: cfg}, "blob get mystore logs console.json "+inside)
+	if !r.ok() {
+		t.Fatal(r.text())
+	}
+	mustContain(t, r.text(), "to logs/console-copy.json in the team's documents")
+	if raw, _ := os.ReadFile(inside); string(raw) != "a log" {
+		t.Fatalf("blob get wrote %q", raw)
+	}
+
+	outside := filepath.Join(t.TempDir(), "console.json")
+	r = runPlugin(t, runOpts{config: cfg}, "blob get mystore logs console.json "+outside)
+	mustContain(t, r.text(), "Refused: "+outside+" is not a path inside the team's documents folder; blob get writes only there.",
+		"Give a path relative to the team's documents folder, "+docs+", or an absolute path inside it.")
+	if _, err := os.Stat(outside); err == nil {
+		t.Fatal("blob get wrote outside the documents")
+	}
+	if r := runPlugin(t, runOpts{config: cfg}, "blob get mystore logs console.json "+docs); r.ok() {
+		t.Fatalf("blob get wrote over the documents folder itself: %s", r.text())
+	}
+
+	// blob put and sql exec read an absolute path inside the folder, and name it when refusing.
+	mustContain(t, runPlugin(t, runOpts{config: cfg}, "blob put mystore files report.txt "+w.upload).text(), "Uploaded report.txt")
+	mustContain(t, runPlugin(t, runOpts{config: cfg}, "sql exec my-sql/my-db "+w.sqlFile).text(), "Ran schema.sql")
+	mustContain(t, runPlugin(t, runOpts{config: cfg}, "sql exec my-sql/my-db "+outside).text(),
+		"Give a path relative to the team's documents folder, "+docs+", or an absolute path inside it or inside a worktree of this run.")
+}
+
+// archivedEnv is an environment with no Log Analytics workspace, whose diagnostic setting archives
+// its logs to the team's storage account, and an app in it.
+func archivedEnv(w *world) (env *fakeResource) {
+	f := w.f
+	env = f.add(ownedRG, "Microsoft.App/managedEnvironments", "arch-env", ownTags())
+	diag := env.ID + "/providers/Microsoft.Insights/diagnosticSettings/to-storage"
+	f.resources[strings.ToLower(diag)] = &fakeResource{ID: diag, Type: "Microsoft.Insights/diagnosticSettings", Props: map[string]any{"storageAccountId": inRG(ownedRG, "Microsoft.Storage/storageAccounts/mystore")}}
+	app := f.add(ownedRG, "Microsoft.App/containerApps", "arch-app", ownTags())
+	app.Props = map[string]any{"managedEnvironmentId": env.ID}
+	return env
+}
+
+func archiveBlob(container, envID string, hour int) string {
+	return fmt.Sprintf("%s/resourceId=%s/y=2026/m=10/d=09/h=%02d/m=00/PT1H.json", container, strings.ToUpper(envID), hour)
+}
+
+func TestLogsOfAnEnvironmentArchivingToStorageAreReadFromItsHourlyBlobs(t *testing.T) {
+	w := newWorld(t)
+	env := archivedEnv(w)
+	console := func(at, app, log string) string {
+		return fmt.Sprintf(`{"time":"%s","resourceId":"%s","category":"ContainerAppConsoleLogs","properties":{"ContainerAppName":"%s","RevisionName":"%s--r1","ContainerName":"%s","Stream":"stdout","Log":"%s"}}`,
+			at, strings.ToUpper(env.ID), app, app, app, log)
+	}
+	w.store.blobs[archiveBlob("insights-logs-containerappconsolelogs", env.ID, 13)] = []byte(console("2026-10-09T13:50:00Z", "arch-app", "an hour ago"))
+	w.store.blobs[archiveBlob("insights-logs-containerappconsolelogs", env.ID, 14)] = []byte(strings.Join([]string{
+		console("2026-10-09T14:10:00Z", "arch-app", "before the window"),
+		console("2026-10-09T14:40:00Z", "arch-app", "tags printed"),
+		console("2026-10-09T14:41:00Z", "other-app", "not this app"),
+		console("2026-10-09T14:50:00Z", "arch-app", "label saved"),
+	}, "\n"))
+	// A system record whose properties are written as a string, as some categories are.
+	w.store.blobs[archiveBlob("insights-logs-containerappsystemlogs", env.ID, 14)] = []byte(
+		`{"time":"2026-10-09T14:45:00Z","category":"ContainerAppSystemLogs","properties":"{\"ContainerAppName\":\"arch-app\",\"Reason\":\"ReplicaStarted\",\"Msg\":\"Replica started\"}"}`)
+
+	r := runPlugin(t, runOpts{}, "containerapp logs arch-app 30")
+	if !r.ok() {
+		t.Fatal(r.text())
+	}
+	mustContain(t, r.text(), "Logs of arch-app, the last 30 minutes, from storage account mystore (3 lines",
+		"2026-10-09T14:40:00Z  tags printed\n2026-10-09T14:45:00Z  system: Replica started\n2026-10-09T14:50:00Z  label saved")
+	for _, gone := range []string{"before the window", "not this app", "an hour ago"} {
+		if strings.Contains(r.text(), gone) {
+			t.Fatalf("the logs hold %q:\n%s", gone, r.text())
+		}
+	}
+	if q := w.f.callsTo(http.MethodPost, "/api/query"); len(q) != 0 {
+		t.Fatalf("a workspace was queried: %v", q)
+	}
+
+	mustContain(t, runPlugin(t, runOpts{}, "containerapp logs arch-app 90").text(), "(5 lines", "13:50:00Z  an hour ago")
+}
+
+func TestLogsOfAnEnvironmentWithNeitherAWorkspaceNorAnArchiveAreRefusedNamingBoth(t *testing.T) {
+	w := newWorld(t)
+	env := archivedEnv(w)
+	delete(w.f.resources, strings.ToLower(env.ID+"/providers/Microsoft.Insights/diagnosticSettings/to-storage"))
+	mustContain(t, runPlugin(t, runOpts{}, "containerapp logs arch-app").text(),
+		"Refused: the app's environment sends its logs neither to a Log Analytics workspace nor, through a diagnostic setting, to a storage account")
 }

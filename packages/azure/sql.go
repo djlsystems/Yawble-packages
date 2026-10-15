@@ -159,8 +159,10 @@ func (p *plugin) ownedDatabase(arg string) (resource, string, error) {
 	return server, name, nil
 }
 
-// batches cuts a SQL file at its GO lines.
+// batches cuts a SQL file at its GO lines. A UTF-8 byte-order mark at its start is dropped: an
+// editor may write one, and Azure SQL reads it as part of the first statement.
 func batches(sql string) []string {
+	sql = strings.TrimPrefix(sql, string(rune(0xFEFF)))
 	var out []string
 	for _, b := range goLine.Split(sql, -1) {
 		if b = strings.TrimSpace(b); b != "" {

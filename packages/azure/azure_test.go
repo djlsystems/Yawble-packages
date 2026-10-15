@@ -866,3 +866,31 @@ func TestParseIDReadsExtensionsAndChildren(t *testing.T) {
 	}
 	_ = fmt.Sprint()
 }
+
+// A line of prose beside commands is refused in one sentence naming its line, not with the list of
+// every command; the commands run, and the run still fails, so the line is not passed over unseen.
+func TestAProseLineBesideCommandsIsRefusedShortlyAndTheCommandsRun(t *testing.T) {
+	newFake(t)
+	r := runPlugin(t, runOpts{}, "whoami\nSchema and the Container App are already in place. Do not repeat them.\nlist")
+	if r.ok() {
+		t.Fatal("an instruction holding prose answered ok")
+	}
+	mustContain(t, r.text(), "1. Azure member:", "3. Resource groups in",
+		`2. Refused: line 2, starting "schema", is not a command. An instruction holds only commands, one per line, with no other text; the plugin-azure skill lists them.`)
+	if strings.Contains(r.text(), "- rg create") {
+		t.Fatalf("the refusal listed every command:\n%s", r.text())
+	}
+	if ev := r.events("refused"); len(ev) != 1 || ev[0]["command"] != "schema" {
+		t.Fatalf("refused = %v", ev)
+	}
+}
+
+// An instruction holding no command at all lists the commands, once.
+func TestAnInstructionWithNoCommandListsTheCommandsOnce(t *testing.T) {
+	newFake(t)
+	r := runPlugin(t, runOpts{}, "Please deploy the app.\nThanks.")
+	mustContain(t, r.text(), `"please" is not a command`, "- rg create <name> <region>", `line 2, starting "thanks."`)
+	if n := strings.Count(r.text(), "- rg create"); n != 1 {
+		t.Fatalf("the commands were listed %d times", n)
+	}
+}

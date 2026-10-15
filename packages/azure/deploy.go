@@ -70,20 +70,61 @@ func (p *plugin) readAllowed(arg string) (string, []byte, error) {
 
 // allowedPath answers where a path the team names really is, after links are followed, when that is
 // inside the team's documents folder or a worktree of this run. A relative path is the documents
-// folder's. Any other path is refused, the sentence ending with what the command takes.
+// folder's; an absolute one is taken as it is. Any other path is refused, the sentence ending with
+// what the command takes.
 func (p *plugin) allowedPath(arg, takes string) (string, error) {
-	path := arg
-	if !filepath.IsAbs(path) && p.docs != "" {
-		path = filepath.Join(p.docs, path)
-	}
-	real, err := filepath.EvalSymlinks(filepath.Clean(path))
+	real, err := filepath.EvalSymlinks(p.teamPath(arg))
 	if err != nil {
-		return "", refusef("Refused: %s cannot be read; give a path in the team's documents folder or a worktree of this run.", arg)
+		return "", refusef("Refused: %s cannot be read. %s", arg, p.pathsTaken(true))
 	}
 	if p.insideTeamFolders(real) {
 		return real, nil
 	}
-	return "", refusef("Refused: %s is outside the team's documents folder and this run's worktrees; this member %s.", arg, takes)
+	return "", refusef("Refused: %s is outside the team's documents folder and this run's worktrees; this member %s. %s", arg, takes, p.pathsTaken(true))
+}
+
+// teamPath is a path the team names, cleaned: a relative path is the documents folder's, and an
+// absolute one is itself. Nothing is followed or checked here; allowedPath and documentsTarget do.
+func (p *plugin) teamPath(arg string) string {
+	if !filepath.IsAbs(arg) && p.docs != "" {
+		arg = filepath.Join(p.docs, arg)
+	}
+	return filepath.Clean(arg)
+}
+
+// documentsTarget answers where in the team's documents folder a command writes the file the team
+// names, relative to that folder or absolute inside it, and that path relative to the folder. The
+// folder itself and anything outside it are refused; the command checks for links once the
+// folders on the way exist.
+func (p *plugin) documentsTarget(arg, command string) (target, rel string, err error) {
+	if p.docs == "" {
+		return "", "", refusef("Refused: this run names no documents folder for the team, and %s writes only there.", command)
+	}
+	target = p.teamPath(arg)
+	roots := []string{filepath.Clean(p.docs)}
+	if real, err := filepath.EvalSymlinks(p.docs); err == nil {
+		roots = append(roots, real)
+	}
+	for _, root := range roots {
+		if within(root, target) && target != root {
+			rel, _ = filepath.Rel(root, target)
+			return filepath.Join(filepath.Clean(p.docs), rel), filepath.ToSlash(rel), nil
+		}
+	}
+	return "", "", refusef("Refused: %s is not a path inside the team's documents folder; %s writes only there. %s", arg, command, p.pathsTaken(false))
+}
+
+// pathsTaken says what paths a command takes, naming the team's documents folder: relative to it or
+// absolute inside it, and for a read, a worktree of this run too.
+func (p *plugin) pathsTaken(worktrees bool) string {
+	folder := "the team's documents folder"
+	if p.docs != "" {
+		folder += ", " + filepath.Clean(p.docs) + ","
+	}
+	if worktrees {
+		return "Give a path relative to " + folder + " or an absolute path inside it or inside a worktree of this run."
+	}
+	return "Give a path relative to " + folder + " or an absolute path inside it."
 }
 
 // insideTeamFolders reports whether a path, links already followed, is in the team's documents
