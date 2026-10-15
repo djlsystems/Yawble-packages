@@ -3,7 +3,7 @@
   "id": "stripe",
   "name": "Stripe",
   "description": "Sets up Stripe products, one-time prices and webhook endpoints with a restricted key, and reads checkouts, payments, customers and events. Webhook signing secrets go straight into an Azure Key Vault, never into any output. Dry run by default; never moves money.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/stripe",
@@ -62,6 +62,19 @@
         "type": "changed",
         "summary": "A Stripe object was created, updated or removed in apply mode.",
         "highVolume": false,
+        "monitor": {
+          "icon": "payments",
+          "iconBy": {
+            "field": "objectType",
+            "icons": {
+              "product": "sell",
+              "price": "payments",
+              "webhook_endpoint": "webhook"
+            }
+          },
+          "actionField": "action",
+          "label": "{lookupKey}"
+        },
         "fields": [
           {
             "name": "objectType",
@@ -76,7 +89,7 @@
           {
             "name": "lookupKey",
             "kind": "string",
-            "summary": "The lookup key of a product or price; the URL of a webhook endpoint."
+            "summary": "The lookup key of a product or price; the URL of a webhook endpoint, without its query or fragment."
           },
           {
             "name": "environment",

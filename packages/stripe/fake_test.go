@@ -88,6 +88,8 @@ type fake struct {
 	vaultStatus map[string]int      // vault -> status to answer on its secrets
 	nextID      int
 	webhookSecs []string // every signing secret the fake handed out
+	noSecret    bool     // answer a new endpoint without its signing secret
+	deleteFails bool     // answer 500 to removing a webhook endpoint
 	payment     map[string]any
 }
 
@@ -309,6 +311,16 @@ func (f *fake) route(w http.ResponseWriter, r *http.Request, form url.Values) {
 		e := map[string]any{"id": f.id("we_"), "object": "webhook_endpoint", "url": form.Get("url"),
 			"enabled_events": form["enabled_events[]"], "status": "enabled", "secret": secret}
 		f.endpoints = append(f.endpoints, e)
+		if f.noSecret {
+			withheld := map[string]any{}
+			for k, v := range e {
+				if k != "secret" {
+					withheld[k] = v
+				}
+			}
+			f.answer(w, 200, withheld)
+			return
+		}
 		f.answer(w, 200, e)
 	case strings.HasPrefix(p, "/v1/webhook_endpoints/"):
 		id := strings.TrimPrefix(p, "/v1/webhook_endpoints/")
@@ -318,6 +330,10 @@ func (f *fake) route(w http.ResponseWriter, r *http.Request, form url.Values) {
 			}
 			switch m {
 			case http.MethodDelete:
+				if f.deleteFails {
+					f.answer(w, 500, stripeError(500, "An error occurred with our connection to Stripe."))
+					return
+				}
 				f.endpoints = append(f.endpoints[:i], f.endpoints[i+1:]...)
 				f.answer(w, 200, map[string]any{"id": id, "deleted": true})
 			case http.MethodPost:

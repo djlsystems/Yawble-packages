@@ -59,6 +59,16 @@ func checkURL(raw string) error {
 	return nil
 }
 
+// endpointLabel is a webhook URL as plugin.stripe.changed carries it: scheme, host and path only, so
+// a token in its query or fragment is never published or shown.
+func endpointLabel(target string) string {
+	u, err := url.Parse(target)
+	if err != nil {
+		return ""
+	}
+	return (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path}).String()
+}
+
 // endpointsFor answers every webhook endpoint for that URL, oldest first.
 func (p *plugin) endpointsFor(target string) ([]endpoint, error) {
 	var found []endpoint
@@ -125,12 +135,17 @@ func (p *plugin) createWithSecret(target string, events []string, to vaultTarget
 	made.Secret = ""
 	p.hide(secret)
 	if secret == "" {
-		_ = p.api.do(http.MethodDelete, "/v1/webhook_endpoints/"+made.ID, nil, "", nil)
+		if derr := p.api.do(http.MethodDelete, "/v1/webhook_endpoints/"+made.ID, nil, "", nil); derr != nil {
+			p.changed("webhook_endpoint", made.ID, endpointLabel(target), "created")
+			return endpoint{}, "", fmt.Errorf("Stripe did not answer the new endpoint's signing secret, and removing the new endpoint %s failed (%v); delete it in the Stripe Dashboard. Nothing was written to Key Vault", made.ID, derr)
+		}
 		return endpoint{}, "", fmt.Errorf("Stripe did not answer the new endpoint's signing secret, so the endpoint was removed again; nothing was written to Key Vault")
 	}
 	version, err := p.kv.setSecret(to.vault, to.name, secret, "Stripe webhook signing secret")
 	if err != nil {
 		if derr := p.api.do(http.MethodDelete, "/v1/webhook_endpoints/"+made.ID, nil, "", nil); derr != nil {
+			// The endpoint stays in Stripe, so it is published like any other made in apply.
+			p.changed("webhook_endpoint", made.ID, endpointLabel(target), "created")
 			return endpoint{}, "", fmt.Errorf("%v. Removing the new endpoint %s failed too (%v); delete it in the Stripe Dashboard", err, made.ID, derr)
 		}
 		if _, ok := err.(refusal); ok {
@@ -180,7 +195,7 @@ func (p *plugin) webhookEnsure(args []string) (string, error) {
 		if err := p.api.do(http.MethodPost, "/v1/webhook_endpoints/"+ep.ID, form, "", nil); err != nil {
 			return "", err
 		}
-		p.changed("webhook_endpoint", ep.ID, target, "updated")
+		p.changed("webhook_endpoint", ep.ID, endpointLabel(target), "updated")
 		return fmt.Sprintf("Updated webhook endpoint %s for %s to the events %s. Its signing secret is unchanged.", ep.ID, target, strings.Join(events, ", ")), nil
 	}
 
@@ -194,7 +209,7 @@ func (p *plugin) webhookEnsure(args []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	p.changed("webhook_endpoint", made.ID, target, "created")
+	p.changed("webhook_endpoint", made.ID, endpointLabel(target), "created")
 	return fmt.Sprintf("Created webhook endpoint %s for %s with the events %s.\nSigning secret: Key Vault %s, secret %s, version %s.", made.ID, target, strings.Join(events, ", "), to.vault, to.name, version), nil
 }
 
@@ -234,7 +249,7 @@ func (p *plugin) webhookRotate(args []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	p.changed("webhook_endpoint", made.ID, target, "created")
+	p.changed("webhook_endpoint", made.ID, endpointLabel(target), "created")
 	lines := []string{
 		fmt.Sprintf("Created webhook endpoint %s for %s with the events %s.", made.ID, target, strings.Join(old.EnabledEvents, ", ")),
 		fmt.Sprintf("Signing secret: Key Vault %s, secret %s, version %s.", to.vault, to.name, version),
@@ -244,7 +259,7 @@ func (p *plugin) webhookRotate(args []string) (string, error) {
 			lines = append(lines, fmt.Sprintf("Removing the old endpoint %s failed (%v); both send events until it is deleted in the Stripe Dashboard.", e.ID, err))
 			continue
 		}
-		p.changed("webhook_endpoint", e.ID, target, "deleted")
+		p.changed("webhook_endpoint", e.ID, endpointLabel(target), "deleted")
 		lines = append(lines, "Removed the old endpoint "+e.ID+".")
 	}
 	return strings.Join(lines, "\n"), nil
