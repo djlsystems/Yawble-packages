@@ -277,6 +277,10 @@ the field and the key, and saying a person sets it on the screen first.
 - `plugin.azure.planned`: what a changing command would do, or what a deployment's what-if found,
   with counts by change type and any refusals.
 - `plugin.azure.applied`: what changed in apply, with resource ids.
+- `plugin.azure.resource`: one per Azure resource an apply created, changed or deleted, at most 25
+  a command, with its id, kind, name, action and command. The Monitor shows each as a line with an
+  icon for its kind (a folder for a resource group, a key for a vault or a secret), its action and
+  its name; a data write such as a blob, a message or SQL shows only in `applied`.
 - `plugin.azure.refused`: the command and why.
 
 ## Tests

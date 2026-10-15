@@ -145,6 +145,9 @@ func TestWhatifChangesNothingForEveryChangingCommand(t *testing.T) {
 		if ev := r.events("applied"); len(ev) != 0 {
 			t.Fatalf("%s: applied in whatif: %v", line, ev)
 		}
+		if ev := r.events("resource"); len(ev) != 0 {
+			t.Fatalf("%s: resource events in whatif: %v", line, ev)
+		}
 	}
 	if w := f.writes(); len(w) != 0 {
 		t.Fatalf("whatif sent writes to Azure: %v", w)

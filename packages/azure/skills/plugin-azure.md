@@ -164,6 +164,9 @@ The first `deploy` of a Bicep file downloads the pinned bicep compiler (about 12
 - `plugin.azure.planned` - what a changing command would do, or a deployment's what-if: counts
   by change type (`create`, `modify`, `delete`, `unchanged`) and `refusals`.
 - `plugin.azure.applied` - a change made in apply, with `resourceIds`.
+- `plugin.azure.resource` - one per resource an apply created, changed or deleted (at most 25 a
+  command): `resourceId`, `resourceType`, `name`, `action`, `command`. The Monitor shows each as its
+  kind's icon, the action and the resource's name.
 - `plugin.azure.refused` - `command` and `reason`.
 
 None ever holds a token, key or connection string.

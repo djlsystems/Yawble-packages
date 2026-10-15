@@ -117,9 +117,10 @@ func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 	}
 
 	want := map[string][]string{
-		"planned": {"command", "target", "summary", "mode", "create", "modify", "delete", "unchanged", "refusals"},
-		"applied": {"command", "target", "summary", "resourceIds"},
-		"refused": {"command", "reason"},
+		"planned":  {"command", "target", "summary", "mode", "create", "modify", "delete", "unchanged", "refusals"},
+		"applied":  {"command", "target", "summary", "resourceIds"},
+		"resource": {"resourceId", "resourceType", "name", "action", "command"},
+		"refused":  {"command", "reason"},
 	}
 	for _, e := range m.Events.Publishes {
 		var names []string
@@ -181,7 +182,7 @@ func TestEveryPublishedPayloadHasExactlyTheDeclaredFields(t *testing.T) {
 			seen[typ] = true
 		}
 	}
-	if len(seen) != 3 {
+	if len(seen) != 4 {
 		t.Fatalf("events seen = %v", seen)
 	}
 }
