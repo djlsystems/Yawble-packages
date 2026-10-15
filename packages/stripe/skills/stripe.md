@@ -77,5 +77,7 @@ that sentence to the person.
 ## Events
 
 - `plugin.stripe.changed` - `objectType`, `id`, `lookupKey`, `environment` (`test`/`live`),
-  `action` (`created`/`updated`/`deleted`); in `apply` mode only.
+  `action` (`created`/`updated`/`deleted`); in `apply` mode only, one per object.
+  The Monitor shows it as a product, price or webhook icon off this member, marked created,
+  changed or deleted and labelled with the lookup key; refusals, reads and dry runs show nothing.
 - `plugin.stripe.refused` - `command`, `reason`.

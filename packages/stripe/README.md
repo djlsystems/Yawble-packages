@@ -1,4 +1,4 @@
-# Stripe 1.1.0
+# Stripe 1.2.0
 
 A plugin member that sets up a team's Stripe objects - products, one-time prices and webhook
 endpoints - and reads checkouts, payments, customers and events. It works through a **restricted
@@ -145,14 +145,19 @@ create also carries an idempotency key, so a retried request cannot make a secon
 ## Events
 
 - `plugin.stripe.changed`: `objectType` (`product`, `price` or `webhook_endpoint`), `id`,
-  `lookupKey` (a webhook endpoint's URL), `environment` (`test` or `live`) and `action`
-  (`created`, `updated` or `deleted`). Published in `apply` mode only, once per object changed.
+  `lookupKey` (a webhook endpoint's URL, without its query or fragment), `environment` (`test` or
+  `live`) and `action` (`created`, `updated` or `deleted`). Published in `apply` mode only, once
+  per object changed, including an endpoint left in Stripe when removing it again failed.
 - `plugin.stripe.refused`: `command` (without its arguments) and `reason`.
+
+The Monitor shows each `changed` briefly off the member as an icon - a tag (`sell`) for a product,
+`payments` for a price, `webhook` for a webhook endpoint - marked created, changed or deleted and
+labelled with the lookup key (an endpoint's URL). Refusals, reads and dry runs show nothing.
 
 ## Build and test
 
 ```sh
-packages/stripe/build.sh ~/plugins-build/stripe/1.1.0
+packages/stripe/build.sh ~/plugins-build/stripe/1.2.0
 (cd packages/stripe && go test ./...)
 ```
 
