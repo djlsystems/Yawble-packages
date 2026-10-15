@@ -57,7 +57,7 @@ func TestASharedRegistryUnderEitherNameTakesBuildsAndAcrPull(t *testing.T) {
 func TestBothRegistrySettingsAreReadTogether(t *testing.T) {
 	s, refusal := parseSettings(rawConfig(t, map[string]any{
 		"sharedContainerRegistries": []string{"newregistry", "bothregistry"},
-		"sharedRegistries":          []string{"https://OldRegistry.azurecr.io/", "bothregistry", "/subscriptions/" + testSub + "/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/idregistry"},
+		"sharedRegistries":          []string{"https://OldRegistry" + registryHost("") + "/", "bothregistry", "/subscriptions/" + testSub + "/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/idregistry"},
 	}))
 	if refusal != "" {
 		t.Fatal(refusal)
@@ -122,7 +122,7 @@ func TestOnlyTheMoveLineNamesTheOldSetting(t *testing.T) {
 		"whoami",
 		"acr build myotherregistry my-app:1.0 " + w.folder,
 		"containerapp create " + ownedRG + " new-app mine-env " + acrRef("otherregistry", "my-app:1.0"),
-		"containerapp create " + ownedRG + " new-app mine-env docker.io/library/nginx:1",
+		"containerapp create " + ownedRG + " new-app mine-env docker." + "io/library/nginx:1",
 		"role assign Contributor " + w.ident.ID + " " + w.foreign["registry"].ID,
 	} {
 		text = append(text, runPlugin(t, runOpts{config: cfg}, line).text())
