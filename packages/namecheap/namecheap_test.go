@@ -227,6 +227,7 @@ func TestDryRunChangesNothing(t *testing.T) {
 		"ensure example.com A @ 203.0.113.99",
 		"ensure example.com MX @ mx2.example.net 3600 20",
 		"remove example.com TXT _dmarc",
+		"remove example.com URL301 old",
 	} {
 		r := n.run(cmd)
 		if !r.ok {
@@ -404,8 +405,13 @@ func TestRemoveTakesOnlyTheNamedRecord(t *testing.T) {
 	}
 	r = n.run("remove example.com TXT @ not-there")
 	mustContain(t, r.output, "there is no such TXT record on @; nothing was changed")
-	if r := n.run("remove example.com URL301 old"); r.ok {
-		t.Error("removed a URL redirect")
+	for _, cmd := range []string{"ensure example.com URL301 old http://www.example.net/", "ensure example.com FRAME @ http://www.example.net/"} {
+		if r := n.run(cmd); r.ok || !strings.Contains(r.output, "never adds or changes") {
+			t.Errorf("%s: %s", cmd, r.output)
+		}
+	}
+	if len(n.fake.hosts("example.com")) != 2 {
+		t.Errorf("a refused redirect changed the set: %+v", n.fake.hosts("example.com"))
 	}
 }
 
@@ -545,5 +551,122 @@ func TestAChangeThatWouldSwitchAPrivateEmailDomainsMailSettingIsRefused(t *testi
 	}
 	if got := n.fake.domains["example.com"].emailType; got != "OX" {
 		t.Fatalf("a TXT write changed the mail setting to %s", got)
+	}
+}
+
+// ---- URL redirects ---------------------------------------------------------------------------------
+
+func redirectRecords() []xmlHost {
+	return []xmlHost{
+		hr("@", "URL", "https://www.example.net", 1799),
+		hr("@", "TXT", "v=spf1 -all", 1799),
+		hr("www", "CNAME", "app.example.net.", 1799),
+		hr("go", "FRAME", "http://www.example.net/", 1799),
+	}
+}
+
+// A URL redirect on @ is removed like any record: a backup first, the rest of the set written back
+// as it was, the removal in the changed event; an A then goes on @, and restore brings the redirect
+// back.
+func TestRemoveTakesAwayAURLRedirectWithABackupAndRestorePutsItBack(t *testing.T) {
+	n := newHarness(t)
+	n.fake.add("example.com", true, redirectRecords()...)
+	r := n.run("remove example.com URL @")
+	if !r.ok {
+		t.Fatalf("remove: %s", r.output)
+	}
+	sameHosts(t, redirectRecords()[1:], n.fake.hosts("example.com"))
+	ids := n.backups("example.com")
+	if len(ids) != 1 {
+		t.Fatalf("backups: %v", ids)
+	}
+	ev := r.event("changed")
+	if ev == nil || ev["command"] != "remove" || ev["backupId"] != ids[0] {
+		t.Fatalf("changed event: %v", r.events)
+	}
+	removed, _ := ev["removed"].([]any)
+	added, _ := ev["added"].([]any)
+	if len(removed) != 1 || removed[0] != "URL @ https://www.example.net ttl 1799" || len(added) != 0 {
+		t.Fatalf("changed event removed %v, added %v", ev["removed"], ev["added"])
+	}
+	mustContain(t, r.output, "removes URL @ https://www.example.net", "Backup "+ids[0])
+
+	if r := n.run("ensure example.com A @ 203.0.113.20"); !r.ok {
+		t.Fatalf("an A on @ after the redirect went: %s", r.output)
+	}
+	if r := n.run("remove example.com FRAME go http://www.example.net/"); !r.ok {
+		t.Fatalf("a FRAME named by value: %s", r.output)
+	}
+
+	r = n.run("restore example.com " + ids[0])
+	if !r.ok {
+		t.Fatalf("restore: %s", r.output)
+	}
+	got, want := n.fake.hosts("example.com"), redirectRecords()
+	if len(got) != len(want) {
+		t.Fatalf("restored %d records: %+v", len(got), got)
+	}
+	for i := range want {
+		if got[i].Name != want[i].Name || got[i].Type != want[i].Type || got[i].Address != want[i].Address || got[i].TTL != want[i].TTL {
+			t.Errorf("record %d: %+v, want %+v", i+1, got[i], want[i])
+		}
+	}
+}
+
+func TestRemovingAURLRedirectInDryRunChangesNothing(t *testing.T) {
+	n := newHarness(t)
+	n.fake.add("example.com", true, redirectRecords()...)
+	n.cfg["mode"] = "dryrun"
+	r := n.run("remove example.com URL @ https://www.example.net")
+	if !r.ok {
+		t.Fatal(r.output)
+	}
+	mustContain(t, r.output, "Dry run for example.com: nothing was changed. removes URL @ https://www.example.net", "Before (4 records):", "After (3 records):")
+	if n.fake.count(setHosts) != 0 || len(n.backups("example.com")) != 0 || r.event("changed") != nil {
+		t.Errorf("dry run wrote: %v", n.fake.commands)
+	}
+	sameHosts(t, redirectRecords(), n.fake.hosts("example.com"))
+}
+
+// A domain with no redirect on the host is not touched: the remove says so and writes nothing.
+func TestRemovingAURLRedirectThatIsNotThereChangesNothing(t *testing.T) {
+	n := newHarness(t)
+	n.fake.add("example.com", true, tenRecords()...)
+	r := n.run("remove example.com URL @")
+	mustContain(t, r.output, "there is no such URL record on @; nothing was changed")
+	if n.fake.count(setHosts) != 0 || len(n.backups("example.com")) != 0 {
+		t.Errorf("wrote: %v", n.fake.commands)
+	}
+	sameHosts(t, tenRecords(), n.fake.hosts("example.com"))
+}
+
+// An A, AAAA or CNAME on a host holding a redirect is refused, naming the redirect and the exact
+// remove command, in dry run and apply alike; a TXT beside it is still added.
+func TestEnsureOverAURLRedirectNamesTheRemoveCommand(t *testing.T) {
+	for _, mode := range []string{"dryrun", "apply"} {
+		n := newHarness(t)
+		n.fake.add("example.com", true, redirectRecords()...)
+		n.cfg["mode"] = mode
+		for _, c := range []struct{ cmd, says string }{
+			{"ensure example.com A @ 203.0.113.20", "Refused: @ holds a URL redirect record (URL @ https://www.example.net ttl 1799), and an A record cannot sit beside it"},
+			{"ensure example.com AAAA @ 2001:db8::20", "an AAAA record cannot sit beside it"},
+			{"ensure example.com CNAME go app.example.net", "remove it first with `remove example.com FRAME go http://www.example.net/`"},
+		} {
+			r := n.run(c.cmd)
+			if r.ok {
+				t.Fatalf("%s %s was accepted: %s", mode, c.cmd, r.output)
+			}
+			mustContain(t, r.output, c.says, "When a person has approved replacing the redirect", "Nothing was changed.")
+		}
+		r := n.run("ensure example.com A @ 203.0.113.20")
+		mustContain(t, r.output, "`remove example.com URL @ https://www.example.net`")
+		if n.fake.count(setHosts) != 0 || len(n.backups("example.com")) != 0 {
+			t.Fatalf("%s: a refused ensure wrote: %v", mode, n.fake.commands)
+		}
+	}
+	n := newHarness(t)
+	n.fake.add("example.com", true, redirectRecords()...)
+	if r := n.run(`ensure example.com TXT @ "site-verification=placeholder"`); !r.ok {
+		t.Fatalf("a TXT beside a redirect: %s", r.output)
 	}
 }

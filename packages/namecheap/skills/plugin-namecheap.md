@@ -1,6 +1,6 @@
 ---
 name: plugin-namecheap
-description: Use when you need to add, change, list or remove DNS records (A, AAAA, CNAME, MX, TXT, CAA) for a domain at Namecheap, check Namecheap setup, or put back a domain's records from a backup through the Namecheap plugin member - its commands, dry run versus apply, the records a hosted app's custom domain and a mailbox usually need, and what its refusals mean.
+description: Use when you need to add, change, list or remove DNS records (A, AAAA, CNAME, MX, TXT, CAA), or remove a URL redirect record, for a domain at Namecheap, check Namecheap setup, or put back a domain's records from a backup through the Namecheap plugin member - its commands, dry run versus apply, the records a hosted app's custom domain and a mailbox usually need, and what its refusals mean.
 roles: manager member
 ---
 
@@ -13,7 +13,8 @@ in its `domains` setting, and only domains that use Namecheap DNS.
 It never loses a record. Namecheap replaces a domain's whole record set on every write, so each
 change reads the current records, changes only the one named, saves the records before the change
 as a backup, writes them all back, and reads them again to check every earlier record is still
-there. URL redirect records, and any other type it does not change, are written back as they were.
+there. URL redirect records, and any other type it does not change, are written back as they were,
+unless `remove` names a redirect to take away.
 
 ## Commands
 
@@ -36,7 +37,9 @@ for the domain itself, or the name below it: `www`, `_dmarc`, `selector1._domain
   - The record already there with that value is left alone, unless a ttl or mxpref given differs.
   - ttl is 60 to 60000 seconds, 1799 (Namecheap's Automatic) when not given; mxpref defaults to 10.
 - `remove <domain> <type> <host> [value]` - removes that one record. Without a value the host must
-  hold exactly one record of that type.
+  hold exactly one record of that type. The type may also be a URL redirect, `URL`, `URL301` or
+  `FRAME` as `list` shows it: `remove example.com URL @` takes away the redirect on the domain
+  itself. A redirect is only ever removed, never added or changed.
 - `restore <domain> <backup id>` - puts back the records a backup holds. It saves the records it
   replaces as a new backup first, so a restore can be undone the same way.
 
@@ -46,6 +49,7 @@ Examples:
     ensure example.com TXT @ "site-verification=placeholder-token"
     ensure example.com MX @ mx1.example.net 3600 10
     remove example.com TXT _acme-challenge "old-token-placeholder"
+    remove example.com URL @ https://www.example.net
     restore example.com 20260101T120000Z
 
 ## Dry run versus apply
@@ -68,6 +72,11 @@ The hosting service names the exact hosts and values; use them as given.
 - `www` (or another subdomain): `CNAME` to the host the service names.
 - The domain itself (`@`): an `A` record to the service's IPv4 address (and `AAAA` for IPv6). A
   CNAME cannot sit on `@` beside the domain's other records.
+- A host that holds a URL redirect (`URL`, `URL301` or `FRAME` in `list`) takes no A, AAAA or
+  CNAME: `ensure` is refused, naming the redirect and the exact `remove` command. Removing it stops
+  the redirect, which a person may rely on, so remove it only when a person has approved replacing
+  it (the team's instructions, or their answer when you ask). Then send the `remove`, dry run first
+  as for any change, and `ensure` again. Its backup puts the redirect back with `restore`.
 - Ownership verification: a `TXT` record on the host the service names (often `@`, or a name such
   as `_verify` or `asuid.www`), with its token as the value.
 - Certificates: a `CAA` record on `@` allowing the service's certificate authority, as
@@ -102,6 +111,9 @@ refuses it, saying so. Only DKIM (when the provider does not already hold it) an
 Every refusal ends "Nothing was changed."
 
 - `... is not in this member's domains setting` - a person adds the domain to `domains`.
+- `... holds a URL redirect record ...` - the answer names the `remove` command; send it once a
+  person has approved replacing the redirect, then ensure again. No change in Namecheap's own
+  screens is needed.
 - `... does not use Namecheap DNS` - its records are served elsewhere; change them there.
 - `... records could not be read` - run `setup`; it names what is missing (often the address is
   no longer on the allow-list).

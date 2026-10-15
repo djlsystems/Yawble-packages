@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "namecheap",
   "name": "Namecheap DNS",
-  "description": "Adds and changes DNS records for the domains you list, registered at Namecheap and using Namecheap DNS, without ever losing an existing record.\n\nIt sets A, AAAA, CNAME, MX, TXT and CAA records: a custom domain's verification and certificate records for a hosted app, or a mailbox's MX, SPF, DKIM and DMARC records. Every change reads the domain's current records, changes only the one named, saves the records before the change as a backup that restore puts back, and reads them again after writing to check every earlier record is still there. Dry run by default: it shows the records before and after and changes nothing until you set mode to apply.\n\nThe setup command checks that API access is on, that this computer's address is on Namecheap's API allow-list (naming the address), and that each listed domain is in the account and on Namecheap DNS.",
-  "version": "1.0.2",
+  "description": "Adds and changes DNS records for the domains you list, registered at Namecheap and using Namecheap DNS, without ever losing an existing record.\n\nIt sets A, AAAA, CNAME, MX, TXT and CAA records: a custom domain's verification and certificate records for a hosted app, or a mailbox's MX, SPF, DKIM and DMARC records. It may also remove a URL redirect record, so an app's A record can take the host's place, but never adds or changes one. Every change reads the domain's current records, changes only the one named, saves the records before the change as a backup that restore puts back, and reads them again after writing to check every earlier record is still there. Dry run by default: it shows the records before and after and changes nothing until you set mode to apply.\n\nThe setup command checks that API access is on, that this computer's address is on Namecheap's API allow-list (naming the address), and that each listed domain is in the account and on Namecheap DNS.",
+  "version": "1.0.3",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/namecheap",

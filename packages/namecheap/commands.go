@@ -132,7 +132,7 @@ func (p *plugin) ensure(args []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	typ, err := recordType(args[1])
+	typ, err := recordType(args[1], false)
 	if err != nil {
 		return "", err
 	}
@@ -179,7 +179,7 @@ func (p *plugin) remove(args []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	typ, err := recordType(args[1])
+	typ, err := recordType(args[1], true)
 	if err != nil {
 		return "", err
 	}
@@ -238,12 +238,17 @@ func (p *plugin) restore(args []string) (string, error) {
 
 // ---- helpers ---------------------------------------------------------------------------------
 
-func recordType(word string) (string, error) {
+// recordType reads a command's type. removing is true for `remove`, which may also take away a
+// URL redirect record (URL, URL301 or FRAME); nothing adds or changes one.
+func recordType(word string, removing bool) (string, error) {
 	t := strings.ToUpper(word)
-	if !changeable[t] {
-		return "", refusal(fmt.Sprintf("Refused: %s is not a type this plugin changes; it changes A, AAAA, CNAME, MX, TXT and CAA records, and keeps every other record (URL redirects among them) as it is. Nothing was changed.", word))
+	if changeable[t] || (removing && redirect[t]) {
+		return t, nil
 	}
-	return t, nil
+	if redirect[t] {
+		return "", refusal(fmt.Sprintf("Refused: %s is a URL redirect record, which this plugin never adds or changes; it may only remove one, with `remove <domain> %s <host> [value]`. Nothing was changed.", word, t))
+	}
+	return "", refusal(fmt.Sprintf("Refused: %s is not a type this plugin changes; it changes A, AAAA, CNAME, MX, TXT and CAA records and may remove a URL redirect (URL, URL301, FRAME), and keeps every other record as it is. Nothing was changed.", word))
 }
 
 func (p *plugin) checkHost(host string) string {

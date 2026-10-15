@@ -19,8 +19,16 @@ type record struct {
 }
 
 // The types the commands change. Every other type in a set - URL, URL301 and FRAME redirects,
-// NS, ALIAS, MXE - is written back exactly as it was read.
+// NS, ALIAS, MXE - is written back exactly as it was read, except that `remove` may take away a
+// redirect.
 var changeable = map[string]bool{"A": true, "AAAA": true, "CNAME": true, "MX": true, "TXT": true, "CAA": true}
+
+// redirect names Namecheap's URL redirect types: URL (302), URL301 and FRAME (masked). `remove`
+// takes one away; nothing adds or changes one.
+var redirect = map[string]bool{"URL": true, "URL301": true, "FRAME": true}
+
+// replacesRedirect names the types Namecheap answers a host with instead of a redirect on it.
+var replacesRedirect = map[string]bool{"A": true, "AAAA": true, "CNAME": true}
 
 // byValue types may hold several records on one host, told apart by value: SPF and verification
 // TXT records side by side, a mailbox's several MX hosts, several CAA issuers.
@@ -162,6 +170,17 @@ func ensure(domain string, set []record, want record, ttlGiven, prefGiven bool) 
 		}
 	}
 
+	// A REDIRECT ON THE HOST: Namecheap answers the host with its redirect, so an A, AAAA or CNAME
+	// is not put beside one. Removing the redirect is the team's call, never the plugin's guess.
+	if replacesRedirect[want.Type] {
+		for _, i := range sameHost {
+			if r := set[i]; redirect[r.Type] {
+				return c, refusal(fmt.Sprintf("Refused: %s holds a URL redirect record (%s), and %s record cannot sit beside it. When a person has approved replacing the redirect, remove it first with `remove %s %s %s %s`, then ensure again. Nothing was changed.",
+					want.Host, r.String(), withArticle(want.Type), domain, r.Type, r.Host, argument(r.Value)))
+			}
+		}
+	}
+
 	// THE RECORD IS THERE: only its TTL or MX preference may change, and only when given.
 	for _, i := range sameType {
 		r := set[i]
@@ -229,6 +248,22 @@ func ensure(domain string, set []record, want record, ttlGiven, prefGiven bool) 
 	c.after = append(c.after, want)
 	c.added = append(c.added, want)
 	return c, nil
+}
+
+// argument is a value as a command takes it: in quotes when it holds a space or a quote.
+func argument(v string) string {
+	if v == "" || strings.ContainsAny(v, " \t\"'") {
+		return strconv.Quote(v)
+	}
+	return v
+}
+
+// withArticle is a type with its article: "an A", "an AAAA", "a CNAME".
+func withArticle(typ string) string {
+	if strings.HasPrefix(typ, "A") {
+		return "an " + typ
+	}
+	return "a " + typ
 }
 
 // singular names the TXT records a host may hold only one of.

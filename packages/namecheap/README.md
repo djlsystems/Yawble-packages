@@ -64,11 +64,16 @@ Secrets: `apiUser` and `apiKey`, as above.
 - `ensure <domain> <type> <host> <value> [ttl] [mxpref]` - makes the record be there. TXT, MX and
   CAA records are matched by value, so an SPF record and a verification record live side by side on
   one host; A, AAAA and CNAME are one per host.
-- `remove <domain> <type> <host> [value]` - removes that one record.
+- `remove <domain> <type> <host> [value]` - removes that one record. It also takes a URL redirect
+  type (`URL`, `URL301` or `FRAME`): `remove example.com URL @` removes the redirect on the domain
+  itself, so an app's A record can take its place. Only removal: a redirect is never added or changed.
 - `restore <domain> <backup id>` - puts back the records a backup holds.
 
-Types: A, AAAA, CNAME, MX, TXT and CAA. URL redirect records, and every other type, are kept as they
-are. A value with spaces goes in quotes: `ensure example.com TXT @ "v=spf1 include:_spf.example.net ~all"`.
+Types: A, AAAA, CNAME, MX, TXT and CAA, and `remove` for URL redirects. Every other record, and a
+redirect nobody asked to remove, is kept as it is. `ensure` refuses an A, AAAA or CNAME on a host
+that holds a redirect, naming the redirect and the `remove` command that takes it away. Whether the
+redirect may go is a person's decision, which the plugin cannot know: the team's instructions say
+when a person has approved replacing it. A value with spaces goes in quotes: `ensure example.com TXT @ "v=spf1 include:_spf.example.net ~all"`.
 The skill `plugin-namecheap` (`skills/plugin-namecheap.md`) says what each answer and refusal
 means, and which records a hosted app's custom domain and a mailbox usually need.
 
@@ -99,10 +104,10 @@ holds records only: never the API user or key.
 ## Build and test
 
 ```sh
-packages/namecheap/build.sh ~/plugins-build/namecheap/1.0.2     # one installable version
+packages/namecheap/build.sh ~/plugins-build/namecheap/1.0.3     # one installable version
 (cd packages/namecheap && go test ./...)                        # against a fake Namecheap API
 ```
 
-`scripts/build.sh` puts the package zip in `dist/namecheap-1.0.2.zip`. The tests run the plugin
+`scripts/build.sh` puts the package zip in `dist/namecheap-1.0.3.zip`. The tests run the plugin
 against a fake Namecheap API and a fake address service on the test machine; they never reach the
 network.
