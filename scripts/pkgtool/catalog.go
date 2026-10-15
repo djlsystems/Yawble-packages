@@ -227,6 +227,9 @@ func readPlugin(files zipFiles, prefix string) (builtPlugin, error) {
 	if prefix != "" && prefix != "plugins/"+m.ID+"/" {
 		return builtPlugin{}, fmt.Errorf("%splugin.json says id %q; its folder must be named after it", prefix, m.ID)
 	}
+	if problems := checkEvents(m.ID, m.Events); len(problems) > 0 {
+		return builtPlugin{}, fmt.Errorf("%splugin.json: %s", prefix, strings.Join(problems, "; "))
+	}
 	keys, paths, err := orderedObject[string](m.Platforms)
 	if err != nil {
 		return builtPlugin{}, fmt.Errorf("%splugin.json platforms: %v", prefix, err)

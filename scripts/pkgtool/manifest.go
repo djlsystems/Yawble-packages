@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 var (
@@ -64,6 +65,7 @@ type pluginManifest struct {
 	Config      json.RawMessage       `json:"config"`
 	Secrets     json.RawMessage       `json:"secrets"`
 	Connections json.RawMessage       `json:"connections"`
+	Events      json.RawMessage       `json:"events"`
 }
 
 type configField struct {
@@ -109,6 +111,9 @@ func readPackage(dir string) (pkg, error) {
 	var m pluginManifest
 	if err := json.Unmarshal(plug, &m); err != nil {
 		return pkg{}, fmt.Errorf("%s/plugin.json: %v", dir, err)
+	}
+	if problems := checkEvents(m.ID, m.Events); len(problems) > 0 {
+		return pkg{}, fmt.Errorf("%s/plugin.json: %s", dir, strings.Join(problems, "; "))
 	}
 	return checkPackage(dir, pkg{"plugin", m.ID, m.Version})
 }
