@@ -155,7 +155,7 @@ A command that changed the mailbox publishes, after the mailbox took the change:
   the subject.
 - `plugin.mail.changed`: ONE per message marked, moved or labelled: `mailbox`, `id` (a moved
   message's new id where the provider gives one), `subject`, `action` (always `changed`) and `change`
-  (`read` for mark-read and mark-unread, `moved`, `labelled`). High-volume. The Monitor shows it as
+  (`read` for mark-read, `unread` for mark-unread, `moved`, `labelled`). High-volume. The Monitor shows it as
   changed, icon `mail`, labelled `<change>: <subject>`.
 
 A subject is one line, cut to 120 characters. No event carries a body, an address list or an

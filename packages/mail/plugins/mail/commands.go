@@ -325,11 +325,11 @@ func (m *mailer) markRead(ctx context.Context, args []string, read bool) (string
 	if err := m.p.setRead(ctx, ids, read); err != nil {
 		return "", err
 	}
-	m.publishChanged(ids, subjects, nil, "read")
 	state := "unread"
 	if read {
 		state = "read"
 	}
+	m.publishChanged(ids, subjects, nil, state)
 	return fmt.Sprintf("Marked %d messages %s: %s.", len(ids), state, strings.Join(ids, ", ")), nil
 }
 

@@ -200,7 +200,7 @@
           { "name": "id", "kind": "string", "summary": "The message's id; after a move, its new id where the provider gives one." },
           { "name": "subject", "kind": "string", "summary": "Its subject on one line, cut to 120 characters; empty when it could not be read." },
           { "name": "action", "kind": "string", "summary": "Always changed: no command here makes or removes a message." },
-          { "name": "change", "kind": "string", "summary": "read (mark-read or mark-unread), moved or labelled." }
+          { "name": "change", "kind": "string", "summary": "read (mark-read), unread (mark-unread), moved or labelled." }
         ]
       }
     ]

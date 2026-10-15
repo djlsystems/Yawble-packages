@@ -20,8 +20,8 @@ func draftedPayload(account string, o outgoing, mk made) map[string]any {
 	return map[string]any{"mailbox": account, "id": mk.ID, "subject": eventSubject(o.Subject)}
 }
 
-// changedPayload is changed for one message a mark, move or label changed: change is read, moved
-// or labelled. action is always changed: none of them makes or removes a message.
+// changedPayload is changed for one message a mark, move or label changed: change is read, unread,
+// moved or labelled. action is always changed: none of them makes or removes a message.
 func changedPayload(account, id, subject, change string) map[string]any {
 	return map[string]any{"mailbox": account, "id": id, "subject": eventSubject(subject), "action": "changed", "change": change}
 }

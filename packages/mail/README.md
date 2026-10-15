@@ -92,8 +92,9 @@ line:
   mode, or `reply` in draft mode - labelled with its subject. The event names the mailbox, the
   draft's id and the subject.
 - **changed** (icon `mail`, changed): one line per message Mailer marked read or unread, moved or
-  labelled, labelled `read: <subject>`, `moved: <subject>` or `labelled: <subject>`. A move or label
-  of many messages publishes many, so the event is marked high-volume.
+  labelled, labelled `read: <subject>`, `unread: <subject>`, `moved: <subject>` or
+  `labelled: <subject>`. A move or label of many messages publishes many, so the event is marked
+  high-volume.
 
 A subject is shown on one line, cut to 120 characters. Reading mail (`list`, `search`, `read`,
 `folders`, `watch`, `replied`), a refused command, and `follow` or `unfollow` (which change only

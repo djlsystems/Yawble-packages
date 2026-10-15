@@ -206,7 +206,7 @@ func TestChangedIsPublishedOncePerMessageMarkedMovedOrLabelled(t *testing.T) {
 			config := map[string]any{"markRead": true, "moveTo": []string{"Archive", "Receipts"}}
 			for _, cmd := range []struct{ instr, change string }{
 				{"mark-read " + a + "," + c, "read"},
-				{"mark-unread " + a + " " + c, "read"},
+				{"mark-unread " + a + " " + c, "unread"},
 				{"label Receipts " + a + " " + c, "labelled"},
 				{"move Archive " + a + " " + c, "moved"},
 			} {
