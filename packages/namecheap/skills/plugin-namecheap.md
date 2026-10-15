@@ -104,6 +104,10 @@ refuses it, saying so. Only DKIM (when the provider does not already hold it) an
 
 - `plugin.namecheap.changed` - `domain`, `command`, `added`, `changed`, `removed` (each a list of
   records in words) and `backupId`. Only in apply, after the read-back check passed.
+- `plugin.namecheap.record` - one per record added, changed or removed in apply: `domain`,
+  `recordType`, `host`, `value` (the public DNS value as written), `action` and `backupId`. At most 25
+  per command; `changed` covers the rest. The Monitor shows each as `<type> <host>.<domain>` marked
+  added, changed or removed; a list, a dry run or a refusal shows nothing there.
 - `plugin.namecheap.refused` - `command`, `domain` when one was named, and `reason`.
 
 ## Refusals and failures

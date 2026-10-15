@@ -99,6 +99,10 @@ holds records only: never the API user or key.
 ## Events
 
 - `plugin.namecheap.changed`: `domain`, `command`, `added`, `changed`, `removed`, `backupId`.
+- `plugin.namecheap.record`: `domain`, `recordType`, `host`, `value`, `action` (added, changed or
+  removed), `backupId`. One per record a change in apply mode wrote, at most 25 per command; `changed`
+  covers the rest. The Monitor shows each as a DNS line such as `TXT _dmarc.example.com`, marked added,
+  changed or removed. Never for a list, a dry run or a refusal.
 - `plugin.namecheap.refused`: `command`, `domain` when one was named, `reason`.
 
 ## Build and test

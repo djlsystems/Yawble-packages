@@ -122,8 +122,44 @@ func (p *plugin) apply(command, domain string, set *hostSet, c change, mailBase 
 		"removed":  strs(c.removed),
 		"backupId": id,
 	})
+	p.publishRecords(domain, c, id)
 	return fmt.Sprintf("%s: %s%s\nBackup %s holds the set before; `restore %s %s` puts it back.\nNow (%d records, every earlier record checked present):\n%s",
 		domain, summary, mail, id, domain, id, len(got.Records), lines(got.Records)), nil
+}
+
+// recordEventCap is the most record events one command publishes; past it, changed covers the rest.
+const recordEventCap = 25
+
+// publishRecords publishes one record event per record a written and checked change added,
+// changed or removed, up to recordEventCap. value is the record's public DNS value as written.
+func (p *plugin) publishRecords(domain string, c change, backupID string) {
+	type one struct {
+		r      record
+		action string
+	}
+	var all []one
+	for _, r := range c.added {
+		all = append(all, one{r, "added"})
+	}
+	for _, pair := range c.changed {
+		all = append(all, one{pair[1], "changed"})
+	}
+	for _, r := range c.removed {
+		all = append(all, one{r, "removed"})
+	}
+	if len(all) > recordEventCap {
+		all = all[:recordEventCap]
+	}
+	for _, o := range all {
+		p.publish("record", map[string]any{
+			"domain":     domain,
+			"recordType": o.r.Type,
+			"host":       o.r.Host,
+			"value":      o.r.Value,
+			"action":     o.action,
+			"backupId":   backupID,
+		})
+	}
 }
 
 func summarise(c change) string {

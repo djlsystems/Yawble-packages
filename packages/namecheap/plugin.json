@@ -73,6 +73,24 @@
         ]
       },
       {
+        "type": "record",
+        "summary": "One DNS record was added, changed or removed by ensure, remove or restore in apply mode, written and checked. At most 25 per command; changed covers the rest.",
+        "highVolume": true,
+        "monitor": {
+          "icon": "dns",
+          "actionField": "action",
+          "label": "{recordType} {host}.{domain}"
+        },
+        "fields": [
+          { "name": "domain", "kind": "string", "summary": "The domain changed." },
+          { "name": "recordType", "kind": "string", "summary": "The record's type: A, AAAA, CNAME, MX, TXT, CAA, or a URL redirect removed." },
+          { "name": "host", "kind": "string", "summary": "The record's host, such as @ or www." },
+          { "name": "value", "kind": "string", "summary": "The record's public DNS value as written (for a change, the value after)." },
+          { "name": "action", "kind": "string", "summary": "added, changed or removed." },
+          { "name": "backupId", "kind": "string", "summary": "The backup of the records before the change; restore <domain> <backupId> puts them back." }
+        ]
+      },
+      {
         "type": "refused",
         "summary": "A command was refused or failed: the domain is not listed or not on Namecheap DNS, the records could not be read, the arguments were wrong, or a write failed.",
         "highVolume": false,
