@@ -25,10 +25,19 @@ type manifest struct {
 	Reads  []struct{ Site, Collection string } `json:"reads"`
 	Events struct {
 		Publishes []struct {
-			Type   string `json:"type"`
-			Fields []struct {
+			Type       string `json:"type"`
+			HighVolume bool   `json:"highVolume"`
+			Fields     []struct {
 				Name string `json:"name"`
+				Kind string `json:"kind"`
 			} `json:"fields"`
+			Monitor *struct {
+				Icon        string  `json:"icon"`
+				IconBy      any     `json:"iconBy"`
+				Action      *string `json:"action"`
+				ActionField *string `json:"actionField"`
+				Label       string  `json:"label"`
+			} `json:"monitor"`
 		} `json:"publishes"`
 	} `json:"events"`
 }
@@ -48,8 +57,8 @@ func readManifest(t *testing.T) manifest {
 
 func TestTheManifestKeepsTheSafetySettingsThePersonsAndOff(t *testing.T) {
 	m := readManifest(t)
-	if m.Version != "2.2.1" {
-		t.Fatalf("want version 2.2.1, got %s", m.Version)
+	if m.Version != "2.3.0" {
+		t.Fatalf("want version 2.3.0, got %s", m.Version)
 	}
 	off := map[string]string{"mode": `"draft"`, "sendAllowlist": `[]`, "markRead": `false`, "moveTo": `[]`}
 	for name, def := range off {
@@ -121,7 +130,8 @@ func TestTheManifestTakesAllThreeWaysInAndReadsTheWatchAndFollowsCollections(t *
 func TestTheManifestDeclaresTheEventsWithTheFieldsTheyCarry(t *testing.T) {
 	m := readManifest(t)
 	follow := followPayload("", nil, nil)
-	payloads := map[string]map[string]any{"received": eventPayload(&watchDoc{}, nil, 0, 0), "unanswered": follow, "answered": follow}
+	payloads := map[string]map[string]any{"received": eventPayload(&watchDoc{}, nil, 0, 0), "unanswered": follow, "answered": follow,
+		"sent": sentPayload("", outgoing{}, made{}), "drafted": draftedPayload("", outgoing{}, made{}), "changed": changedPayload("", "", "", "read")}
 	var types []string
 	for _, e := range m.Events.Publishes {
 		types = append(types, e.Type)
@@ -139,8 +149,67 @@ func TestTheManifestDeclaresTheEventsWithTheFieldsTheyCarry(t *testing.T) {
 			t.Fatalf("%s: event fields declared %v, carried %v", e.Type, declared, carried)
 		}
 	}
-	if !slices.Equal(types, []string{"received", "unanswered", "answered"}) {
-		t.Fatalf("want the events received, unanswered and answered, got %v", types)
+	if !slices.Equal(types, []string{"received", "unanswered", "answered", "sent", "drafted", "changed"}) {
+		t.Fatalf("want the events received, unanswered, answered, sent, drafted and changed, got %v", types)
+	}
+}
+
+// Only what Mailer made or changed in the mailbox is hinted for the Monitor: sent and drafted as
+// created, changed by its action field. The watch's events are not.
+func TestTheManifestHintsTheMonitorForSentDraftedAndChangedOnly(t *testing.T) {
+	m := readManifest(t)
+	type hint struct {
+		icon, action, actionField, label string
+		highVolume                       bool
+	}
+	want := map[string]hint{
+		"sent":    {icon: "send", action: "created", label: "{subject}"},
+		"drafted": {icon: "drafts", action: "created", label: "{subject}"},
+		"changed": {icon: "mail", actionField: "action", label: "{change}: {subject}", highVolume: true},
+	}
+	for _, e := range m.Events.Publishes {
+		w, hinted := want[e.Type]
+		if !hinted {
+			if e.Monitor != nil {
+				t.Fatalf("%s carries a monitor hint: %+v", e.Type, *e.Monitor)
+			}
+			continue
+		}
+		delete(want, e.Type)
+		h := e.Monitor
+		if h == nil {
+			t.Fatalf("%s carries no monitor hint", e.Type)
+		}
+		var action, actionField string
+		if h.Action != nil {
+			action = *h.Action
+		}
+		if h.ActionField != nil {
+			actionField = *h.ActionField
+		}
+		if (h.Action == nil) == (h.ActionField == nil) {
+			t.Fatalf("%s gives action %v and actionField %v; exactly one", e.Type, h.Action, h.ActionField)
+		}
+		got := hint{icon: h.Icon, action: action, actionField: actionField, label: h.Label, highVolume: e.HighVolume}
+		if got != w || h.IconBy != nil {
+			t.Fatalf("%s's hint = %+v (iconBy %v), want %+v", e.Type, got, h.IconBy, w)
+		}
+		kinds := map[string]string{}
+		for _, f := range e.Fields {
+			kinds[f.Name] = f.Kind
+		}
+		// The label's fields and the action field are declared strings; to is a count, not a list.
+		for _, f := range []string{"subject", "change", "action"} {
+			if strings.Contains(w.label+"{"+w.actionField+"}", "{"+f+"}") && kinds[f] != "string" {
+				t.Fatalf("%s's %s is %q, not a string field", e.Type, f, kinds[f])
+			}
+		}
+		if e.Type == "sent" && kinds["to"] != "number" {
+			t.Fatalf("sent's to is %q: a count, never the addresses", kinds["to"])
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("events not declared: %v", want)
 	}
 }
 

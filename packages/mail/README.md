@@ -1,4 +1,4 @@
-# Mail 2.2.1
+# Mail 2.3.0
 
 A team that works with your mailbox: a Manager you talk to, and a plugin member, Mailer, that lists,
 searches and reads your mail, files it when you allow that, watches your Inbox for new mail, and
@@ -78,6 +78,27 @@ The Mail site lists the followed messages: from, subject, waiting since and last
 The install wakes nobody when new mail arrives. To have the Manager told, add an event trigger on
 `plugin.mail.received` for the Manager in the team's Triggers dialog (with a daily token cap); the
 same goes for `plugin.mail.unanswered` and `plugin.mail.answered`.
+
+## What the Monitor shows
+
+Each change Mailer makes in your mailbox is published as an event, and the Monitor shows it as one
+line:
+
+- **sent** (icon `send`, created): one line per email Mailer sent - `send`, or `reply`, in send
+  mode - labelled with its subject. The event names the mailbox, the message's id and thread where
+  the provider gives them, how many recipients it went to and the subject; never who, never the body
+  or an attachment. A draft that was only saved is not sent.
+- **drafted** (icon `drafts`, created): one line per draft Mailer saved - `draft`, `send` in draft
+  mode, or `reply` in draft mode - labelled with its subject. The event names the mailbox, the
+  draft's id and the subject.
+- **changed** (icon `mail`, changed): one line per message Mailer marked read or unread, moved or
+  labelled, labelled `read: <subject>`, `moved: <subject>` or `labelled: <subject>`. A move or label
+  of many messages publishes many, so the event is marked high-volume.
+
+A subject is shown on one line, cut to 120 characters. Reading mail (`list`, `search`, `read`,
+`folders`, `watch`, `replied`), a refused command, and `follow` or `unfollow` (which change only
+Mailer's own records) show nothing. `plugin.mail.received`, `unanswered` and `answered` are events
+for triggers and have no Monitor line. Mailer never deletes, so nothing is ever shown as deleted.
 
 ## What it does and does not do
 

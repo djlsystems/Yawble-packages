@@ -795,41 +795,45 @@ func (b *imapBox) label(ctx context.Context, ids []string, label string) error {
 	return nil
 }
 
-func (b *imapBox) draft(ctx context.Context, o outgoing) (string, error) {
+func (b *imapBox) draft(ctx context.Context, o outgoing) (string, made, error) {
 	drafts, err := b.folder("Drafts")
 	if err != nil {
-		return "", failure("This mailbox has no Drafts folder, so no draft was saved; nothing was sent.")
+		return "", made{}, failure("This mailbox has no Drafts folder, so no draft was saved; nothing was sent.")
 	}
 	o.From = b.g.Account
 	raw := []byte(buildMessage(o, false))
 	cmd := b.c.Append(drafts, int64(len(raw)), &imap.AppendOptions{Flags: []imap.Flag{imap.FlagDraft, imap.FlagSeen}, Time: time.Now()})
 	if _, err := cmd.Write(raw); err != nil {
-		return "", failure("The IMAP connection failed while saving the draft; nothing was sent.")
+		return "", made{}, failure("The IMAP connection failed while saving the draft; nothing was sent.")
 	}
 	if err := cmd.Close(); err != nil {
-		return "", failure("The IMAP connection failed while saving the draft; nothing was sent.")
+		return "", made{}, failure("The IMAP connection failed while saving the draft; nothing was sent.")
 	}
 	data, err := cmd.Wait()
 	if err != nil {
-		return "", failure(strings.TrimSuffix(b.imapFailure("save the draft", err).Error(), ".") + "; nothing was sent.")
+		return "", made{}, failure(strings.TrimSuffix(b.imapFailure("save the draft", err).Error(), ".") + "; nothing was sent.")
 	}
 	if data != nil && data.UID != 0 {
-		return fmt.Sprintf("Draft %s saved in %s; nothing was sent.", imapID(drafts, data.UID), drafts), nil
+		id := imapID(drafts, data.UID)
+		return fmt.Sprintf("Draft %s saved in %s; nothing was sent.", id, drafts), made{ID: id}, nil
 	}
-	return "Draft saved in " + drafts + "; nothing was sent.", nil
+	return "Draft saved in " + drafts + "; nothing was sent.", made{}, nil
 }
 
 // send sends over SMTP, signing in with the username, or with the address when the username
 // has no @ (iCloud). Bcc recipients get the message but no Bcc line.
-func (b *imapBox) send(ctx context.Context, o outgoing) (string, error) {
+func (b *imapBox) send(ctx context.Context, o outgoing) (string, made, error) {
 	e := b.g.SMTP
 	if e.Host == "" || e.Port == 0 {
-		return "", failure("The mailbox connection has no SMTP server; a person fixes it in Admin, Connections. Nothing was sent.")
+		return "", made{}, failure("The mailbox connection has no SMTP server; a person fixes it in Admin, Connections. Nothing was sent.")
 	}
 	if !securityOK(e.Security) {
-		return "", failure("The mailbox connection's SMTP security must be TLS or STARTTLS; a person fixes it in Admin, Connections. Nothing was sent.")
+		return "", made{}, failure("The mailbox connection's SMTP security must be TLS or STARTTLS; a person fixes it in Admin, Connections. Nothing was sent.")
 	}
 	o.From = b.g.Account
+	// The Message-ID is chosen here so the sent event can name it: over SMTP it is the only id
+	// the message has, and the thread IMAP lists it in.
+	o.MessageID = newMessageID(o.From[strings.LastIndex(o.From, "@")+1:], time.Now())
 	user := b.g.Username
 	if !strings.Contains(user, "@") {
 		user = b.g.Account
@@ -847,35 +851,35 @@ func (b *imapBox) send(ctx context.Context, o outgoing) (string, error) {
 	if err != nil {
 		var tlsErr *tls.CertificateVerificationError
 		if errors.As(err, &tlsErr) {
-			return "", failure(fmt.Sprintf("%s on port %d did not prove it is that server (its certificate was not trusted); nothing was sent.", e.Host, e.Port))
+			return "", made{}, failure(fmt.Sprintf("%s on port %d did not prove it is that server (its certificate was not trusted); nothing was sent.", e.Host, e.Port))
 		}
-		return "", unreachable
+		return "", made{}, unreachable
 	}
 	_ = conn.SetDeadline(time.Now().Add(2 * netTimeout))
 	c, err := smtp.NewClient(conn, e.Host)
 	if err != nil {
 		_ = conn.Close()
-		return "", unreachable
+		return "", made{}, unreachable
 	}
 	defer c.Close()
 	if strings.EqualFold(e.Security, "STARTTLS") {
 		if ok, _ := c.Extension("STARTTLS"); !ok {
-			return "", failure(e.Host + " does not offer STARTTLS, so the password was not sent; nothing was sent.")
+			return "", made{}, failure(e.Host + " does not offer STARTTLS, so the password was not sent; nothing was sent.")
 		}
 		if err := c.StartTLS(cfg); err != nil {
 			var tlsErr *tls.CertificateVerificationError
 			if errors.As(err, &tlsErr) {
-				return "", failure(fmt.Sprintf("%s on port %d did not prove it is that server (its certificate was not trusted); nothing was sent.", e.Host, e.Port))
+				return "", made{}, failure(fmt.Sprintf("%s on port %d did not prove it is that server (its certificate was not trusted); nothing was sent.", e.Host, e.Port))
 			}
-			return "", unreachable
+			return "", made{}, unreachable
 		}
 	}
 	if err := c.Auth(smtp.PlainAuth("", user, b.g.Password, e.Host)); err != nil {
 		var pe *textproto.Error
 		if errors.As(err, &pe) && pe.Code >= 500 {
-			return "", failure("The mail server refused the sign-in for " + b.g.Account + " to send. A person updates the app password in Admin, Connections. Nothing was sent.")
+			return "", made{}, failure("The mail server refused the sign-in for " + b.g.Account + " to send. A person updates the app password in Admin, Connections. Nothing was sent.")
 		}
-		return "", failure("The mail server did not accept the sign-in to send; try again later. Nothing was sent.")
+		return "", made{}, failure("The mail server did not accept the sign-in to send; try again later. Nothing was sent.")
 	}
 	refused := func(err error) error {
 		var pe *textproto.Error
@@ -888,26 +892,50 @@ func (b *imapBox) send(ctx context.Context, o outgoing) (string, error) {
 		return unreachable
 	}
 	if err := c.Mail(b.g.Account); err != nil {
-		return "", refused(err)
+		return "", made{}, refused(err)
 	}
 	for _, r := range append(append(append([]string{}, o.To...), o.Cc...), o.Bcc...) {
 		if err := c.Rcpt(r); err != nil {
 			_ = c.Reset()
-			return "", refused(err)
+			return "", made{}, refused(err)
 		}
 	}
 	w, err := c.Data()
 	if err != nil {
-		return "", refused(err)
+		return "", made{}, refused(err)
 	}
 	if _, err := io.WriteString(w, buildMessage(o, true)); err != nil {
-		return "", unreachable
+		return "", made{}, unreachable
 	}
 	if err := w.Close(); err != nil {
-		return "", refused(err)
+		return "", made{}, refused(err)
 	}
 	_ = c.Quit()
-	return "Sent from " + b.g.Account + " over SMTP.", nil
+	return "Sent from " + b.g.Account + " over SMTP.", made{ID: o.MessageID, Thread: o.MessageID}, nil
+}
+
+// subjects fetches only each message's envelope, which leaves it unread.
+func (b *imapBox) subjects(ctx context.Context, ids []string) map[string]string {
+	groups, order, err := byFolder(ids)
+	if err != nil {
+		return nil
+	}
+	out := map[string]string{}
+	for _, f := range order {
+		if _, err := b.open(f, false); err != nil {
+			continue
+		}
+		msgs, err := b.c.Fetch(imap.UIDSetNum(groups[f]...), &imap.FetchOptions{UID: true, Envelope: true}).Collect()
+		if err != nil {
+			continue
+		}
+		for _, m := range msgs {
+			if m.Envelope != nil {
+				out[imapID(f, m.UID)] = m.Envelope.Subject
+			}
+		}
+	}
+	return out
 }
 
 func (b *imapBox) watchStart(ctx context.Context, w watchSpec) (position, []summary, error) {

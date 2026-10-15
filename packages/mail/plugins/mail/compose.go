@@ -60,7 +60,11 @@ func buildMessage(o outgoing, forSMTP bool) string {
 		now := time.Now()
 		b.WriteString("Date: " + now.Format(time.RFC1123Z) + "\r\n")
 		domain := o.From[strings.LastIndex(o.From, "@")+1:]
-		b.WriteString(fmt.Sprintf("Message-ID: <%d.mail-plugin@%s>\r\n", now.UnixNano(), domain))
+		id := o.MessageID
+		if id == "" {
+			id = newMessageID(domain, now)
+		}
+		b.WriteString("Message-ID: " + id + "\r\n")
 	}
 	if o.InReplyTo != "" {
 		b.WriteString("In-Reply-To: " + o.InReplyTo + "\r\n")
@@ -83,6 +87,11 @@ func buildMessage(o outgoing, forSMTP bool) string {
 	writePart(&b, "text/html", o.HTML)
 	b.WriteString("--" + boundary + "--\r\n")
 	return b.String()
+}
+
+// newMessageID makes a Message-ID for a message from domain.
+func newMessageID(domain string, now time.Time) string {
+	return fmt.Sprintf("<%d.mail-plugin@%s>", now.UnixNano(), domain)
 }
 
 // writePart writes one part's Content-Type and Content-Transfer-Encoding, a blank line, then the

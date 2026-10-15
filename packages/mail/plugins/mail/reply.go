@@ -233,18 +233,20 @@ func (m *mailer) reply(ctx context.Context, args []string, rest string) (string,
 	}
 
 	var out string
+	var mk made
 	if m.settings.mode == "send" && !draftOnly {
 		m.progress("sending one reply")
-		out, err = m.p.send(ctx, o)
+		if out, mk, err = m.p.send(ctx, o); err != nil {
+			return "", err
+		}
+		m.publishSent(o, mk)
 	} else {
 		m.progress("creating one reply draft")
-		out, err = m.p.draft(ctx, o)
-		if err == nil {
-			out += " The person sends the draft from their mailbox."
+		if out, mk, err = m.p.draft(ctx, o); err != nil {
+			return "", err
 		}
-	}
-	if err != nil {
-		return "", err
+		m.publishDrafted(o, mk)
+		out += " The person sends the draft from their mailbox."
 	}
 	what := "the reply's recipients and subject"
 	seen := "To: " + strings.Join(to, ", ") + "\n"

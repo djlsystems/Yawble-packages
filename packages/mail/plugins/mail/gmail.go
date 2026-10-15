@@ -417,12 +417,13 @@ func (g *gmail) label(ctx context.Context, ids []string, label string) error {
 	return g.modify(ctx, ids, []string{id}, nil)
 }
 
-func (g *gmail) draft(ctx context.Context, o outgoing) (string, error) {
+func (g *gmail) draft(ctx context.Context, o outgoing) (string, made, error) {
 	raw := base64.URLEncoding.EncodeToString([]byte(buildMessage(o, false)))
 	var draft struct {
 		ID      string `json:"id"`
 		Message struct {
-			ID string `json:"id"`
+			ID       string `json:"id"`
+			ThreadID string `json:"threadId"`
 		} `json:"message"`
 	}
 	message := map[string]string{"raw": raw}
@@ -431,12 +432,13 @@ func (g *gmail) draft(ctx context.Context, o outgoing) (string, error) {
 		message["threadId"] = o.Thread
 	}
 	if err := g.api.call(ctx, "POST", "/drafts", nil, map[string]any{"message": message}, &draft); err != nil {
-		return "", failure(gmailWords.describe(err, scopeCompose, true))
+		return "", made{}, failure(gmailWords.describe(err, scopeCompose, true))
 	}
-	return fmt.Sprintf("Draft %s created (message %s); nothing was sent.", draft.ID, draft.Message.ID), nil
+	return fmt.Sprintf("Draft %s created (message %s); nothing was sent.", draft.ID, draft.Message.ID),
+		made{ID: draft.Message.ID, Thread: draft.Message.ThreadID}, nil
 }
 
-func (g *gmail) send(ctx context.Context, o outgoing) (string, error) {
+func (g *gmail) send(ctx context.Context, o outgoing) (string, made, error) {
 	raw := base64.URLEncoding.EncodeToString([]byte(buildMessage(o, false)))
 	var sent struct {
 		ID       string `json:"id"`
@@ -447,9 +449,22 @@ func (g *gmail) send(ctx context.Context, o outgoing) (string, error) {
 		message["threadId"] = o.Thread
 	}
 	if err := g.api.call(ctx, "POST", "/messages/send", nil, message, &sent); err != nil {
-		return "", failure(gmailWords.describe(err, scopeCompose, true))
+		return "", made{}, failure(gmailWords.describe(err, scopeCompose, true))
 	}
-	return fmt.Sprintf("Sent: message %s, thread %s.", sent.ID, sent.ThreadID), nil
+	return fmt.Sprintf("Sent: message %s, thread %s.", sent.ID, sent.ThreadID), made{ID: sent.ID, Thread: sent.ThreadID}, nil
+}
+
+// subjects fetches only each message's Subject header.
+func (g *gmail) subjects(ctx context.Context, ids []string) map[string]string {
+	out := map[string]string{}
+	for _, id := range ids {
+		var msg gmailMessage
+		mq := url.Values{"format": {"metadata"}, "metadataHeaders": {"Subject"}}
+		if g.api.call(ctx, "GET", "/messages/"+url.PathEscape(id), mq, nil, &msg) == nil {
+			out[id] = msg.Payload.header("Subject")
+		}
+	}
+	return out
 }
 
 func (g *gmail) profileHistory(ctx context.Context) (string, error) {

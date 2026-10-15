@@ -447,37 +447,52 @@ func (g *graph) reply(ctx context.Context, o outgoing) (string, error) {
 	return d.ID, nil
 }
 
-func (g *graph) draft(ctx context.Context, o outgoing) (string, error) {
+func (g *graph) draft(ctx context.Context, o outgoing) (string, made, error) {
 	if o.ReplyOf != "" {
 		id, err := g.reply(ctx, o)
 		if err != nil {
-			return "", err
+			return "", made{}, err
 		}
-		return fmt.Sprintf("Draft %s created in Drafts, in the original's conversation; nothing was sent.", id), nil
+		return fmt.Sprintf("Draft %s created in Drafts, in the original's conversation; nothing was sent.", id), made{ID: id, Thread: o.Thread}, nil
 	}
 	var m graphMessage
 	if err := g.api.call(ctx, "POST", "/me/messages", nil, graphOutgoing(o), &m); err != nil {
-		return "", failure(graphWords.describe(err, scopeGraphReadWrite, true))
+		return "", made{}, failure(graphWords.describe(err, scopeGraphReadWrite, true))
 	}
-	return fmt.Sprintf("Draft %s created in Drafts; nothing was sent.", m.ID), nil
+	return fmt.Sprintf("Draft %s created in Drafts; nothing was sent.", m.ID), made{ID: m.ID, Thread: m.ConversationID}, nil
 }
 
-func (g *graph) send(ctx context.Context, o outgoing) (string, error) {
+func (g *graph) send(ctx context.Context, o outgoing) (string, made, error) {
 	if o.ReplyOf != "" {
 		id, err := g.reply(ctx, o)
 		if err != nil {
-			return "", err
+			return "", made{}, err
 		}
 		if err := g.api.call(ctx, "POST", "/me/messages/"+url.PathEscape(id)+"/send", nil, nil, nil); err != nil {
-			return "", failure(strings.TrimSuffix(graphWords.describe(err, scopeGraphSend, false), ".") + "; nothing was sent, and the reply is left as draft " + id + ".")
+			return "", made{}, failure(strings.TrimSuffix(graphWords.describe(err, scopeGraphSend, false), ".") + "; nothing was sent, and the reply is left as draft " + id + ".")
 		}
-		return "Sent: Microsoft Graph sent the reply in the original's conversation; a copy is in Sent Items.", nil
+		// Sending moves the draft to Sent Items under a new id Graph does not answer, so only the
+		// conversation is known.
+		return "Sent: Microsoft Graph sent the reply in the original's conversation; a copy is in Sent Items.", made{Thread: o.Thread}, nil
 	}
 	body := map[string]any{"message": graphOutgoing(o), "saveToSentItems": true}
 	if err := g.api.call(ctx, "POST", "/me/sendMail", nil, body, nil); err != nil {
-		return "", failure(graphWords.describe(err, scopeGraphSend, true))
+		return "", made{}, failure(graphWords.describe(err, scopeGraphSend, true))
 	}
-	return "Sent: Microsoft Graph accepted the message; a copy is in Sent Items.", nil
+	// sendMail answers no id and no conversation.
+	return "Sent: Microsoft Graph accepted the message; a copy is in Sent Items.", made{}, nil
+}
+
+// subjects fetches only each message's subject.
+func (g *graph) subjects(ctx context.Context, ids []string) map[string]string {
+	out := map[string]string{}
+	for _, id := range ids {
+		var m graphMessage
+		if g.api.call(ctx, "GET", "/me/messages/"+url.PathEscape(id), url.Values{"$select": {"subject"}}, nil, &m) == nil {
+			out[id] = m.Subject
+		}
+	}
+	return out
 }
 
 func recentKey(id string) string {
