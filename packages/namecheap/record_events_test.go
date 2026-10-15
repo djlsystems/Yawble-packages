@@ -126,7 +126,7 @@ func TestApplyPublishesOneRecordEventPerRecordAddedChangedOrRemoved(t *testing.T
 func TestNoRecordEventForAListADryRunARefusalOrAFailedWrite(t *testing.T) {
 	n := newHarness(t)
 	n.fake.add("example.com", true, tenRecords()...)
-	n.fake.add("other.com", true, tenRecords()...)
+	n.fake.add("example.org", true, tenRecords()...)
 	check := func(what string, r runResult) {
 		t.Helper()
 		if recs := records(r); len(recs) != 0 {
@@ -135,7 +135,7 @@ func TestNoRecordEventForAListADryRunARefusalOrAFailedWrite(t *testing.T) {
 	}
 	check("list", n.run("list example.com"))
 	check("setup", n.run("setup"))
-	check("refusal", n.run("ensure other.com A @ 203.0.113.99"))
+	check("refusal", n.run("ensure example.org A @ 203.0.113.99"))
 	check("no change", n.run("ensure example.com A blog 203.0.113.11 600"))
 	n.fake.failSetHosts = true
 	check("failed write", n.run("ensure example.com A www2 203.0.113.12"))
