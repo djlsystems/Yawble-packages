@@ -297,25 +297,27 @@
           }
         ],
         "monitor": {
-          "iconBy": "resourceType",
-          "icons": {
-            "resource-group": "folder",
-            "sql-server": "dns",
-            "sql-database": "database",
-            "container-app": "deployed_code",
-            "container-app-environment": "lan",
-            "container-registry": "inventory_2",
-            "key-vault": "key",
-            "secret": "key",
-            "storage-account": "hard_drive",
-            "managed-identity": "badge",
-            "role-assignment": "admin_panel_settings",
-            "log-analytics": "monitoring",
-            "budget": "savings",
-            "dns-zone": "language",
-            "other": "cloud"
+          "icon": "cloud",
+          "iconBy": {
+            "field": "resourceType",
+            "icons": {
+              "resource-group": "folder",
+              "sql-server": "dns",
+              "sql-database": "database",
+              "container-app": "deployed_code",
+              "container-app-environment": "lan",
+              "container-registry": "inventory_2",
+              "key-vault": "key",
+              "secret": "key",
+              "storage-account": "hard_drive",
+              "managed-identity": "badge",
+              "role-assignment": "admin_panel_settings",
+              "log-analytics": "monitoring",
+              "budget": "savings",
+              "dns-zone": "language",
+              "other": "cloud"
+            }
           },
-          "fallbackIcon": "cloud",
           "actionField": "action",
           "label": "{name}"
         }

@@ -9,7 +9,7 @@ import (
 )
 
 // TestTheResourceEventCarriesTheMonitorHint reads the resource event's fields and its hint as the
-// Monitor reads them: an icon for each kind by resourceType, a fallback, the action and the label.
+// Monitor reads them: icon is the fallback, iconBy maps each resourceType to its icon, then the action and the label.
 func TestTheResourceEventCarriesTheMonitorHint(t *testing.T) {
 	raw, err := os.ReadFile("plugin.json")
 	if err != nil {
@@ -25,11 +25,13 @@ func TestTheResourceEventCarriesTheMonitorHint(t *testing.T) {
 					Kind string `json:"kind"`
 				} `json:"fields"`
 				Monitor *struct {
-					IconBy       string            `json:"iconBy"`
-					Icons        map[string]string `json:"icons"`
-					FallbackIcon string            `json:"fallbackIcon"`
-					ActionField  string            `json:"actionField"`
-					Label        string            `json:"label"`
+					Icon   string `json:"icon"`
+					IconBy struct {
+						Field string            `json:"field"`
+						Icons map[string]string `json:"icons"`
+					} `json:"iconBy"`
+					ActionField string `json:"actionField"`
+					Label       string `json:"label"`
 				} `json:"monitor"`
 			} `json:"publishes"`
 		} `json:"events"`
@@ -60,10 +62,10 @@ func TestTheResourceEventCarriesTheMonitorHint(t *testing.T) {
 		if h == nil {
 			t.Fatal("resource has no Monitor hint")
 		}
-		if h.IconBy != "resourceType" || h.ActionField != "action" || h.Label != "{name}" || h.FallbackIcon == "" {
+		if h.Icon != "cloud" || h.IconBy.Field != "resourceType" || h.ActionField != "action" || h.Label != "{name}" {
 			t.Fatalf("hint = %+v", *h)
 		}
-		if !fields[h.IconBy] || !fields[h.ActionField] || !fields[strings.Trim(h.Label, "{}")] {
+		if !fields[h.IconBy.Field] || !fields[h.ActionField] || !fields[strings.Trim(h.Label, "{}")] {
 			t.Fatalf("the hint names a field the event does not declare: %+v", *h)
 		}
 		kinds := map[string]bool{"other": true}
@@ -71,20 +73,21 @@ func TestTheResourceEventCarriesTheMonitorHint(t *testing.T) {
 			kinds[k] = true
 		}
 		for k := range kinds {
-			if h.Icons[k] == "" {
+			if h.IconBy.Icons[k] == "" {
 				t.Fatalf("no icon for %s", k)
 			}
 		}
-		if len(h.Icons) != len(kinds) {
-			t.Fatalf("icons for kinds the plugin does not name: %v", h.Icons)
+		if len(h.IconBy.Icons) != len(kinds) {
+			t.Fatalf("icons for kinds the plugin does not name: %v", h.IconBy.Icons)
 		}
 		for kind, icon := range map[string]string{
 			"resource-group": "folder", "sql-server": "dns", "sql-database": "database", "container-app": "deployed_code",
 			"container-registry": "inventory_2", "key-vault": "key", "secret": "key", "managed-identity": "badge",
-			"role-assignment": "admin_panel_settings",
+			"role-assignment": "admin_panel_settings", "container-app-environment": "lan", "storage-account": "hard_drive",
+			"log-analytics": "monitoring", "budget": "savings", "dns-zone": "language", "other": "cloud",
 		} {
-			if h.Icons[kind] != icon {
-				t.Fatalf("%s's icon is %q, want %q", kind, h.Icons[kind], icon)
+			if h.IconBy.Icons[kind] != icon {
+				t.Fatalf("%s's icon is %q, want %q", kind, h.IconBy.Icons[kind], icon)
 			}
 		}
 	}
