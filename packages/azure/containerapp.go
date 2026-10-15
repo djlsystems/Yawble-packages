@@ -703,7 +703,7 @@ func (p *plugin) archivedLogs(app, envID, storageID string, minutes int) (string
 				return "", err
 			}
 			for _, rec := range archivedRecords(ans.body) {
-				if !strings.EqualFold(rec.app, app) {
+				if !strings.EqualFold(rec.appName, app) {
 					continue
 				}
 				at := rec.at
@@ -732,10 +732,10 @@ func (p *plugin) archivedLogs(app, envID, storageID string, minutes int) (string
 
 // archivedRecord is one log record a diagnostic setting archived: when, which app and what it said.
 type archivedRecord struct {
-	time string
-	at   time.Time
-	app  string
-	text string
+	time    string
+	at      time.Time
+	appName string
+	text    string
 }
 
 // archivedRecords reads an archive blob: JSON records one after another (JSON lines), or an object
@@ -770,14 +770,14 @@ func archivedRecords(raw []byte) []archivedRecord {
 			return ""
 		}
 		r := archivedRecord{
-			time: first("time", "timegenerated", "timestamp"),
-			app:  first("containerappname", "containerappname_s"),
-			text: first("log", "log_s", "msg", "message"),
+			time:    first("time", "timegenerated", "timestamp"),
+			appName: first("containerappname", "containerappname_s"),
+			text:    first("log", "log_s", "msg", "message"),
 		}
 		if t, err := time.Parse(time.RFC3339Nano, r.time); err == nil {
 			r.at = t.UTC()
 		}
-		if r.app != "" {
+		if r.appName != "" {
 			out = append(out, r)
 		}
 	}
