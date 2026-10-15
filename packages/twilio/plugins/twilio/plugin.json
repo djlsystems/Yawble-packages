@@ -3,7 +3,7 @@
   "id": "twilio",
   "name": "Twilio",
   "description": "Sends SMS and MMS through Twilio with a restricted API key, reads delivery status and replies by polling, and keeps a consented-recipients list and opt-outs on the twilio site. Dry run by default; sends only to your numbers or person-activated consented recipients; never buys numbers or deletes anything.",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/twilio",
@@ -204,6 +204,43 @@
   ],
   "events": {
     "publishes": [
+      {
+        "type": "sent",
+        "summary": "One text twilio sent: an sms or mms command in send mode, or an auto-reply during poll. A dry run sends nothing and publishes nothing here. Never carries the text.",
+        "highVolume": true,
+        "monitor": {
+          "icon": "sms",
+          "action": "created",
+          "label": "{to}"
+        },
+        "fields": [
+          {
+            "name": "number",
+            "kind": "string",
+            "summary": "Our Twilio number the text went from (E.164); empty when it went through a Messaging Service and Twilio had not yet chosen the number."
+          },
+          {
+            "name": "to",
+            "kind": "string",
+            "summary": "The recipient (E.164), in the same form as from in plugin.twilio.received."
+          },
+          {
+            "name": "sid",
+            "kind": "string",
+            "summary": "The SID Twilio gave the text."
+          },
+          {
+            "name": "autoReply",
+            "kind": "boolean",
+            "summary": "true when the text is an auto-reply sent during poll."
+          },
+          {
+            "name": "dryRun",
+            "kind": "boolean",
+            "summary": "Always false."
+          }
+        ]
+      },
       {
         "type": "received",
         "summary": "New texts to our Twilio number that are not opt-out keywords. Snippets are untrusted content from the sender.",
