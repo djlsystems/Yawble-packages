@@ -46,22 +46,22 @@ func actionOf(command, id string) string {
 	return commandActions[command]
 }
 
-// resourceKinds names the Azure types the plugin knows by a short kind.
+// resourceKinds names the Azure types the plugin knows by a short kind; a type matches whatever its case.
 var resourceKinds = map[string]string{
-	"microsoft.resources/resourcegroups":               "resource-group",
-	"microsoft.sql/servers":                            "sql-server",
-	"microsoft.sql/servers/databases":                  "sql-database",
-	"microsoft.app/containerapps":                      "container-app",
-	"microsoft.app/managedenvironments":                "container-app-environment",
-	"microsoft.containerregistry/registries":           "container-registry",
-	"microsoft.keyvault/vaults":                        "key-vault",
-	"microsoft.keyvault/vaults/secrets":                "secret",
-	"microsoft.storage/storageaccounts":                "storage-account",
-	"microsoft.managedidentity/userassignedidentities": "managed-identity",
-	"microsoft.authorization/roleassignments":          "role-assignment",
-	"microsoft.operationalinsights/workspaces":         "log-analytics",
-	"microsoft.consumption/budgets":                    "budget",
-	"microsoft.network/dnszones":                       "dns-zone",
+	"Microsoft.Resources/resourceGroups":               "resource-group",
+	"Microsoft.Sql/servers":                            "sql-server",
+	"Microsoft.Sql/servers/databases":                  "sql-database",
+	"Microsoft.App/containerApps":                      "container-app",
+	"Microsoft.App/managedEnvironments":                "container-app-environment",
+	"Microsoft.ContainerRegistry/registries":           "container-registry",
+	"Microsoft.KeyVault/vaults":                        "key-vault",
+	"Microsoft.KeyVault/vaults/secrets":                "secret",
+	"Microsoft.Storage/storageAccounts":                "storage-account",
+	"Microsoft.ManagedIdentity/userAssignedIdentities": "managed-identity",
+	"Microsoft.Authorization/roleAssignments":          "role-assignment",
+	"Microsoft.OperationalInsights/workspaces":         "log-analytics",
+	"Microsoft.Consumption/budgets":                    "budget",
+	"Microsoft.Network/dnsZones":                       "dns-zone",
 }
 
 // resourceKind reads a resource's short kind and its own name from its id alone: an extension
@@ -78,8 +78,10 @@ func resourceKind(id string) (kind, name string) {
 	if r.ext != nil {
 		t = r.ext.ns + "/" + strings.Join(r.ext.types, "/")
 	}
-	if k, known := resourceKinds[strings.ToLower(t)]; known {
-		return k, name
+	for typ, k := range resourceKinds {
+		if strings.EqualFold(typ, t) {
+			return k, name
+		}
 	}
 	return "other", name
 }
