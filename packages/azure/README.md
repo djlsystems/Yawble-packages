@@ -44,7 +44,7 @@ until you set `mode` to `apply`.
    - your role allows creating resource groups (if not, ask the subscription's owner for
      Contributor);
    - each region in `regions` is offered to the subscription;
-   - each SQL server in `sharedSqlServers` and registry in `sharedRegistries` can be reached;
+   - each SQL server in `sharedSqlServers` and Azure Container Registry in `sharedContainerRegistries` can be reached;
    - the resource providers it uses (Microsoft.App, Microsoft.OperationalInsights,
      Microsoft.Storage, Microsoft.KeyVault, Microsoft.Network, Microsoft.ContainerRegistry,
      Microsoft.Sql, Microsoft.ManagedIdentity, Microsoft.Consumption and Microsoft.Insights) are
@@ -65,7 +65,8 @@ until you set `mode` to `apply`.
 | `mode` | `whatif` | `whatif` answers what each changing command would do and changes nothing; `apply` makes the changes. |
 | `allowDelete` | off | Off: every delete is refused, in whatif and apply; on: the member may delete what its team owns. |
 | `sharedSqlServers` | empty | Existing SQL servers, by name, on which the member may create its own databases. |
-| `sharedRegistries` | empty | Existing container registries, by name, it may push images to and grant pull rights on. |
+| `sharedContainerRegistries` | empty | Existing Azure Container Registries (ACR), by name such as `myregistry`, it may build and push images to and grant pull rights on; a Container App's image is pulled from one of them. |
+| `sharedRegistries` (advanced) | empty | The old name of `sharedContainerRegistries`, still read; setup and `whoami` name what is still under it so a person moves it. |
 | `monthlyBudget` | 0 | A monthly budget put on every resource group it creates, alerting at 80% and 100%; 0 means none. |
 | `budgetEmails` | empty | Who gets the budget alerts; needed when `monthlyBudget` is more than 0. |
 | `namePrefix` (advanced) | empty | Text put before the name of every resource group it creates. |
@@ -104,7 +105,7 @@ It **will**:
   Container Apps environments and apps, DNS zones, managed certificates;
 - change resources carrying those tags, or inside a resource group that does;
 - create a new database on a server in `sharedSqlServers` (tagged, and then the team's);
-- build images in, and grant pull rights on, a registry in `sharedRegistries`;
+- build images in, and grant pull rights on, an Azure Container Registry in `sharedContainerRegistries`;
 - run SQL on databases the team owns, and read and write data in storage accounts it owns;
 - grant a short list of roles (Contributor, Storage Blob/Table/Queue Data Contributor, Key Vault
   Secrets Officer, Key Vault Secrets User, AcrPull) on what the team owns, only to managed

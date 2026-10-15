@@ -221,7 +221,7 @@ const (
 //   - a resource carrying this team's tags, or inside a resource group that does;
 //   - a new resource only inside a resource group that does, except a database created, tagged,
 //     on a server in sharedSqlServers;
-//   - a push to, or an AcrPull grant on, a registry in sharedRegistries.
+//   - a push to, or an AcrPull grant on, a registry in sharedContainerRegistries.
 //
 // Reads never come here: the plugin reads anything the person can.
 func (p *plugin) guard(c change) (string, error) {

@@ -71,9 +71,12 @@ func (p *plugin) whoami(args []string) (string, error) {
 		"- mode: " + p.cfg.Mode,
 		fmt.Sprintf("- allowDelete: %s", onOff(p.cfg.AllowDelete)),
 		"- sharedSqlServers: " + or(p.cfg.SharedSQLServers, "none"),
-		"- sharedRegistries: " + or(p.cfg.SharedRegistries, "none"),
+		"- " + registriesSetting + ": " + or(p.cfg.SharedRegistries, "none"),
 		"- monthlyBudget: " + budget,
 		"- namePrefix: " + or(nonEmpty(p.cfg.NamePrefix), "none"),
+	}
+	if move := p.cfg.moveRegistries(); move != "" {
+		lines = append(lines, "- "+move)
 	}
 	return "Azure member:\n" + strings.Join(lines, "\n"), nil
 }

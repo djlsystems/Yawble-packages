@@ -48,10 +48,10 @@ func TestSetupNamesEachMissingStep(t *testing.T) {
 	f.providers["Microsoft.OperationalInsights"] = "NotRegistered"
 	f.add(ownedRG, "Microsoft.Sql/servers", "found-sql", nil)
 	cfg := baseConfig(map[string]any{
-		"regions":          []string{"westeurope", "atlantis"},
-		"sharedSqlServers": []string{"found-sql", "lost-sql"},
-		"sharedRegistries": []string{"lostregistry"},
-		"monthlyBudget":    50,
+		"regions":                   []string{"westeurope", "atlantis"},
+		"sharedSqlServers":          []string{"found-sql", "lost-sql"},
+		"sharedContainerRegistries": []string{"lostregistry"},
+		"monthlyBudget":             50,
 	})
 	tokens := map[string]string{"https://management.azure.com/": tokARM, "https://database.windows.net/": tokSQL}
 
@@ -70,8 +70,8 @@ func TestSetupNamesEachMissingStep(t *testing.T) {
 		"- sharedSqlServers reachable: found-sql",
 		"- sharedSqlServers not reachable: lost-sql",
 		"Check sharedSqlServers in this member's settings: this sign-in cannot see the SQL server lost-sql",
-		"- sharedRegistries not reachable: lostregistry",
-		"Check sharedRegistries in this member's settings: this sign-in cannot see the registry lostregistry",
+		"- sharedContainerRegistries not reachable: lostregistry",
+		"Check sharedContainerRegistries in this member's settings: this sign-in cannot see the Azure Container Registry lostregistry",
 		"- providers not registered: Microsoft.App, Microsoft.OperationalInsights; this account's role cannot register them",
 		"Ask the subscription's owner to register Microsoft.App, Microsoft.OperationalInsights",
 		"budgetEmails is empty",
@@ -632,7 +632,7 @@ func TestRoleAssignGrantsAnOwnedIdentityAndAcrPullOnASharedRegistry(t *testing.T
 	ident.Props["principalId"] = "00000000-0000-0000-0000-00000000000a"
 	f.addRG("shared-rg", nil)
 	reg := f.add("shared-rg", "Microsoft.ContainerRegistry/registries", "sharedregistry", nil)
-	cfg := apply(map[string]any{"sharedRegistries": []string{"sharedregistry"}})
+	cfg := apply(map[string]any{"sharedContainerRegistries": []string{"sharedregistry"}})
 
 	r := runPlugin(t, runOpts{config: cfg}, "role assign AcrPull "+ident.ID+" "+reg.ID)
 	if !r.ok() {

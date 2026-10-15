@@ -99,11 +99,18 @@
       "setBy": "person",
       "description": "Existing SQL servers, by name such as my-sql-server, on which the member may create its own databases; it never changes the server or another database on it."
     },
+    "sharedContainerRegistries": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "Existing Azure Container Registries (ACR), by name such as myregistry, that the member may build and push images to and grant pull rights on to its own managed identities; a Container App's image is pulled from one of them."
+    },
     "sharedRegistries": {
       "type": "list",
       "default": [],
       "setBy": "person",
-      "description": "Existing container registries, by name such as myregistry, the member may build and push images to and grant pull rights on to its own managed identities."
+      "advanced": true,
+      "description": "The old name of sharedContainerRegistries, still read; move its registries to sharedContainerRegistries."
     },
     "monthlyBudget": {
       "type": "number",

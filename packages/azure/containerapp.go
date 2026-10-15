@@ -143,7 +143,7 @@ func (p *plugin) appCreate(args []string) (string, error) {
 	}
 	m := acrImage.FindStringSubmatch(image)
 	if m == nil || !imageForm.MatchString(m[2]) {
-		return "", refusef("Refused: %q is not an image in an Azure container registry, such as <registry>.azurecr.io/my-app:1.0. This member runs images only from registries its team owns and those in sharedRegistries.", image)
+		return "", refusef("Refused: %q is not an image in an Azure container registry, such as <registry>.azurecr.io/my-app:1.0. This member runs images only from registries its team owns and those in sharedContainerRegistries.", image)
 	}
 	port := 0
 	cpu := 0.5
@@ -229,7 +229,7 @@ func (p *plugin) appCreate(args []string) (string, error) {
 	if why, err := p.guard(change{id: registry.ID, kind: changeGrant, role: roleAcrPull}); err != nil {
 		return "", err
 	} else if why != "" {
-		return "", refusef("Refused: %s. This member runs images only from registries its team owns and those in sharedRegistries. Nothing was changed.", why)
+		return "", refusef("Refused: %s. This member runs images only from registries its team owns and those in sharedContainerRegistries. Nothing was changed.", why)
 	}
 	vaults := map[string]resource{}
 	vaultSecrets, keySecrets := 0, 0

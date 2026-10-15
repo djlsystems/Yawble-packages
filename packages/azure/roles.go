@@ -146,7 +146,7 @@ func (p *plugin) roleAssign(args []string) (string, error) {
 	if why, err := p.guard(change{id: scope, kind: changeGrant, role: role}); err != nil {
 		return "", err
 	} else if why != "" {
-		return "", refusef("Refused: %s. This member grants roles only on what its team owns, and AcrPull on a registry in sharedRegistries. Nothing was changed.", why)
+		return "", refusef("Refused: %s. This member grants roles only on what its team owns, and AcrPull on a registry in sharedContainerRegistries. Nothing was changed.", why)
 	}
 	principal, err := p.identityPrincipal(identity)
 	if err != nil {

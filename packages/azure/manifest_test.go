@@ -57,7 +57,7 @@ func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 	if m.ID != "azure" || m.Version != "1.1.2" {
 		t.Fatalf("id %q version %q", m.ID, m.Version)
 	}
-	settingNames := []string{"subscription", "regions", "mode", "allowDelete", "sharedSqlServers", "sharedRegistries", "monthlyBudget", "budgetEmails", "namePrefix"}
+	settingNames := []string{"subscription", "regions", "mode", "allowDelete", "sharedSqlServers", "sharedContainerRegistries", "sharedRegistries", "monthlyBudget", "budgetEmails", "namePrefix"}
 	for _, name := range settingNames {
 		c, ok := m.Config[name]
 		if !ok || c.SetBy != "person" {
@@ -73,6 +73,16 @@ func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 	}
 	if m.Config["mode"].Default != "whatif" || m.Config["allowDelete"].Default != false || m.Config["namePrefix"].Default != "" || !m.Config["namePrefix"].Advanced {
 		t.Fatalf("defaults: mode %v, allowDelete %v, namePrefix %v", m.Config["mode"].Default, m.Config["allowDelete"].Default, m.Config["namePrefix"].Default)
+	}
+
+	// sharedContainerRegistries is the setting; sharedRegistries, its old name, stays declared so the
+	// Host still hands a stored value to the run.
+	if d := m.Config["sharedContainerRegistries"].Description; m.Config["sharedContainerRegistries"].Advanced ||
+		!strings.HasPrefix(d, "Existing Azure Container Registries (ACR), by name such as myregistry,") || !strings.Contains(d, "Container App's image is pulled from one of them.") {
+		t.Fatalf("sharedContainerRegistries: %+v", m.Config["sharedContainerRegistries"])
+	}
+	if old := m.Config["sharedRegistries"]; !old.Advanced || old.Type != "list" || !strings.Contains(old.Description, "old name of sharedContainerRegistries") {
+		t.Fatalf("sharedRegistries: %+v", old)
 	}
 
 	// Regions are chosen from a list, eastus2 unless a person picks others.

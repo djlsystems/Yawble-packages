@@ -29,7 +29,9 @@ Everything the member creates carries the tags `yawble-owner: <team id>` and
 
 - a resource carrying this team's tags, or anything inside a resource group that does;
 - a new database on a server in `sharedSqlServers`, which is tagged and then owned;
-- images built in, and AcrPull granted on, a registry in `sharedRegistries`.
+- images built in, and AcrPull granted on, an Azure Container Registry in
+  `sharedContainerRegistries` (`sharedRegistries` is its old name, still read; setup and
+  `whoami` say to move what is still there).
 
 SQL runs only on a database the team owns, even on a shared server. Blob, table and queue changes
 go only to storage accounts the team owns. It reads anything the person can read. Anything else is refused, naming the resource, and
@@ -87,7 +89,7 @@ Registries:
 
 - `acr create <resource group> <registry> [Basic|Standard|Premium]` - admin user off.
 - `acr build <registry> <image:tag> <folder>` - into an owned registry or one in
-  `sharedRegistries`. Uploads the folder (without `.git` and what `.dockerignore` leaves out),
+  `sharedContainerRegistries`. Uploads the folder (without `.git` and what `.dockerignore` leaves out),
   builds its `Dockerfile` in the registry, and answers the digest and the end of the log.
 
 Azure SQL (Microsoft Entra sign-in only; no SQL password exists):

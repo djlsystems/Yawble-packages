@@ -16,9 +16,10 @@ import (
 )
 
 // Container registries: create one in an owned resource group, and build an image in one the team
-// owns or one in sharedRegistries. A build uploads the folder (less what .dockerignore leaves out)
-// to the address the registry hands out for it, runs the registry's own build, and answers the
-// image's digest and the end of the build's log. No registry password or key is ever asked for.
+// owns or one in sharedContainerRegistries. A build uploads the folder (less what .dockerignore
+// leaves out) to the address the registry hands out for it, runs the registry's own build, and
+// answers the image's digest and the end of the build's log. No registry password or key is ever
+// asked for.
 
 const (
 	acrRunsAPIVersion = "2019-06-01-preview"
@@ -118,7 +119,7 @@ func (p *plugin) acrBuild(args []string) (string, error) {
 	if why, err := p.guard(change{id: registry.ID, kind: changePush}); err != nil {
 		return "", err
 	} else if why != "" {
-		return "", refusef("Refused: %s. This member builds only into registries its team owns and those in sharedRegistries. Nothing was changed.", why)
+		return "", refusef("Refused: %s. This member builds only into registries its team owns and those in sharedContainerRegistries. Nothing was changed.", why)
 	}
 	source, files, err := packFolder(dir)
 	if err != nil {
