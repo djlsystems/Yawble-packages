@@ -142,6 +142,27 @@ Each `watch` checks every follow of the mailbox for a reply, as `replied` does:
   one due, once. A reply is still found, and answered, in quiet hours.
 - A follow that cannot be checked stays followed, and the check names it.
 
+## Events for the Monitor
+
+A command that changed the mailbox publishes, after the mailbox took the change:
+
+- `plugin.mail.sent`: ONE per email sent (`send`, or `reply`, in send mode): `mailbox`, `id`,
+  `thread` (each empty where the provider answers none: Microsoft Graph gives no sent id), `to` (how
+  many recipients, To, Cc and Bcc - never the addresses) and `subject`. The Monitor shows it as
+  created, icon `send`, labelled with the subject.
+- `plugin.mail.drafted`: ONE per draft saved (`draft`, `send` in draft mode, `reply` in draft
+  mode): `mailbox`, `id` and `subject`. The Monitor shows it as created, icon `drafts`, labelled with
+  the subject.
+- `plugin.mail.changed`: ONE per message marked, moved or labelled: `mailbox`, `id` (a moved
+  message's new id where the provider gives one), `subject`, `action` (always `changed`) and `change`
+  (`read` for mark-read, `unread` for mark-unread, `moved`, `labelled`). High-volume. The Monitor shows it as
+  changed, icon `mail`, labelled `<change>: <subject>`.
+
+A subject is one line, cut to 120 characters. No event carries a body, an address list or an
+attachment. A read (`list`, `search`, `read`, `folders`, `watch`, `replied`), a refusal, `ack`,
+`follow` and `unfollow` publish none of them. The received, unanswered and answered events have no
+Monitor line.
+
 ## Output
 
 - `list` and `search`: a count line, then one line per message, newest first:

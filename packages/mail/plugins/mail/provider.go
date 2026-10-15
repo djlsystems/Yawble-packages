@@ -27,8 +27,13 @@ type provider interface {
 	// labelUsesFolder is true when label puts a message in a folder or label that must exist
 	// (Gmail, Gmail's IMAP), false when it marks the message (Graph's categories, IMAP keywords).
 	labelUsesFolder(ctx context.Context) (bool, error)
-	draft(ctx context.Context, o outgoing) (string, error)
-	send(ctx context.Context, o outgoing) (string, error)
+	// draft and send answer the run's words and the message they made: its id and thread where
+	// the provider gives them, "" where it does not.
+	draft(ctx context.Context, o outgoing) (string, made, error)
+	send(ctx context.Context, o outgoing) (string, made, error)
+	// subjects answers the subject of each message it finds, reading only the headers and never
+	// marking a message read. It is best effort: a message it cannot find is left out.
+	subjects(ctx context.Context, ids []string) map[string]string
 	// watchStart sets a new position at now and answers what the look-back finds.
 	watchStart(ctx context.Context, w watchSpec) (position, []summary, error)
 	// watchNext answers the messages added since pos, oldest first, at most w.max of them, and
@@ -117,11 +122,18 @@ type outgoing struct {
 	To, Cc, Bcc   []string
 	Subject, Body string
 	HTML          string
+	// MessageID is the Message-ID header to write, when the sender chose one; else one is made.
+	MessageID string
 
 	InReplyTo, References string
 	Thread                string
 	ReplyOf               string
 	ReplyAll              bool
+}
+
+// made is a message draft or send made: its id and thread, "" where the provider answers none.
+type made struct {
+	ID, Thread string
 }
 
 // watchSpec is what one check of the watch looks at.

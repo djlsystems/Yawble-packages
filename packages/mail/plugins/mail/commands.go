@@ -22,7 +22,7 @@ type mailer struct {
 	settings settings
 	progress func(string)
 	watch    *watchStore
-	// publish publishes one event: received, unanswered or answered.
+	// publish publishes one event: received, unanswered, answered, sent, drafted or changed.
 	publish func(kind string, payload map[string]any)
 	// quiet is false once a command did something a person should see on the card.
 	quiet bool
@@ -320,6 +320,7 @@ func (m *mailer) markRead(ctx context.Context, args []string, read bool) (string
 	if err != nil {
 		return "", err
 	}
+	subjects := m.p.subjects(ctx, ids)
 	m.progress(fmt.Sprintf("%s on %d messages", cmd, len(ids)))
 	if err := m.p.setRead(ctx, ids, read); err != nil {
 		return "", err
@@ -328,6 +329,7 @@ func (m *mailer) markRead(ctx context.Context, args []string, read bool) (string
 	if read {
 		state = "read"
 	}
+	m.publishChanged(ids, subjects, nil, state)
 	return fmt.Sprintf("Marked %d messages %s: %s.", len(ids), state, strings.Join(ids, ", ")), nil
 }
 
@@ -360,11 +362,14 @@ func (m *mailer) move(ctx context.Context, cmd string, args []string) (string, e
 	if err != nil {
 		return "", err
 	}
+	// Read before the change: a move gives a message a new id.
+	subjects := m.p.subjects(ctx, ids)
 	if cmd == "label" {
 		m.progress(fmt.Sprintf("labelling %d messages", len(ids)))
 		if err := m.p.label(ctx, ids, target); err != nil {
 			return "", err
 		}
+		m.publishChanged(ids, subjects, nil, "labelled")
 		if created != "" {
 			return fmt.Sprintf("Created label %s; labelled %d messages: %s.", created, len(ids), strings.Join(ids, ", ")), nil
 		}
@@ -377,6 +382,7 @@ func (m *mailer) move(ctx context.Context, cmd string, args []string) (string, e
 	if err != nil {
 		return "", err
 	}
+	m.publishChanged(ids, subjects, moved, "moved")
 	var parts []string
 	for _, id := range ids {
 		if n, ok := moved[id]; ok {
@@ -438,13 +444,19 @@ func (m *mailer) send(ctx context.Context, text string, draft bool) (string, err
 	}
 	if m.settings.mode == "send" && !draft {
 		m.progress("sending one email")
-		return m.p.send(ctx, o)
+		out, mk, err := m.p.send(ctx, o)
+		if err != nil {
+			return "", err
+		}
+		m.publishSent(o, mk)
+		return out, nil
 	}
 	m.progress("creating one draft")
-	out, err := m.p.draft(ctx, o)
+	out, mk, err := m.p.draft(ctx, o)
 	if err != nil {
 		return "", err
 	}
+	m.publishDrafted(o, mk)
 	if draft {
 		return out + " The person sends the draft from their mailbox.", nil
 	}

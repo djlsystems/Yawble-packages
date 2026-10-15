@@ -11,7 +11,7 @@ counts and open inquiries back within a minute.
 | `skills/support-playbook.md` | The rules the Manager follows for every event. You edit it in Team settings, Skills. |
 | `sites/support/` | The team's page: running counts, the last summary, open and closed inquiries. |
 | `sites/mail/`, `sites/twilio/` | The pages the mail and twilio plugins keep their state on, as the Mail and Twilio packages ship them. |
-| `plugins/mail/build.sh` | Builds the mail plugin 2.2.1 from `packages/mail/plugins/mail`. |
+| `plugins/mail/build.sh` | Builds the mail plugin 2.3.0 from `packages/mail/plugins/mail`. |
 | `plugins/twilio/build.sh` | Builds the twilio plugin 1.5.0 from `packages/twilio/plugins/twilio`. |
 | `.tests/` | The package's tests (Go); not part of the zip. |
 

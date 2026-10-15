@@ -3,7 +3,7 @@
   "id": "mail",
   "name": "Mail",
   "description": "Lists, searches, reads, marks, moves and labels mail, drafts or sends email - as HTML made from the text by default, or as plain text with format: text - drafts or sends a reply threaded to the message it answers, says whether a message was replied to, follows a message until it is, and watches a folder for new mail, over an IMAP app-password mailbox, Microsoft or Google. Drafts only by default; sends only to a person's allowlist; never deletes.",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "protocol": "harness.member/1",
   "executable": { "path": "bin/linux-x64/mail", "args": [] },
   "platforms": {
@@ -164,6 +164,43 @@
           { "name": "count", "kind": "number", "summary": "How many followed messages the event lists." },
           { "name": "ids", "kind": "string", "summary": "Their ids, comma-separated." },
           { "name": "messages", "kind": "list", "summary": "Each message: id, from, subject, since (when it arrived) and repliedAt (when the reply was sent)." }
+        ]
+      },
+      {
+        "type": "sent",
+        "summary": "Mail sent one email: the send command, or reply, in send mode. One event per message sent; never a body, an address or an attachment.",
+        "highVolume": false,
+        "monitor": { "icon": "send", "action": "created", "label": "{subject}" },
+        "fields": [
+          { "name": "mailbox", "kind": "string", "summary": "The mailbox's address." },
+          { "name": "id", "kind": "string", "summary": "The sent message's id: Gmail's message id, the Message-ID over SMTP; empty from Microsoft Graph, which answers none." },
+          { "name": "thread", "kind": "string", "summary": "Its thread: Gmail's threadId, the original's conversationId for a Microsoft reply, the Message-ID over SMTP; empty where the provider answers none." },
+          { "name": "to", "kind": "number", "summary": "How many recipients it went to (To, Cc and Bcc), never who." },
+          { "name": "subject", "kind": "string", "summary": "Its subject on one line, cut to 120 characters." }
+        ]
+      },
+      {
+        "type": "drafted",
+        "summary": "Mail saved one draft: the draft command, send in draft mode, or reply in draft mode. Nothing was sent; never a body, an address or an attachment.",
+        "highVolume": false,
+        "monitor": { "icon": "drafts", "action": "created", "label": "{subject}" },
+        "fields": [
+          { "name": "mailbox", "kind": "string", "summary": "The mailbox's address." },
+          { "name": "id", "kind": "string", "summary": "The draft's message id; empty when the IMAP server answers none." },
+          { "name": "subject", "kind": "string", "summary": "Its subject on one line, cut to 120 characters." }
+        ]
+      },
+      {
+        "type": "changed",
+        "summary": "Mail marked one message read or unread, moved it or labelled it. One event per message; Mail never deletes.",
+        "highVolume": true,
+        "monitor": { "icon": "mail", "actionField": "action", "label": "{change}: {subject}" },
+        "fields": [
+          { "name": "mailbox", "kind": "string", "summary": "The mailbox's address." },
+          { "name": "id", "kind": "string", "summary": "The message's id; after a move, its new id where the provider gives one." },
+          { "name": "subject", "kind": "string", "summary": "Its subject on one line, cut to 120 characters; empty when it could not be read." },
+          { "name": "action", "kind": "string", "summary": "Always changed: no command here makes or removes a message." },
+          { "name": "change", "kind": "string", "summary": "read (mark-read), unread (mark-unread), moved or labelled." }
         ]
       }
     ]
