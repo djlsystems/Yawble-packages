@@ -1,4 +1,4 @@
-# Customer Support 1.0.2
+# Customer Support 1.1.0
 
 A solution package: a team that watches your mailbox, sorts new mail by your rules and texts your
 cell about it. Each batch of new mail gets a short summary text; each inquiry gets an alert at once
@@ -105,6 +105,12 @@ counting started, the last summary and whether its text went out) and the `inqui
 `open` or `closed`). The launcher tile shows the open inquiries. The `mail` and `twilio` sites show
 Mailer's watch and follows and twilio's texts and setup.
 
+## What changed in 1.1.0
+
+- The package ships the mail plugin 2.3.0 and the twilio plugin 1.5.0, which publish the mail
+  they send, draft or change in a mailbox and each text they send, with hints for the Monitor.
+  Triggers, rules, alerts and reminders are as in 1.0.2.
+
 ## What changed in 1.0.2
 
 - The setup steps say a Twilio key's value is set on the screen first, in the value box under
@@ -137,7 +143,7 @@ From the repository root:
 ```
 (cd packages/customer-support/.tests && go test -count=1 ./...)
 scripts/build.sh
-mkdir /tmp/customer-support && cd /tmp/customer-support && unzip <repository>/dist/customer-support-1.0.2.zip
+mkdir /tmp/customer-support && cd /tmp/customer-support && unzip <repository>/dist/customer-support-1.1.0.zip
 yawble solution check /tmp/customer-support
 ```
 
