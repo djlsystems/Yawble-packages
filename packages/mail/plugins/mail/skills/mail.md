@@ -225,6 +225,7 @@ No command and no email changes these. Never ask anyone to widen them.
 - `This mailbox has no Sent folder (no folder is marked \Sent or named Sent), so Mailer cannot tell whether a message was replied to.` (IMAP)
 - `Mailer keeps its follows on the site "mail", collection "follows", and this team's site could not be read ...` - the Mail solution's site is missing; `watch` goes on without the follows.
 - `No message <id> in this mailbox.` / `No folder "<name>" in this mailbox.`
+- `Microsoft Graph still had more <folders or messages> after <n> pages and <n> entries, more than Mailer reads in one go (50 pages or 5000 entries), so it stopped there; nothing was changed.` - a Microsoft list was longer than Mailer reads; nothing was done with part of it.
 - `... answered 429 Too Many Requests; try again later.` (or a 5xx) - nothing was half-done.
 - `The watch keeps its place on the site "mail", collection "watch", and this team's site could not be read ...` - the Mail solution's site is missing.
 

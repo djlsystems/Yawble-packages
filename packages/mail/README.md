@@ -1,4 +1,4 @@
-# Mail 2.3.0
+# Mail 2.3.1
 
 A team that works with your mailbox: a Manager you talk to, and a plugin member, Mailer, that lists,
 searches and reads your mail, files it when you allow that, watches your Inbox for new mail, and
@@ -123,6 +123,15 @@ for triggers and have no Monitor line. Mailer never deletes, so nothing is ever 
   mode; every recipient must still be on `sendAllowlist`. The original is quoted below the reply
   only when you ask.
 - No deleting, ever. No forwards, and no attachments.
+
+## What changed in 2.3.1
+
+- The mail plugin 2.3.1 reads every page of a Microsoft mailbox's folder lists (and of the other
+  lists it reads from Microsoft Graph), so a mailbox with more than 100 folders, or a folder with
+  more than 100 subfolders, finds them all for `move`, `label`, `folders`, `list` and the watch. A
+  nested path such as `Inbox/Clients/Acme` is found level by level. Mailer reads at most 50 pages
+  or 5,000 entries of one list; past that the command fails, saying how far it read, rather than
+  going on with part of the list. Gmail and IMAP are as in 2.3.0.
 
 ## Try it
 

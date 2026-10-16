@@ -72,14 +72,62 @@ func (g *graph) topFolders(ctx context.Context) ([]graphFolder, error) {
 	if g.top != nil {
 		return g.top, nil
 	}
-	var v struct {
-		Value []graphFolder `json:"value"`
+	top, err := graphPages[graphFolder](ctx, g, "/me/mailFolders", url.Values{"$top": {"100"}, "$select": {"id,displayName"}}, "folders", 0)
+	if err != nil {
+		return nil, graphFailure(err)
 	}
-	if err := g.api.call(ctx, "GET", "/me/mailFolders", url.Values{"$top": {"100"}, "$select": {"id,displayName"}}, nil, &v); err != nil {
-		return nil, failure(graphWords.describe(err, scopeGraphReadWrite, false))
-	}
-	g.top = append([]graphFolder{}, v.Value...)
+	g.top = append([]graphFolder{}, top...)
 	return g.top, nil
+}
+
+const (
+	// graphMaxPages and graphMaxEntries bound how far one collection is read through its
+	// nextLinks; past either the command fails, saying how far it read, rather than going on with
+	// part of the list.
+	graphMaxPages   = 50
+	graphMaxEntries = 5000
+)
+
+// graphPages reads a collection page by page, following @odata.nextLink until there is none, or
+// until it holds want entries when want is above 0. what names the entries in the failure words.
+func graphPages[T any](ctx context.Context, g *graph, path string, params url.Values, what string, want int) ([]T, error) {
+	var out []T
+	link, pages := path, 0
+	for {
+		var page struct {
+			Value    []T    `json:"value"`
+			NextLink string `json:"@odata.nextLink"`
+		}
+		if err := g.api.call(ctx, "GET", link, params, nil, &page); err != nil {
+			return nil, err
+		}
+		pages++
+		out = append(out, page.Value...)
+		if page.NextLink == "" || (want > 0 && len(out) >= want) {
+			if len(out) > graphMaxEntries {
+				return nil, graphTooMany(what, pages, len(out))
+			}
+			return out, nil
+		}
+		if pages >= graphMaxPages || len(out) >= graphMaxEntries {
+			return nil, graphTooMany(what, pages, len(out))
+		}
+		// The nextLink carries the query; asking it again would repeat it.
+		link, params = page.NextLink, nil
+	}
+}
+
+func graphTooMany(what string, pages, entries int) error {
+	return failure(fmt.Sprintf("Microsoft Graph still had more %s after %d pages and %d entries, more than Mailer reads in one go (%d pages or %d entries), so it stopped there; nothing was changed.",
+		what, pages, entries, graphMaxPages, graphMaxEntries))
+}
+
+// graphFailure is a call's error in the run's words; a failure already worded passes through.
+func graphFailure(err error) error {
+	if _, ok := err.(failure); ok {
+		return err
+	}
+	return failure(graphWords.describe(err, scopeGraphReadWrite, false))
 }
 
 // findFolder is folderID answering found false for a folder the mailbox does not have.
@@ -109,22 +157,24 @@ func (g *graph) findFolder(ctx context.Context, name string) (string, bool, erro
 	if len(path) < 2 {
 		return "", false, nil
 	}
+	// A path is resolved level by level, each level's children read through all their pages.
 	id, ok := match(top, path[0])
+	if wk, known := graphWellKnown[strings.ToLower(path[0])]; !ok && known {
+		id, ok = wk, true
+	}
 	for _, part := range path[1:] {
 		if !ok {
 			return "", false, nil
 		}
-		var v struct {
-			Value []graphFolder `json:"value"`
-		}
-		err := g.api.call(ctx, "GET", "/me/mailFolders/"+url.PathEscape(id)+"/childFolders", url.Values{"$top": {"100"}, "$select": {"id,displayName"}}, nil, &v)
+		children, err := graphPages[graphFolder](ctx, g, "/me/mailFolders/"+url.PathEscape(id)+"/childFolders",
+			url.Values{"$top": {"100"}, "$select": {"id,displayName"}}, "folders in "+strconv.Quote(name), 0)
 		if isStatus(err, 404) {
 			return "", false, nil
 		}
 		if err != nil {
-			return "", false, failure(graphWords.describe(err, scopeGraphReadWrite, false))
+			return "", false, graphFailure(err)
 		}
-		id, ok = match(v.Value, part)
+		id, ok = match(children, part)
 	}
 	return id, ok, nil
 }
@@ -277,17 +327,15 @@ func (g *graph) list(ctx context.Context, q query) ([]summary, string, error) {
 			where = "in any folder"
 		}
 	}
-	var v struct {
-		Value []graphMessage `json:"value"`
-	}
-	if err := g.api.call(ctx, "GET", path, params, nil, &v); err != nil {
+	msgs, err := graphPages[graphMessage](ctx, g, path, params, "messages", q.Max)
+	if err != nil {
 		if isStatus(err, 404) {
 			return nil, "", failure("No folder " + strconv.Quote(q.Folder) + " in this mailbox.")
 		}
-		return nil, "", failure(graphWords.describe(err, scopeGraphReadWrite, false))
+		return nil, "", graphFailure(err)
 	}
 	var out []summary
-	for _, m := range v.Value {
+	for _, m := range msgs {
 		out = append(out, m.summary())
 	}
 	return out, where, nil
@@ -597,14 +645,12 @@ func (g *graph) replied(ctx context.Context, o original) (*sentReply, error) {
 		return nil, failure("The message has no conversation, so Mailer cannot tell whether it was replied to.")
 	}
 	params := url.Values{"$filter": {"conversationId eq " + odataQuote(o.Thread)}, "$select": {"id,conversationId,subject,sentDateTime,isDraft"}, "$top": {"50"}}
-	var v struct {
-		Value []graphMessage `json:"value"`
-	}
-	if err := g.api.call(ctx, "GET", "/me/mailFolders/sentitems/messages", params, nil, &v); err != nil {
-		return nil, failure(graphWords.describe(err, scopeGraphReadWrite, false))
+	msgs, err := graphPages[graphMessage](ctx, g, "/me/mailFolders/sentitems/messages", params, "sent messages in the conversation", 0)
+	if err != nil {
+		return nil, graphFailure(err)
 	}
 	var first *sentReply
-	for _, m := range v.Value {
+	for _, m := range msgs {
 		if m.IsDraft || m.ConversationID != o.Thread || !m.SentDateTime.After(o.Arrived) || (first != nil && !m.SentDateTime.Before(first.Sent)) {
 			continue
 		}

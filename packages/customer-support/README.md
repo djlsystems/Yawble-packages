@@ -1,4 +1,4 @@
-# Customer Support 1.1.0
+# Customer Support 1.1.1
 
 A solution package: a team that watches your mailbox, sorts new mail by your rules and texts your
 cell about it. Each batch of new mail gets a short summary text; each inquiry gets an alert at once
@@ -11,7 +11,7 @@ counts and open inquiries back within a minute.
 | `skills/support-playbook.md` | The rules the Manager follows for every event. You edit it in Team settings, Skills. |
 | `sites/support/` | The team's page: running counts, the last summary, open and closed inquiries. |
 | `sites/mail/`, `sites/twilio/` | The pages the mail and twilio plugins keep their state on, as the Mail and Twilio packages ship them. |
-| `plugins/mail/build.sh` | Builds the mail plugin 2.3.0 from `packages/mail/plugins/mail`. |
+| `plugins/mail/build.sh` | Builds the mail plugin 2.3.1 from `packages/mail/plugins/mail`. |
 | `plugins/twilio/build.sh` | Builds the twilio plugin 1.5.0 from `packages/twilio/plugins/twilio`. |
 | `.tests/` | The package's tests (Go); not part of the zip. |
 
@@ -105,6 +105,13 @@ counting started, the last summary and whether its text went out) and the `inqui
 `open` or `closed`). The launcher tile shows the open inquiries. The `mail` and `twilio` sites show
 Mailer's watch and follows and twilio's texts and setup.
 
+## What changed in 1.1.1
+
+- The package ships the mail plugin 2.3.1, which reads every page of a Microsoft mailbox's folder
+  lists, so mailboxes with more than 100 folders (or a folder with more than 100 subfolders) find
+  them all; past 50 pages or 5,000 entries a command fails saying how far it read. Nothing else
+  changed.
+
 ## What changed in 1.1.0
 
 - The package ships the mail plugin 2.3.0 and the twilio plugin 1.5.0, which publish the mail
@@ -143,7 +150,7 @@ From the repository root:
 ```
 (cd packages/customer-support/.tests && go test -count=1 ./...)
 scripts/build.sh
-mkdir /tmp/customer-support && cd /tmp/customer-support && unzip <repository>/dist/customer-support-1.1.0.zip
+mkdir /tmp/customer-support && cd /tmp/customer-support && unzip <repository>/dist/customer-support-1.1.1.zip
 yawble solution check /tmp/customer-support
 ```
 

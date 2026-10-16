@@ -153,7 +153,7 @@ func memberPlugin(t *testing.T, s solution, name string) plugin {
 
 func TestIdentity(t *testing.T) {
 	s, _ := loadSolution(t)
-	if s.Format != 1 || s.ID != "customer-support" || s.Name != "Customer Support" || s.Version != "1.1.0" {
+	if s.Format != 1 || s.ID != "customer-support" || s.Name != "Customer Support" || s.Version != "1.1.1" {
 		t.Fatalf("identity: format %d id %q name %q version %q", s.Format, s.ID, s.Name, s.Version)
 	}
 }
@@ -161,8 +161,8 @@ func TestIdentity(t *testing.T) {
 func TestMembers(t *testing.T) {
 	s, _ := loadSolution(t)
 	ps := plugins(t)
-	if v := ps["mail"].Version; v != "2.3.0" {
-		t.Fatalf("the published mail plugin is %s, want 2.3.0", v)
+	if v := ps["mail"].Version; v != "2.3.1" {
+		t.Fatalf("the published mail plugin is %s, want 2.3.1", v)
 	}
 	if v := ps["twilio"].Version; v != "1.5.0" {
 		t.Fatalf("the published twilio plugin is %s, want 1.5.0", v)
