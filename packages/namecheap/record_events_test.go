@@ -56,13 +56,17 @@ func TestTheManifestDeclaresTheRecordEventAndItsMonitorHint(t *testing.T) {
 	if !rec.HighVolume {
 		t.Errorf("record is not highVolume")
 	}
-	want := []string{"domain", "recordType", "host", "value", "action", "backupId"}
+	want := []string{"domain", "recordType", "host", "value", "action", "backupId", "live"}
 	if got := fieldNames(rec); !reflect.DeepEqual(got, want) {
 		t.Errorf("record fields %v, want %v", got, want)
 	}
 	for _, f := range rec.Fields {
-		if f.Kind != "string" {
-			t.Errorf("record field %s is %s, want string", f.Name, f.Kind)
+		wantKind := "string"
+		if f.Name == "live" {
+			wantKind = "boolean"
+		}
+		if f.Kind != wantKind {
+			t.Errorf("record field %s is %s, want %s", f.Name, f.Kind, wantKind)
 		}
 	}
 	wantHint := map[string]any{"icon": "dns", "actionField": "action", "label": "{recordType} {host}.{domain}"}
@@ -71,7 +75,7 @@ func TestTheManifestDeclaresTheRecordEventAndItsMonitorHint(t *testing.T) {
 	}
 
 	// changed keeps its fields and stays the summary; neither it nor refused has a hint.
-	if got := fieldNames(events["changed"]); !reflect.DeepEqual(got, []string{"domain", "command", "added", "changed", "removed", "backupId"}) {
+	if got := fieldNames(events["changed"]); !reflect.DeepEqual(got, []string{"domain", "command", "added", "changed", "removed", "backupId", "live"}) {
 		t.Errorf("changed fields %v", got)
 	}
 	for _, typ := range []string{"changed", "refused"} {
@@ -100,11 +104,11 @@ func TestApplyPublishesOneRecordEventPerRecordAddedChangedOrRemoved(t *testing.T
 		want map[string]any
 	}{
 		{`ensure example.com TXT _acme-challenge "token-placeholder-123"`,
-			map[string]any{"recordType": "TXT", "host": "_acme-challenge", "value": "token-placeholder-123", "action": "added"}},
+			map[string]any{"recordType": "TXT", "host": "_acme-challenge", "value": "token-placeholder-123", "action": "added", "live": true}},
 		{"ensure example.com A blog 203.0.113.99",
-			map[string]any{"recordType": "A", "host": "blog", "value": "203.0.113.99", "action": "changed"}},
+			map[string]any{"recordType": "A", "host": "blog", "value": "203.0.113.99", "action": "changed", "live": true}},
 		{"remove example.com TXT _dmarc",
-			map[string]any{"recordType": "TXT", "host": "_dmarc", "value": "v=DMARC1; p=none; rua=mailto:dmarc@example.com", "action": "removed"}},
+			map[string]any{"recordType": "TXT", "host": "_dmarc", "value": "v=DMARC1; p=none; rua=mailto:dmarc@example.com", "action": "removed", "live": true}},
 	} {
 		r := n.run(tc.cmd)
 		if !r.ok {
@@ -201,7 +205,7 @@ func TestNoRecordEventHoldsACredential(t *testing.T) {
 	if len(all) != 3 {
 		t.Fatalf("record events %v", all)
 	}
-	allowed := map[string]bool{"domain": true, "recordType": true, "host": true, "value": true, "action": true, "backupId": true}
+	allowed := map[string]bool{"domain": true, "recordType": true, "host": true, "value": true, "action": true, "backupId": true, "live": true}
 	for _, rec := range all {
 		for k, v := range rec {
 			s := fmt.Sprint(v)

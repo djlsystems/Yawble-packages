@@ -15,6 +15,8 @@ type settings struct {
 	Mode     string   // dryrun or apply
 	ClientIP string   // empty: found from the address service
 	Sandbox  bool
+	// DefaultTTL is the ttl ensure gives a record it adds when the command names none.
+	DefaultTTL int
 }
 
 type secrets struct {
@@ -28,7 +30,7 @@ func normaliseDomain(d string) string {
 }
 
 func parseSettings(raw map[string]json.RawMessage) (settings, string) {
-	s := settings{Domains: []string{}, Mode: "dryrun"}
+	s := settings{Domains: []string{}, Mode: "dryrun", DefaultTTL: automaticTTL}
 
 	var problems []string
 	str := func(name string, into *string) {
@@ -46,6 +48,14 @@ func parseSettings(raw map[string]json.RawMessage) (settings, string) {
 	if v, ok := raw["sandbox"]; ok && string(v) != "null" {
 		if json.Unmarshal(v, &s.Sandbox) != nil {
 			problems = append(problems, "`sandbox` must be on or off")
+		}
+	}
+	if v, ok := raw["defaultTtl"]; ok && string(v) != "null" {
+		var f float64
+		if json.Unmarshal(v, &f) != nil || f != float64(int(f)) || int(f) < minTTL || int(f) > maxTTL {
+			problems = append(problems, fmt.Sprintf("`defaultTtl` must be a whole number from %d to %d", minTTL, maxTTL))
+		} else {
+			s.DefaultTTL = int(f)
 		}
 	}
 	if v, ok := raw["domains"]; ok && string(v) != "null" {

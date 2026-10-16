@@ -16,7 +16,8 @@ import (
 //  4. dry run answers the set before and after and stops;
 //  5. the set before is saved as a backup in the member's workspace;
 //  6. the whole set after is written, read back, and every record it holds - every record that was
-//     there and is not the one changed - must be in what Namecheap answers.
+//     there and is not the one changed - must be in what Namecheap answers;
+//  7. the domain's own name servers are asked whether they serve the change (live.go).
 
 // readSet reads a listed domain's set, refusing as the rule says.
 func (p *plugin) readSet(domain string) (*hostSet, error) {
@@ -110,6 +111,12 @@ func (p *plugin) apply(command, domain string, set *hostSet, c change, mailBase 
 		return "", fmt.Errorf("%s was written, but reading it back shows %d record(s) missing:\n%s\nThe set before is backup %s; `restore %s %s` puts it back.", domain, len(lost), lines(lost), id, domain, id)
 	}
 
+	lives, liveText := p.confirm(domain, c)
+	allLive := true
+	for _, l := range lives {
+		allLive = allLive && l
+	}
+
 	changed := []string{}
 	for _, pair := range c.changed {
 		changed = append(changed, pair[0].String()+" -> "+pair[1].String())
@@ -121,31 +128,38 @@ func (p *plugin) apply(command, domain string, set *hostSet, c change, mailBase 
 		"changed":  changed,
 		"removed":  strs(c.removed),
 		"backupId": id,
+		"live":     allLive,
 	})
-	p.publishRecords(domain, c, id)
-	return fmt.Sprintf("%s: %s%s\nBackup %s holds the set before; `restore %s %s` puts it back.\nNow (%d records, every earlier record checked present):\n%s",
-		domain, summary, mail, id, domain, id, len(got.Records), lines(got.Records)), nil
+	p.publishRecords(domain, c, id, lives)
+	return fmt.Sprintf("%s: %s%s\nBackup %s holds the set before; `restore %s %s` puts it back.\nNow (%d records, every earlier record checked present):\n%s\n%s",
+		domain, summary, mail, id, domain, id, len(got.Records), lines(got.Records), liveText), nil
 }
 
 // recordEventCap is the most record events one command publishes; past it, changed covers the rest.
 const recordEventCap = 25
 
 // publishRecords publishes one record event per record a written and checked change added,
-// changed or removed, up to recordEventCap. value is the record's public DNS value as written.
-func (p *plugin) publishRecords(domain string, c change, backupID string) {
+// changed or removed, up to recordEventCap. value is the record's public DNS value as written;
+// live is whether the name servers serve the change (lives is in the same order: added, changed,
+// removed).
+func (p *plugin) publishRecords(domain string, c change, backupID string, lives []bool) {
 	type one struct {
 		r      record
 		action string
+		live   bool
 	}
 	var all []one
 	for _, r := range c.added {
-		all = append(all, one{r, "added"})
+		all = append(all, one{r, "added", false})
 	}
 	for _, pair := range c.changed {
-		all = append(all, one{pair[1], "changed"})
+		all = append(all, one{pair[1], "changed", false})
 	}
 	for _, r := range c.removed {
-		all = append(all, one{r, "removed"})
+		all = append(all, one{r, "removed", false})
+	}
+	for i := range all {
+		all[i].live = i < len(lives) && lives[i]
 	}
 	if len(all) > recordEventCap {
 		all = all[:recordEventCap]
@@ -158,6 +172,7 @@ func (p *plugin) publishRecords(domain string, c change, backupID string) {
 			"value":      o.r.Value,
 			"action":     o.action,
 			"backupId":   backupID,
+			"live":       o.live,
 		})
 	}
 }

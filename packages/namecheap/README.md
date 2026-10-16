@@ -52,6 +52,7 @@ All are set by a person.
 |---|---|---|
 | `domains` | none | The only domains it may read or change. |
 | `mode` | `dryrun` | `dryrun` answers each change as the records before and after and changes nothing; `apply` makes it. |
+| `defaultTtl` (advanced) | `1799` | The TTL in seconds (60 to 60000) `ensure` gives a record it adds when the command names none. 1799 is Namecheap's Automatic. A ttl the command names always wins; a value out of range is refused, naming `defaultTtl`. |
 | `clientIp` (advanced) | empty | This computer's public IPv4 address. Empty: the plugin finds it by asking `api.ipify.org`, and sends it to Namecheap as `ClientIp`. Set it when the computer reaches the internet through an address that changes or differs from the one found; that address must be on the allow-list. |
 | `sandbox` (advanced) | off | Calls Namecheap's sandbox API (https://www.sandbox.namecheap.com) instead of the real one. The sandbox has its own account, API access page, key and allow-list. |
 
@@ -68,6 +69,10 @@ Secrets: `apiUser` and `apiKey`, as above.
   type (`URL`, `URL301` or `FRAME`): `remove example.com URL @` removes the redirect on the domain
   itself, so an app's A record can take its place. Only removal: a redirect is never added or changed.
 - `restore <domain> <backup id>` - puts back the records a backup holds.
+- `check <domain> <host> <type>` - asks each of the domain's authoritative name servers directly
+  what it serves for that name and type (or that it serves nothing), with the TTL, and the zone's
+  negative TTL from its SOA: how long a look-up made before the name existed stays cached as "no
+  such name". It changes nothing, calls no Namecheap API and publishes no `changed` event.
 
 Types: A, AAAA, CNAME, MX, TXT and CAA, and `remove` for URL redirects. Every other record, and a
 redirect nobody asked to remove, is kept as it is. `ensure` refuses an A, AAAA or CNAME on a host
@@ -90,7 +95,12 @@ Namecheap's `setHosts` replaces a domain's whole record set. Every change theref
 - saves the set before the change as a backup in the member's workspace
   (`namecheap-backups/<domain>/<id>.json`) and answers its id;
 - writes the whole set back, reads it again, and checks every record that was there is still
-  there. When one is missing, the answer names it and the backup to restore.
+  there. When one is missing, the answer names it and the backup to restore;
+- then asks the domain's own name servers (from its NS records; `dns1.registrar-servers.com` and
+  `dns2.registrar-servers.com` for Namecheap BasicDNS) directly, never through a resolver, for each
+  record added, changed or removed, every 5 s for up to 60 s, and says per record `live on the name
+  servers` or `not yet served by <server> after 60 s`. A record not yet live is not a failure:
+  Namecheap holds it, and `check` asks again. One run waits at most 5 minutes in all.
 
 Dry run answers the set before and after and changes nothing. Calls stay under Namecheap's limit of
 20 a minute, counted across the member's runs in `namecheap-calls.json` in its workspace. A backup
@@ -98,9 +108,10 @@ holds records only: never the API user or key.
 
 ## Events
 
-- `plugin.namecheap.changed`: `domain`, `command`, `added`, `changed`, `removed`, `backupId`.
+- `plugin.namecheap.changed`: `domain`, `command`, `added`, `changed`, `removed`, `backupId`, `live`
+  (true when the name servers serve every record of the change).
 - `plugin.namecheap.record`: `domain`, `recordType`, `host`, `value`, `action` (added, changed or
-  removed), `backupId`. One per record a change in apply mode wrote, at most 25 per command; `changed`
+  removed), `backupId`, `live` (true when the name servers serve this change). One per record a change in apply mode wrote, at most 25 per command; `changed`
   covers the rest. The Monitor shows each as a DNS line such as `TXT _dmarc.example.com`, marked added,
   changed or removed. Never for a list, a dry run or a refusal.
 - `plugin.namecheap.refused`: `command`, `domain` when one was named, `reason`.
@@ -108,10 +119,22 @@ holds records only: never the API user or key.
 ## Build and test
 
 ```sh
-packages/namecheap/build.sh ~/plugins-build/namecheap/1.0.3     # one installable version
-(cd packages/namecheap && go test ./...)                        # against a fake Namecheap API
+packages/namecheap/build.sh ~/plugins-build/namecheap/1.0.4     # one installable version
+(cd packages/namecheap && go test ./...)                        # against a fake Namecheap API and fake name servers
 ```
 
-`scripts/build.sh` puts the package zip in `dist/namecheap-1.0.3.zip`. The tests run the plugin
-against a fake Namecheap API and a fake address service on the test machine; they never reach the
+`scripts/build.sh` puts the package zip in `dist/namecheap-1.0.4.zip`. The tests run the plugin
+against a fake Namecheap API, a fake address service and two fake authoritative name servers on the
+test machine's loopback address, with a test clock so no test waits the 60 s; they never reach the
 network.
+
+## 1.0.4
+
+- After `ensure`, `remove` and `restore` in apply mode, each record added, changed or removed is
+  confirmed on the domain's own name servers, asked directly; the answer says `live on the name
+  servers` or `not yet served by <server> after 60 s`, and the `changed` and `record` events carry
+  `live`.
+- New `check <domain> <host> <type>`: what each authoritative name server serves, with its TTL, and
+  the zone's negative TTL from the SOA.
+- New setting `defaultTtl` (60 to 60000, default 1799): the TTL of a record `ensure` adds without one.
+- The run timeout is 600 s, room for the name-server waits.

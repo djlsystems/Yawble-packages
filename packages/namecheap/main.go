@@ -54,6 +54,8 @@ type plugin struct {
 	api  *client
 	dir  string // the member's workspace: backups and the call log live here
 	time clock
+	// waited is how long this run has waited for name servers so far (live.go), up to liveBudget.
+	waited time.Duration
 }
 
 func main() {
