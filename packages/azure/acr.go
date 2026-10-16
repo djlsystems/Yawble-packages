@@ -270,9 +270,18 @@ func packFolder(dir string) ([]byte, int, error) {
 		if err != nil {
 			return nil // a socket or device: not part of a build
 		}
+		// PORTABLE MODES, OWNED BY ROOT: each entry as git checks it out and docker build sees it,
+		// never the folder's own modes, which on a volume with umask 0007 would leave a non-root
+		// image user unable to read its own files.
 		hdr.Name, hdr.Uname, hdr.Gname, hdr.Uid, hdr.Gid = rel, "", "", 0, 0
-		if d.IsDir() {
+		switch {
+		case d.IsDir():
 			hdr.Name += "/"
+			hdr.Mode = 0o755
+		case info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0:
+			hdr.Mode = 0o755
+		case info.Mode().IsRegular():
+			hdr.Mode = 0o644
 		}
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err

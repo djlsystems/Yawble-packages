@@ -22,6 +22,7 @@ const (
 	roleKeyVaultSecretsOff   = "b86a8fe4-44ce-4948-aee5-eccb2c155cd7"
 	roleKeyVaultSecretsUser  = "4633458b-17de-408a-b874-0445c86b69e6"
 	roleAcrPull              = "7f951dda-4ed3-4680-a7ca-43fe172d538d"
+	roleBlobDataReader       = "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1"
 )
 
 var grantable = map[string]string{
@@ -32,6 +33,7 @@ var grantable = map[string]string{
 	roleKeyVaultSecretsOff:   "Key Vault Secrets Officer",
 	roleKeyVaultSecretsUser:  "Key Vault Secrets User",
 	roleAcrPull:              "AcrPull",
+	roleBlobDataReader:       "Storage Blob Data Reader",
 }
 
 // roleByName finds a grantable role by its name, in any case and spacing.

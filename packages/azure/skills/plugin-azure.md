@@ -49,7 +49,10 @@ Quote a value with spaces (`"Storage Blob Data Contributor"`).
 - `list [resource group]` - the resource groups, or the resources in one; `[owned]` marks this
   team's.
 - `show <resource id>` - one resource as Azure answers it, with any key-, password- or
-  secret-named value hidden.
+  secret-named value hidden. It reads with the api-version of the last resource type in the id,
+  so an extension or child resource (`.../managedEnvironments/<env>/providers/Microsoft.Insights/diagnosticSettings/<name>`)
+  is read as itself, not as what it sits on; a type it knows no version for, and Azure lists none
+  for, is refused naming the type.
 - `rg create <name> <region>` - a resource group named `namePrefix` + name, in a region from
   `regions`, tagged for the team, with the monthly budget (alerts at 80% and 100%) when
   `monthlyBudget` is set.
@@ -65,9 +68,14 @@ Quote a value with spaces (`"Storage Blob Data Contributor"`).
   any space, Unicode space or invisible character before the bracket, so a word such as `list (`
   in a description counts too, and a template that is not valid JSON is
   refused), a storage account without `allowSharedKeyAccess: false`, a custom role, or a
-  role assignment the `role assign` rules would refuse, is refused.
+  role assignment the `role assign` rules would refuse, is refused. When the deployment fails, the
+  answer lists each failed operation - resource type, name, Azure's error code and message, one
+  line each, at most 10 and then how many more - so read those lines, not Azure's first sentence.
+  A diagnostic setting that sends an environment's logs to a storage account the team owns gives
+  the signed-in account Storage Blob Data Reader there in the same deploy, so `containerapp logs`
+  can read them.
 - `role assign <role> <managed identity id> <scope id>` - grants one of Contributor, Storage
-  Blob Data Contributor, Storage Table Data Contributor, Storage Queue Data Contributor, Key Vault
+  Blob Data Reader, Storage Blob Data Contributor, Storage Table Data Contributor, Storage Queue Data Contributor, Key Vault
   Secrets Officer, Key Vault Secrets User or AcrPull, on a scope the team owns (or AcrPull on a
   shared registry), to a managed identity the team created: a user-assigned identity's resource
   id, or the resource id of an owned resource with a system-assigned identity. Never to a user or
@@ -90,7 +98,10 @@ Registries:
 - `acr create <resource group> <registry> [Basic|Standard|Premium]` - admin user off.
 - `acr build <registry> <image:tag> <folder>` - into an owned registry or one in
   `sharedContainerRegistries`. Uploads the folder (without `.git` and what `.dockerignore` leaves out),
-  builds its `Dockerfile` in the registry, and answers the digest and the end of the log.
+  builds its `Dockerfile` in the registry, and answers the digest and the end of the log. Each
+  entry is packed as git would check it out, owned by root: files 0644, files with an execute bit
+  0755, folders 0755, whatever the modes on disk, so an image whose last stage runs as a non-root
+  user can read its own files.
 
 Azure SQL (Microsoft Entra sign-in only; no SQL password exists):
 
@@ -109,8 +120,11 @@ Azure SQL (Microsoft Entra sign-in only; no SQL password exists):
 Storage (in accounts the team owns; reads anywhere the person has a Storage Data role):
 
 - `storage create <resource group> <account> [sku]` - StorageV2, shared key access off, no
-  public blob access; the signed-in person gets Storage Blob, Table and Queue Data Contributor on
-  it (a few minutes to apply), and running it again on an account the team owns grants them again.
+  public blob access; the signed-in person gets Storage Blob Data Reader (which `containerapp logs`
+  needs for logs archived there) and Storage Blob, Table and Queue Data Contributor on it (a few
+  minutes to apply), and running it again on an account the team owns grants them again. When the
+  person's role may not assign roles, the answer says so once, with who can fix it; pass that to
+  the person.
 - `storage container|table|queue create <account> <name>`.
 - `blob list <account> <container> [prefix]` (first 200), `blob get <account> <container> <blob>
   [path]` (writes into the team's documents), `blob put <account> <container> <blob> <file>`,
@@ -144,7 +158,10 @@ Container Apps:
   another size, which gets twice as many GiB). `port=`
   gives it public HTTPS ingress. Each Key Vault secret must already be in the vault, and each
   `appSecret<N>` must be bound and set (see Secrets). An `env=` that looks like a secret is
-  refused.
+  refused. The app's environment gets `AZURE_CLIENT_ID` set to `<app>-id`'s client id, unless the
+  command sets `env=AZURE_CLIENT_ID=...` itself: Azure's SDKs (`DefaultAzureCredential`,
+  `ManagedIdentityCredential`) read that variable to pick a user-assigned identity, and without it
+  an app asking for "the managed identity" finds none and fails to reach storage, Key Vault or SQL.
 - `containerapp show <app>`, `containerapp revisions <app>`, `containerapp logs <app> [minutes]`
   (default 30, at most 500 lines) - reads. The logs are queried through Azure management on the
   environment's workspace; the account needs Log Analytics Reader (or Reader) on it. An
@@ -156,6 +173,25 @@ Container Apps:
   domain needs, and sets them when the team owns its Azure DNS zone. Once they resolve, run it
   again: it creates the managed certificate and binds it. Pass the records to the person when the
   zone is elsewhere.
+
+## Before and after deploying
+
+- A role assignment in a template sets `principalType: 'ServicePrincipal'` and names an identity
+  the same template, or this member, created. Anything else - a user, a group, no principalType -
+  is refused before deploying.
+- One diagnostic setting per log category and destination resource. Two settings sending one
+  category to the same storage account or workspace fail the deployment with Azure's `Conflict`
+  ("Data sinks can't be reused in different settings on the same category for the same resource").
+- `sql exec` from this instance needs a firewall rule for the instance's address, which a refused
+  `sql exec` names. Put that rule in the template (`Microsoft.Sql/servers/firewallRules`) before
+  the first `sql exec`.
+- After `containerapp create`, when the app does not answer, read `containerapp logs <app>` before
+  anything else. Exit code 139 is a native crash inside the image; 137 is the app running out of
+  memory (give it a larger `cpu=`, which brings twice as many GiB).
+- An app that signs in to Azure SQL with `Authentication=Active Directory Managed Identity` on
+  Microsoft.Data.SqlClient 6 or later needs the Entra provider package
+  `Microsoft.Data.SqlClient.Extensions.Azure`; without it the app dies at its first query, which is
+  what `containerapp logs` shows. Name it in the deploy notes when the app is .NET.
 
 The first `deploy` of a Bicep file downloads the pinned bicep compiler (about 120 MB) once.
 
