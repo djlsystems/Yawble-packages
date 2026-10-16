@@ -1,6 +1,6 @@
 ---
 name: plugin-namecheap
-description: Use when you need to add, change, list or remove DNS records (A, AAAA, CNAME, MX, TXT, CAA), or remove a URL redirect record, for a domain at Namecheap, check Namecheap setup, or put back a domain's records from a backup through the Namecheap plugin member - its commands, dry run versus apply, the records a hosted app's custom domain and a mailbox usually need, and what its refusals mean.
+description: Use when you need to add, change, list or remove DNS records (A, AAAA, CNAME, MX, TXT, CAA), or remove a URL redirect record, for a domain at Namecheap, check whether its name servers serve a record yet, check Namecheap setup, or put back a domain's records from a backup through the Namecheap plugin member - its commands, dry run versus apply, the records a hosted app's custom domain and a mailbox usually need, and what its refusals mean.
 roles: manager member
 ---
 
@@ -35,13 +35,18 @@ for the domain itself, or the name below it: `www`, `_dmarc`, `selector1._domain
     has several, it is refused; remove the unwanted ones by value first.
   - A CNAME cannot sit beside other records on its host, either way round.
   - The record already there with that value is left alone, unless a ttl or mxpref given differs.
-  - ttl is 60 to 60000 seconds, 1799 (Namecheap's Automatic) when not given; mxpref defaults to 10.
+  - ttl is 60 to 60000 seconds; when not given, the member's `defaultTtl` setting (1799,
+    Namecheap's Automatic, unless a person changed it). mxpref defaults to 10.
 - `remove <domain> <type> <host> [value]` - removes that one record. Without a value the host must
   hold exactly one record of that type. The type may also be a URL redirect, `URL`, `URL301` or
   `FRAME` as `list` shows it: `remove example.com URL @` takes away the redirect on the domain
   itself. A redirect is only ever removed, never added or changed.
 - `restore <domain> <backup id>` - puts back the records a backup holds. It saves the records it
   replaces as a new backup first, so a restore can be undone the same way.
+- `check <domain> <host> <type>` - asks each of the domain's authoritative name servers directly
+  what it serves for that name and type, with the TTL, or that it serves nothing (`no such name`,
+  or the name exists without that type), and the zone's negative TTL from its SOA. It ends `Served
+  by every name server: live on the name servers.` or `Not served by <server>.` It changes nothing.
 
 Examples:
 
@@ -51,6 +56,7 @@ Examples:
     remove example.com TXT _acme-challenge "old-token-placeholder"
     remove example.com URL @ https://www.example.net
     restore example.com 20260101T120000Z
+    check example.com asuid TXT
 
 ## Dry run versus apply
 
@@ -64,6 +70,28 @@ what changes on example.com. To make it, set mode to apply in the Namecheap memb
 tell me." Then send the same command again. You cannot change `mode`, `domains`, `clientIp`,
 `sandbox` or the keys yourself; never ask anybody for the API key in a message. A person may set
 `mode` back to `dryrun` when the work is done.
+
+## Live on the name servers
+
+After every change in apply mode the plugin asks the domain's own name servers, directly and not
+through any resolver, for each record it added, changed or removed, for up to 60 s, and says per
+record `live on the name servers` or `not yet served by <server> after 60 s`. Not yet live is not a
+failure; `check` asks again.
+
+1. **Write first, then check, then look.** Write every record a step needs (a certificate, a
+   domain verification), then `check` each one, then run the step that needs them. Never look a
+   name up, or ask anything else to (a hosting service's verify button, a certificate request), before it
+   exists: a premature look-up is cached as "no such name" for the zone's negative TTL, which
+   `check` shows (3601 s on Namecheap), and nothing can clear that cache.
+2. **TTL 300 for a record that may change during a build** (`ensure ... <value> 300`), so a
+   correction is seen in minutes, not half an hour. Leave mail records (MX, SPF, DKIM, DMARC) at
+   their own TTL.
+3. **"Added" is Namecheap's answer; "live on the name servers" is the check's.** Report the second:
+   say a record is in place only when the change or `check` says it is live.
+4. **When another service still cannot see a record `check` shows live**, the cause is a cache on
+   that side (often a "no such name" cached from an earlier look-up). Say so, and wait for its TTL
+   (the negative TTL `check` names, for a name looked up before it existed). Never ask a person to
+   set a record that exists.
 
 ## Records a hosted app's custom domain usually needs
 
@@ -103,9 +131,10 @@ refuses it, saying so. Only DKIM (when the provider does not already hold it) an
 ## Events
 
 - `plugin.namecheap.changed` - `domain`, `command`, `added`, `changed`, `removed` (each a list of
-  records in words) and `backupId`. Only in apply, after the read-back check passed.
+  records in words), `backupId` and `live` (true when the name servers serve every record of it).
+  Only in apply, after the read-back check passed.
 - `plugin.namecheap.record` - one per record added, changed or removed in apply: `domain`,
-  `recordType`, `host`, `value` (the public DNS value as written), `action` and `backupId`. At most 25
+  `recordType`, `host`, `value` (the public DNS value as written), `action`, `backupId` and `live`. At most 25
   per command; `changed` covers the rest. The Monitor shows each as `<type> <host>.<domain>` marked
   added, changed or removed; a list, a dry run or a refusal shows nothing there.
 - `plugin.namecheap.refused` - `command`, `domain` when one was named, and `reason`.

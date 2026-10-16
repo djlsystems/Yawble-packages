@@ -16,6 +16,8 @@ www.twilio.com                # Twilio's documentation the twilio package links 
 demo.twilio.com               # Twilio's demo reply URL, a number's default the twilio plugin's tests recognise
 api.namecheap.com             # the Namecheap API the namecheap plugin calls
 api.sandbox.namecheap.com     # Namecheap's sandbox API the namecheap plugin calls when sandbox is on
+dns1.registrar-servers.com    # Namecheap BasicDNS's name server, which the namecheap plugin asks directly whether a record is live
+dns2.registrar-servers.com    # Namecheap BasicDNS's second name server, asked the same way
 api.ipify.org                 # the address service the namecheap plugin asks for this computer's public address (ClientIp)
 ap.www.namecheap.com          # Namecheap's API Access page the namecheap package links to
 www.namecheap.com             # Namecheap's API documentation the namecheap package links to

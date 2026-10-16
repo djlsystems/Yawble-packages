@@ -235,6 +235,8 @@ func (c *fakeClock) clock() clock {
 type harness struct {
 	t     *testing.T
 	fake  *fakeNamecheap
+	ns1   *fakeDNS // the test domains' two authoritative name servers
+	ns2   *fakeDNS
 	dir   string
 	clock *fakeClock
 	cfg   map[string]any
@@ -245,8 +247,12 @@ func newHarness(t *testing.T) *harness {
 	f := newFake(t)
 	c := &fakeClock{t: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}
 	f.clock = c
+	ns1, ns2 := newFakeDNS(t, "ns1.example.net", f), newFakeDNS(t, "ns2.example.net", f)
+	oldServers := authServers
+	authServers = func(string) ([]nameServer, error) { return []nameServer{ns1.server(), ns2.server()}, nil }
+	t.Cleanup(func() { authServers = oldServers })
 	return &harness{
-		t: t, fake: f, dir: t.TempDir(), clock: c,
+		t: t, fake: f, ns1: ns1, ns2: ns2, dir: t.TempDir(), clock: c,
 		cfg: map[string]any{"domains": []string{"example.com"}, "mode": "apply"},
 		sec: map[string]string{"apiUser": testUser, "apiKey": testKey},
 	}
@@ -263,6 +269,11 @@ type runResult struct {
 
 func (h *harness) run(instructions ...string) runResult {
 	h.t.Helper()
+	return h.runWith(h.clock.clock(), instructions...)
+}
+
+func (h *harness) runWith(c clock, instructions ...string) runResult {
+	h.t.Helper()
 	var work []map[string]any
 	for _, in := range instructions {
 		work = append(work, map[string]any{"instruction": in})
@@ -271,7 +282,7 @@ func (h *harness) run(instructions ...string) runResult {
 		"protocol": "harness.member/1", "work": work, "config": h.cfg, "secrets": h.sec, "workingDirectory": h.dir,
 	})
 	var out bytes.Buffer
-	code := run(bytes.NewReader(req), &out, h.clock.clock())
+	code := run(bytes.NewReader(req), &out, c)
 	h.clock.t = h.clock.t.Add(time.Second)
 
 	res := runResult{code: code, raw: out.String()}

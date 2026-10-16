@@ -35,7 +35,7 @@ var replacesRedirect = map[string]bool{"A": true, "AAAA": true, "CNAME": true}
 var byValue = map[string]bool{"TXT": true, "MX": true, "CAA": true}
 
 const (
-	defaultTTL    = 1799 // Namecheap's "Automatic"
+	automaticTTL  = 1799 // Namecheap's "Automatic", the defaultTtl setting's default
 	minTTL        = 60
 	maxTTL        = 60000
 	defaultMXPref = 10
@@ -149,8 +149,8 @@ type change struct {
 func (c change) none() bool { return len(c.added)+len(c.changed)+len(c.removed) == 0 }
 
 // ensure plans `ensure`: the record is there afterwards, and nothing else in the set moves.
-// ttl and mxpref are 0 when not given.
-func ensure(domain string, set []record, want record, ttlGiven, prefGiven bool) (change, error) {
+// ttl and mxpref are 0 when not given; a record added without a ttl takes defaultTTL.
+func ensure(domain string, set []record, want record, ttlGiven, prefGiven bool, defaultTTL int) (change, error) {
 	c := change{before: set, after: append([]record{}, set...)}
 
 	var sameHost, sameType []int

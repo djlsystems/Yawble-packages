@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const commandList = "setup, list <domain>, ensure <domain> <type> <host> <value> [ttl] [mxpref], remove <domain> <type> <host> [value], restore <domain> <backup id>"
+const commandList = "setup, list <domain>, ensure <domain> <type> <host> <value> [ttl] [mxpref], remove <domain> <type> <host> [value], restore <domain> <backup id>, check <domain> <host> <type>"
 
 func unknownCommand(word string) string {
 	if word == "" {
@@ -77,6 +77,8 @@ func (p *plugin) dispatch(text string) (string, error) {
 		out, err = p.remove(args)
 	case "restore":
 		out, err = p.restore(args)
+	case "check":
+		out, err = p.check(args)
 	default:
 		return "", refusal(unknownCommand(words[0]))
 	}
@@ -165,7 +167,7 @@ func (p *plugin) ensure(args []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	c, err := ensure(domain, set.Records, want, ttlGiven, prefGiven)
+	c, err := ensure(domain, set.Records, want, ttlGiven, prefGiven, p.cfg.DefaultTTL)
 	if err != nil {
 		return "", err
 	}

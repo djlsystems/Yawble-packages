@@ -2,7 +2,7 @@
 # Builds one installable version of the namecheap plugin into <out>: the two static binaries the
 # manifest's `platforms` names, plus the manifest and the skill. CGO_ENABLED=0 makes each binary
 # static, so it needs nothing from the image.
-#   ./build.sh ~/plugins-build/namecheap/1.0.3
+#   ./build.sh ~/plugins-build/namecheap/1.0.4
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
 out=${1:?usage: build.sh <out folder>}
