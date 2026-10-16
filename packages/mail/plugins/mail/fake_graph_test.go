@@ -39,6 +39,8 @@ type fakeGraph struct {
 	// ErrorFolderExists.
 	parent     map[string]string
 	raceFolder bool
+	// endlessFolders answers every folder list with a full page and a nextLink, however far it is read.
+	endlessFolders bool
 }
 
 type gMsg struct {
@@ -271,13 +273,13 @@ func (f *fakeGraph) serve(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	switch {
 	case r.Method == "GET" && path == "/me/mailFolders":
-		var v []any
-		for id, name := range f.folders {
+		var ids []string
+		for id := range f.folders {
 			if f.parent[id] == "" {
-				v = append(v, map[string]string{"id": id, "displayName": name})
+				ids = append(ids, id)
 			}
 		}
-		writeJSON(w, 200, map[string]any{"value": v})
+		f.folderPage(w, r, ids)
 	case r.Method == "POST" && path == "/me/mailFolders":
 		var p struct {
 			DisplayName string `json:"displayName"`
@@ -303,13 +305,13 @@ func (f *fakeGraph) serve(w http.ResponseWriter, r *http.Request) {
 			graphNotFound(w)
 			return
 		}
-		var v []any
-		for child, name := range f.folders {
+		var ids []string
+		for child := range f.folders {
 			if f.parent[child] == id {
-				v = append(v, map[string]string{"id": child, "displayName": name})
+				ids = append(ids, child)
 			}
 		}
-		writeJSON(w, 200, map[string]any{"value": v})
+		f.folderPage(w, r, ids)
 	case r.Method == "GET" && len(parts) == 3 && parts[1] == "mailFolders":
 		if _, ok := f.folderOf(parts[2]); !ok {
 			graphNotFound(w)
@@ -425,6 +427,34 @@ func (f *fakeGraph) serve(w http.ResponseWriter, r *http.Request) {
 	default:
 		graphNotFound(w)
 	}
+}
+
+// folderPage answers one page of a folder list, in id order, as Graph does: $top entries from
+// $skip on, with an @odata.nextLink to the rest while there is any.
+func (f *fakeGraph) folderPage(w http.ResponseWriter, r *http.Request, ids []string) {
+	q := r.URL.Query()
+	top, _ := strconv.Atoi(q.Get("$top"))
+	skip, _ := strconv.Atoi(q.Get("$skip"))
+	if top <= 0 || f.ignoreLimits {
+		top = len(ids)
+	}
+	var v []any
+	if f.endlessFolders {
+		for i := range top {
+			v = append(v, map[string]string{"id": fmt.Sprintf("AQMk-endless%06d", skip+i), "displayName": fmt.Sprintf("Endless %d", skip+i)})
+		}
+	} else {
+		sort.Strings(ids)
+		for _, id := range ids[min(skip, len(ids)):min(skip+top, len(ids))] {
+			v = append(v, map[string]string{"id": id, "displayName": f.folders[id]})
+		}
+	}
+	out := map[string]any{"value": v}
+	if f.endlessFolders || skip+top < len(ids) {
+		next := url.Values{"$top": {strconv.Itoa(top)}, "$skip": {strconv.Itoa(skip + top)}, "$select": {q.Get("$select")}}
+		out["@odata.nextLink"] = f.srv.URL + r.URL.Path + "?" + next.Encode()
+	}
+	writeJSON(w, 200, out)
 }
 
 func (f *fakeGraph) listMessages(w http.ResponseWriter, q url.Values, in func(*gMsg) bool) {
