@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -14,12 +16,33 @@ import (
 // the app's verification id, and a CNAME to the app's address (an A record to the environment's
 // address for a domain's apex). In a DNS zone the team owns the plugin sets them; elsewhere it says
 // what to set. Once they resolve, the next domain bind creates the certificate and binds it.
+//
+// The records are read where they live: from the domain's own name servers, else from a public
+// resolver, never only through the machine's resolver, which may hold an old "no such name" for
+// as long as the zone's negative TTL and cannot be flushed from here.
+
+// resolver answers DNS questions: a *net.Resolver, or a fake in tests.
+type resolver interface {
+	LookupTXT(ctx context.Context, name string) ([]string, error)
+	LookupCNAME(ctx context.Context, host string) (string, error)
+	LookupHost(ctx context.Context, host string) ([]string, error)
+	LookupNS(ctx context.Context, name string) ([]*net.NS, error)
+}
 
 // How names are looked up. Only tests change them.
 var (
-	lookupTXT   = net.LookupTXT
-	lookupCNAME = net.LookupCNAME
-	lookupHost  = net.LookupHost
+	// resolverAt asks one name server, by host name or address; "" is the machine's own resolver.
+	resolverAt = func(server string) resolver {
+		if server == "" {
+			return net.DefaultResolver
+		}
+		return &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, network, net.JoinHostPort(server, "53"))
+		}}
+	}
+	publicResolvers = []string{"1.1.1.1", "8.8.8.8"}
+	lookupTimeout   = 5 * time.Second
 )
 
 func init() {
@@ -96,8 +119,9 @@ func (p *plugin) domainBind(args []string) (string, error) {
 		lines = append(lines, fmt.Sprintf("- %s %s %s", rec.typ, rec.name, rec.value))
 	}
 	records := strings.Join(lines, "\n")
+	sources := append(nameServers(host, zone), publicResolvers...)
 
-	if !resolves(need) {
+	if !resolves(need, sources) {
 		if ownedZone {
 			what := fmt.Sprintf("set the records %s needs in DNS zone %s:\n%s", host, zone, records)
 			if !p.cfg.apply() {
@@ -113,7 +137,7 @@ func (p *plugin) domainBind(args []string) (string, error) {
 				ids = append(ids, id)
 			}
 			p.applied("domain bind", r.ID, "set the records for "+host+" in "+zone, ids)
-			if !resolves(need) {
+			if !resolves(need, sources) {
 				return fmt.Sprintf("Set the records %s needs in DNS zone %s:\n%s\nThey resolve within minutes when the domain's registrar points at the zone's name servers. Run domain bind %s %s again then, and it creates the certificate and binds it.", host, zone, records, r.Name, host), nil
 			}
 		} else {
@@ -146,14 +170,15 @@ func (p *plugin) domainBind(args []string) (string, error) {
 		return p.whatif("domain bind", r.ID, what, map[string]int{"create": 1, "modify": 1}), nil
 	}
 	appVersion := versionOf("Microsoft.App/containerApps")
-	patch := func(binding map[string]any) error {
-		domains := []map[string]any{}
-		for _, d := range anyList(ingress["customDomains"]) {
-			if !strings.EqualFold(str(d["name"]), host) {
-				domains = append(domains, d)
-			}
+	// Every other custom domain goes back as Azure listed it, in both patches; only host's changes.
+	var others []map[string]any
+	for _, d := range anyList(ingress["customDomains"]) {
+		if !strings.EqualFold(str(d["name"]), host) {
+			others = append(others, d)
 		}
-		ingress["customDomains"] = append(domains, binding)
+	}
+	patch := func(binding map[string]any) error {
+		ingress["customDomains"] = append(append([]map[string]any{}, others...), binding)
 		ans, err := p.az.arm(http.MethodPatch, r.ID+"?api-version="+appVersion, map[string]any{
 			"properties": map[string]any{"configuration": map[string]any{"ingress": ingress}},
 		}, nil)
@@ -163,8 +188,9 @@ func (p *plugin) domainBind(args []string) (string, error) {
 		return err
 	}
 	p.progress("azure: adding " + host + " to " + r.Name)
+	// From here the records answer where they live, so a refusal of them is Azure's check lagging.
 	if err := patch(map[string]any{"name": host, "bindingType": "Disabled"}); err != nil {
-		return "", err
+		return "", notSeenYet(err, r.Name, host)
 	}
 	p.progress("azure: creating the managed certificate for " + host + " (a few minutes)")
 	ans, err := p.az.arm(http.MethodPut, certID+"?api-version="+versionOf("Microsoft.App/managedEnvironments/managedCertificates"), map[string]any{
@@ -176,11 +202,11 @@ func (p *plugin) domainBind(args []string) (string, error) {
 	}
 	if err != nil {
 		p.applied("domain bind", r.ID, "added "+host+" to "+r.Name+" without a certificate", []string{r.ID})
-		return "", err
+		return "", notSeenYet(err, r.Name, host)
 	}
 	if err := p.waitCertificate(certID, host); err != nil {
 		p.applied("domain bind", r.ID, "added "+host+" to "+r.Name+"; its certificate is not issued", []string{r.ID, certID})
-		return "", err
+		return "", notSeenYet(err, r.Name, host)
 	}
 	p.progress("azure: binding the certificate to " + host)
 	if err := patch(map[string]any{"name": host, "bindingType": "SniEnabled", "certificateId": certID}); err != nil {
@@ -208,7 +234,7 @@ func (p *plugin) waitCertificate(id, host string) error {
 		case "succeeded":
 			return nil
 		case "failed", "canceled", "deletefailed":
-			return fmt.Errorf("Azure could not issue the certificate for %s: %s. Check the records, then run domain bind again", host, cert.Properties.Error)
+			return fmt.Errorf("Azure could not issue the certificate for %s: %s", host, cert.Properties.Error)
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("the certificate for %s was not issued within %d minutes; run domain bind again later", host, int(pollFor.Minutes()))
@@ -254,39 +280,108 @@ func (p *plugin) setZoneRecord(zoneID, zone string, rec record) (string, error) 
 	return id, nil
 }
 
-// resolves reports whether every record already answers as needed.
-func resolves(need []record) bool {
+// notSeenYet turns Azure refusing a domain's records, after they were found where they live, into
+// what it means: nothing is missing, Azure's own check has not caught up. Any other error is kept.
+func notSeenYet(err error, app, host string) error {
+	if err == nil || isStatus(err, http.StatusUnauthorized) || isStatus(err, http.StatusForbidden) {
+		return err
+	}
+	text := strings.ToLower(err.Error())
+	for _, word := range []string{"asuid", "txt", "cname", "validat", "hostname", "host name", "dns"} {
+		if strings.Contains(text, word) {
+			return fmt.Errorf("the records are in place; Azure has not seen them yet - run domain bind again in a few minutes (domain bind %s %s). Azure said: %v", app, host, err)
+		}
+	}
+	return err
+}
+
+// nameServers finds the name servers that answer for host with authority: the NS records of the
+// nearest name at or above it (from zone, when the team's zone holding it is known) that has
+// some, read through the public resolvers and then the machine's. nil when none is found.
+func nameServers(host, zone string) []string {
+	name := host
+	if zone != "" {
+		name = zone
+	}
+	for ; strings.Contains(name, "."); name = name[strings.Index(name, ".")+1:] {
+		for _, src := range append(append([]string{}, publicResolvers...), "") {
+			ctx, cancel := context.WithTimeout(context.Background(), lookupTimeout)
+			ns, err := resolverAt(src).LookupNS(ctx, name+".")
+			cancel()
+			if err == nil && len(ns) > 0 {
+				var hosts []string
+				for _, n := range ns {
+					hosts = append(hosts, strings.TrimSuffix(n.Host, "."))
+				}
+				return hosts
+			}
+			if notFound(err) {
+				break
+			}
+		}
+	}
+	return nil
+}
+
+// resolves reports whether every record already answers as needed. Each is asked of the sources
+// in turn; the first that answers, with the record or with "no such name", decides.
+func resolves(need []record, sources []string) bool {
 	for _, rec := range need {
-		switch rec.typ {
-		case "TXT":
-			values, err := lookupTXT(rec.name)
-			if err != nil || !contains(values, rec.value) {
-				return false
-			}
-		case "CNAME":
-			target, err := lookupCNAME(rec.name)
-			if err != nil || !strings.EqualFold(strings.TrimSuffix(target, "."), rec.value) {
-				return false
-			}
-		case "A":
-			addrs, err := lookupHost(rec.name)
-			if err != nil || !contains(addrs, rec.value) {
-				return false
-			}
+		if !answers(rec, sources) {
+			return false
 		}
 	}
 	return true
 }
 
-// anyList reads a JSON list of objects.
+// answers reports whether the first source that answers for rec gives its value.
+func answers(rec record, sources []string) bool {
+	for _, src := range sources {
+		ctx, cancel := context.WithTimeout(context.Background(), lookupTimeout)
+		dns := resolverAt(src)
+		var values []string
+		var err error
+		want := rec.value
+		switch rec.typ {
+		case "TXT":
+			values, err = dns.LookupTXT(ctx, rec.name+".")
+		case "CNAME":
+			var target string
+			target, err = dns.LookupCNAME(ctx, rec.name+".")
+			values, want = []string{strings.ToLower(strings.TrimSuffix(target, "."))}, strings.ToLower(want)
+		case "A":
+			values, err = dns.LookupHost(ctx, rec.name+".")
+		}
+		cancel()
+		switch {
+		case err == nil:
+			return contains(values, want)
+		case notFound(err):
+			return false
+		}
+	}
+	return false
+}
+
+// notFound reports whether a DNS answer was "no such name" rather than no answer at all.
+func notFound(err error) bool {
+	var dnsErr *net.DNSError
+	return errors.As(err, &dnsErr) && dnsErr.IsNotFound
+}
+
+// anyList reads a JSON list of objects, as decoded ([]any) or as the plugin built it.
 func anyList(v any) []map[string]any {
-	var out []map[string]any
-	if list, ok := v.([]any); ok {
+	switch list := v.(type) {
+	case []map[string]any:
+		return list
+	case []any:
+		var out []map[string]any
 		for _, item := range list {
 			if m, ok := item.(map[string]any); ok {
 				out = append(out, m)
 			}
 		}
+		return out
 	}
-	return out
+	return nil
 }
