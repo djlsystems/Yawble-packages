@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -77,29 +76,10 @@ func addDB(f *fake, rg, server, name string, tags map[string]string) *fakeResour
 	return d
 }
 
-// resolve makes the DNS answer what records holds, by name; nothing else resolves.
+// resolve makes the DNS answer what records holds, by name, from every server asked; nothing else
+// resolves.
 func resolve(t *testing.T, records map[string][]string) {
-	oldTXT, oldCNAME, oldHost := lookupTXT, lookupCNAME, lookupHost
-	missing := errors.New("no such host")
-	lookupTXT = func(name string) ([]string, error) {
-		if v, ok := records["TXT "+name]; ok {
-			return v, nil
-		}
-		return nil, missing
-	}
-	lookupCNAME = func(name string) (string, error) {
-		if v, ok := records["CNAME "+name]; ok {
-			return v[0] + ".", nil
-		}
-		return "", missing
-	}
-	lookupHost = func(name string) ([]string, error) {
-		if v, ok := records["A "+name]; ok {
-			return v, nil
-		}
-		return nil, missing
-	}
-	t.Cleanup(func() { lookupTXT, lookupCNAME, lookupHost = oldTXT, oldCNAME, oldHost })
+	useDNS(t, map[string]*fakeDNS{"*": {records: records, ns: []string{"ns1.dns.test"}}})
 }
 
 func bound(host string) map[string][]string {
