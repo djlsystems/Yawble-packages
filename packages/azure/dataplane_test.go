@@ -322,10 +322,10 @@ func TestStorageCreateTurnsSharedKeyAccessOff(t *testing.T) {
 	}
 	mustContain(t, r.text(), "shared key access off")
 
-	// The signed-in person is given the three data roles on that account, and on nothing else.
+	// The signed-in person is given the four data roles on that account, and on nothing else.
 	grants := w.f.callsContaining(http.MethodPut, "/storageAccounts/newstore/providers/Microsoft.Authorization/roleAssignments/")
-	if len(grants) != 3 {
-		t.Fatalf("role assignment PUTs = %d, want 3", len(grants))
+	if len(grants) != len(storageDataRoles) {
+		t.Fatalf("role assignment PUTs = %d, want %d", len(grants), len(storageDataRoles))
 	}
 	roles := map[string]bool{}
 	for _, g := range grants {
@@ -347,7 +347,7 @@ func TestStorageCreateTurnsSharedKeyAccessOff(t *testing.T) {
 			t.Fatalf("%s was not granted; got %v", grantable[want], roles)
 		}
 	}
-	if all := w.f.callsContaining(http.MethodPut, "/roleAssignments/"); len(all) != 3 {
+	if all := w.f.callsContaining(http.MethodPut, "/roleAssignments/"); len(all) != len(storageDataRoles) {
 		t.Fatalf("a role was granted elsewhere: %d assignments", len(all))
 	}
 	mustContain(t, r.text(), "Storage Blob, Table and Queue Data Contributor")

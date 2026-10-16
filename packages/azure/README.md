@@ -1,4 +1,4 @@
-# Azure 1.1.2
+# Azure 1.1.3
 
 A plugin member that builds and runs a team's own Azure resources: resource groups, deployments
 from Bicep or ARM templates, container registries and image builds, Azure SQL databases and the SQL
@@ -9,6 +9,36 @@ rights**, so it can never do more than you can yourself in the Azure portal.
 
 Everything starts in **whatif**: each changing command says what it would do and changes nothing,
 until you set `mode` to `apply`.
+
+## New in 1.1.3
+
+- **A failed deployment says why.** When `deploy` ends failed, the answer lists each failed
+  operation of the deployment - resource type, name, Azure's error code and message, one line
+  each, at most 10 and then how many more - instead of only Azure's "At least one resource
+  deployment operation failed".
+- **`show` reads a resource with its own type's api-version**, the last resource type in its id:
+  a diagnostic setting on an environment is read as `Microsoft.Insights/diagnosticSettings`, not
+  as the environment. A type it knows no version for, and Azure lists none for, is refused naming
+  the type, never sent with a guess.
+- **`acr build` packs portable modes**: files 0644, files with any execute bit 0755, folders 0755,
+  all owned by root (uid and gid 0, no names), as git checks them out and `docker build` sees
+  them, whatever the modes on disk. An image whose last stage runs as a non-root user can read its
+  own files.
+- **You can read the logs it archives.** `storage create` also gives you Storage Blob Data Reader
+  on the new account, and a `deploy` whose diagnostic setting sends a Container Apps environment's
+  logs to a storage account the team owns gives you that role there, in the same command, recorded
+  and reported like its other role assignments, so `containerapp logs` reads them at once. When
+  your role may not assign roles, the answer says so once, with who can fix it.
+- **An app knows its managed identity.** `containerapp create` sets the app's `AZURE_CLIENT_ID` to
+  the client id of its identity `<app>-id`, unless the command sets `AZURE_CLIENT_ID` itself, so
+  Azure's SDKs (`DefaultAzureCredential`, `ManagedIdentityCredential`) sign in as it.
+- **`domain bind` checks DNS where the records are**: it asks the domain's own authoritative name
+  servers (read from its NS records), falling back to a public resolver, never only this
+  machine's resolver, so a cached "not found" no longer hides records that exist.
+- **`domain bind` says "run again"** when the records are in place but Azure has not seen them
+  yet, instead of asking a person to set records that exist.
+- **Binding one host name never removes another**: `domain bind` keeps every other custom domain
+  on the app as Azure lists it.
 
 ## Azure in two minutes
 
@@ -107,9 +137,9 @@ It **will**:
 - create a new database on a server in `sharedSqlServers` (tagged, and then the team's);
 - build images in, and grant pull rights on, an Azure Container Registry in `sharedContainerRegistries`;
 - run SQL on databases the team owns, and read and write data in storage accounts it owns;
-- grant a short list of roles (Contributor, Storage Blob/Table/Queue Data Contributor, Key Vault
-  Secrets Officer, Key Vault Secrets User, AcrPull) on what the team owns, only to managed
-  identities the team created;
+- grant a short list of roles (Contributor, Storage Blob Data Reader, Storage Blob/Table/Queue
+  Data Contributor, Key Vault Secrets Officer, Key Vault Secrets User, AcrPull) on what the team
+  owns, only to managed identities the team created;
 - delete what the team owns, only when `allowDelete` is on.
 
 It **will not**:
@@ -119,10 +149,12 @@ It **will not**:
 - deploy a template that would change anything outside what the team owns: every deployment is
   checked with Azure's what-if first, and one change outside refuses the whole deployment,
   naming each resource, including a resource the what-if marks as ignored;
-- grant any role to a user or a group, or any other role, except that a storage account it creates
-  gives you, the signed-in person, Storage Blob, Table and Queue Data Contributor on that account
-  alone (a subscription Owner holds no data rights, and with shared key access off you would
-  otherwise be refused your own blobs);
+- grant any role to a user or a group, or any other role, except to you, the signed-in person,
+  read from your own sign-in: a storage account it creates gives you Storage Blob Data Reader and
+  Storage Blob, Table and Queue Data Contributor on that account alone, and a storage account the
+  team owns that a deployed diagnostic setting sends an environment's logs to gives you Storage
+  Blob Data Reader there (a subscription Owner holds no data rights, and with shared key access off
+  you would otherwise be refused your own blobs and logs);
 - read a storage key, a connection string, a registry password or a Key Vault secret value;
   storage accounts are created with shared key access off, registries with their admin user off,
   and SQL servers with Microsoft Entra sign-in only, so no SQL password exists;
@@ -206,7 +238,12 @@ deploy my-project-rg infra/main.bicep infra/main.parameters.json
 ```
 
 answers what would be created and changes nothing; with `mode` at `apply`, the same lines create
-the group and deploy exactly what the what-if checked.
+the group and deploy exactly what the what-if checked. A deployment that fails answers each failed
+operation's resource type, name, error code and message, at most 10 and then how many more.
+
+`show` reads a resource with the api-version of the last resource type in its id, so an extension
+resource such as a diagnostic setting is read as itself; a type with no version it knows or Azure
+lists is refused, naming the type.
 
 An app from start to finish, in apply, `<registry>` and `<vault>` standing for names of your own
 that are unique in all of Azure:
@@ -224,10 +261,13 @@ domain bind my-app www.example.com
 - `acr build` uploads the folder `app` from the team's documents (leaving out `.git` and what its
   `.dockerignore` leaves out), builds it in the registry and answers the image's digest and the
   end of the build's log.
+- `acr build` packs each file as 0644 (0755 when it has an execute bit) and each folder as 0755,
+  owned by root, whatever the modes on disk.
 - `containerapp create` makes a managed identity for the app and grants it AcrPull on the registry
   and Key Vault Secrets User on each vault a `secret=` names. The app pulls its image and reads its
   Key Vault secrets with that identity; no password is involved. Each secret must already be in the
-  vault.
+  vault. It sets `AZURE_CLIENT_ID` to that identity's client id, unless the command gives its own
+  `env=AZURE_CLIENT_ID=...`, so Azure's SDKs in the app sign in as it.
 - `domain bind` answers the TXT and CNAME (or, for a domain's apex, A) records the domain needs. In
   a DNS zone the team owns it sets them itself. Once they resolve, `domain bind` again creates a
   free managed certificate, which Azure renews, and binds it.

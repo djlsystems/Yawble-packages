@@ -86,6 +86,8 @@ type fake struct {
 	runStatus  string              // how a registry build ends
 	logLines   []string            // what a workspace query answers, oldest first
 	vaultNames map[string][]string // lower-case vault id -> its secrets' names
+	deployOps  []map[string]any    // when set, the next deployment fails and its operations are these
+	noGrants   bool                // every role assignment is refused, as for an account that may not assign roles
 }
 
 func newFake(t *testing.T) *fake {
@@ -264,6 +266,10 @@ func (f *fake) arm(w http.ResponseWriter, method, path string, body []byte) {
 	case lrest == "/operations/whatif-result":
 		f.answer(w, 200, map[string]any{"status": "Succeeded", "properties": map[string]any{"changes": f.whatIf}})
 	case lrest == "/operations/deploy-status":
+		if f.deployOps != nil {
+			f.answer(w, 200, map[string]any{"status": "Failed", "error": map[string]any{"code": "DeploymentFailed", "message": "At least one resource deployment operation failed. Please list deployment operations for details."}})
+			return
+		}
 		f.answer(w, 200, map[string]any{"status": "Succeeded"})
 	case lrest == "/locations":
 		var list []map[string]any
@@ -383,6 +389,10 @@ func (f *fake) group(w http.ResponseWriter, method, path string, body []byte) {
 		return
 	}
 	if strings.Contains(strings.ToLower(id), "/providers/microsoft.authorization/roleassignments/") && method == http.MethodPut {
+		if f.noGrants {
+			f.answer(w, 403, armError("AuthorizationFailed", "The client does not have authorization to perform action 'Microsoft.Authorization/roleAssignments/write'."))
+			return
+		}
 		f.answer(w, 201, map[string]any{"id": id})
 		return
 	}
@@ -453,7 +463,14 @@ func (f *fake) deployment(w http.ResponseWriter, method, path string, body []byt
 	case method == http.MethodPut:
 		w.Header().Set("Azure-AsyncOperation", opBase+"deploy-status")
 		f.answer(w, 201, map[string]any{"properties": map[string]any{"provisioningState": "Accepted"}})
+	case method == http.MethodGet && strings.HasSuffix(path, "/operations"):
+		f.answer(w, 200, map[string]any{"value": f.deployOps})
 	case method == http.MethodGet:
+		if f.deployOps != nil {
+			f.answer(w, 200, map[string]any{"properties": map[string]any{"provisioningState": "Failed",
+				"error": map[string]any{"code": "DeploymentFailed", "message": "At least one resource deployment operation failed."}}})
+			return
+		}
 		var ids []map[string]any
 		for _, c := range f.whatIf {
 			if t, _ := c["changeType"].(string); t == "Create" || t == "Modify" {
@@ -527,7 +544,7 @@ func runPlugin(t *testing.T, o runOpts, instruction string) *result {
 	}
 	req := map[string]any{
 		"protocol":         "harness.member/1",
-		"plugin":           map[string]any{"id": "azure", "version": "1.1.2"},
+		"plugin":           map[string]any{"id": "azure", "version": "1.1.3"},
 		"member":           map[string]any{"id": testTeam + "/Azure", "team": testTeam, "name": "Azure"},
 		"work":             []map[string]any{{"seq": 1, "instruction": instruction, "payload": map[string]any{"instruction": instruction}}},
 		"config":           cfg,

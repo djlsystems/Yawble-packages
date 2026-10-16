@@ -61,8 +61,10 @@ func init() {
 	)
 }
 
-// storageDataRoles are what the signed-in person is given on a storage account the team creates.
-var storageDataRoles = []string{roleBlobDataContributor, roleTableDataContributor, roleQueueDataContributor}
+// storageDataRoles are what the signed-in person is given on a storage account the team creates:
+// Storage Blob Data Reader first, which containerapp logs needs to read the logs an environment
+// archives there, then the three Data Contributor roles the data commands use.
+var storageDataRoles = []string{roleBlobDataReader, roleBlobDataContributor, roleTableDataContributor, roleQueueDataContributor}
 
 func (p *plugin) storageCreate(args []string) (string, error) {
 	if err := argsExactly(args, 2, 3, "storage create", "<resource group> <account> [sku]"); err != nil {
@@ -90,7 +92,7 @@ func (p *plugin) storageCreate(args []string) (string, error) {
 	if err := p.mustOwn(change{id: id, kind: changeCreate}); err != nil {
 		return "", err
 	}
-	what := fmt.Sprintf("create storage account %s (%s) in %s with shared key access off, tagged for this team, and give the signed-in person Storage Blob, Table and Queue Data Contributor on it", name, sku, rg)
+	what := fmt.Sprintf("create storage account %s (%s) in %s with shared key access off, tagged for this team, and give the signed-in person Storage Blob Data Reader and Storage Blob, Table and Queue Data Contributor on it", name, sku, rg)
 	if !p.cfg.apply() {
 		return p.whatif("storage create", id, what, map[string]int{"create": 1}), nil
 	}
@@ -113,23 +115,79 @@ func (p *plugin) storageCreate(args []string) (string, error) {
 	}
 	// THE PERSON READS AND WRITES IT TOO. An Owner of the subscription holds no data rights on a
 	// storage account, and with shared key access off every blob, table and queue command this
-	// member runs signed in as them would be refused. So the account it creates, and only that,
-	// grants the signed-in person the three Data Contributor roles; it never grants a user anything
-	// on any other scope.
+	// member runs signed in as them would be refused, as would containerapp logs reading the logs
+	// an environment archives there. So the account it creates, and only that, grants the
+	// signed-in person Storage Blob Data Reader and the three Data Contributor roles; it never
+	// grants a user anything on any other scope.
 	ids := []string{id}
 	oid, _, account, err := p.signedIn()
 	if err != nil {
 		return "", err
 	}
+	note := ""
 	for _, role := range storageDataRoles {
 		assignment, _, err := p.grantRoleTo(id, role, oid, "User")
+		if isStatus(err, http.StatusForbidden) {
+			// Said once: the same refusal would answer every role after it.
+			note = " " + mayNotGrant(account, id, storageDataRoles)
+			break
+		}
 		if err != nil {
+			p.applied("storage create", id, "partly: "+what, ids)
 			return "", fmt.Errorf("storage account %s was created, but %s could not be given %s on it: %w; run storage create again", name, account, grantable[role], err)
 		}
 		ids = append(ids, assignment)
 	}
 	p.applied("storage create", id, what, ids)
-	return fmt.Sprintf("Storage account %s is ready in %s, with shared key access off: everything reaches it signed in. %s holds Storage Blob, Table and Queue Data Contributor on it, which can take a few minutes to apply. Grant a managed identity a Storage Data Contributor role with role assign for an app to use it.", name, rg, account), nil
+	if note != "" {
+		return fmt.Sprintf("Storage account %s is ready in %s, with shared key access off: everything reaches it signed in.%s Grant a managed identity a Storage Data Contributor role with role assign for an app to use it.", name, rg, note), nil
+	}
+	return fmt.Sprintf("Storage account %s is ready in %s, with shared key access off: everything reaches it signed in. %s holds Storage Blob Data Reader (so containerapp logs reads the logs archived there) and Storage Blob, Table and Queue Data Contributor on it, which can take a few minutes to apply. Grant a managed identity a Storage Data Contributor role with role assign for an app to use it.", name, rg, account), nil
+}
+
+// mayNotGrant is the one sentence for roles Azure refused to let the signed-in account give itself
+// on a storage account, with the fix.
+func mayNotGrant(account, scope string, roles []string) string {
+	names := make([]string, len(roles))
+	for i, r := range roles {
+		names[i] = grantable[r]
+	}
+	storage := scope[strings.LastIndex(scope, "/")+1:]
+	return fmt.Sprintf("%s may not assign roles on storage account %s, so it was not given %s there. A person with Owner, User Access Administrator or Role Based Access Control Administrator on it gives %s those roles in the Azure portal (the storage account, Access control (IAM), Add role assignment); until then blob commands and containerapp logs reading the logs archived there are refused.",
+		account, storage, strings.Join(names, ", "), account)
+}
+
+// grantSignedInReader gives the signed-in account Storage Blob Data Reader on a storage account the
+// team owns that one of its environments archives logs to, so containerapp logs can read them. It
+// answers the assignment's id, "" when none was made, and the sentence for the command's output.
+// The guard judges the grant as any other; only a storage account the team owns takes it, and the
+// principal is the signed-in account read from its own token, never a user or group it is told of.
+func (p *plugin) grantSignedInReader(command, storageID, env string) (assignment, said string, err error) {
+	storage := storageID[strings.LastIndex(storageID, "/")+1:]
+	why, err := p.guard(change{id: storageID, kind: changeGrant, role: roleBlobDataReader})
+	if err != nil {
+		return "", "", err
+	}
+	oid, _, account, signErr := p.signedIn()
+	if signErr != nil {
+		account = "the signed-in account"
+	}
+	if why != "" {
+		reason := fmt.Sprintf("%s was not given Storage Blob Data Reader on storage account %s, where environment %s archives its logs: %s, and this member grants only on what its team owns. Its owner gives %s that role in the Azure portal (the storage account, Access control (IAM), Add role assignment) for containerapp logs to read them.", account, storage, env, why, account)
+		p.refuse(command, reason)
+		return "", reason, nil
+	}
+	if signErr != nil {
+		return "", signErr.Error(), nil
+	}
+	assignment, _, err = p.grantRoleTo(storageID, roleBlobDataReader, oid, "User")
+	if isStatus(err, http.StatusForbidden) {
+		return "", mayNotGrant(account, storageID, []string{roleBlobDataReader}), nil
+	}
+	if err != nil {
+		return "", fmt.Sprintf("%s could not be given Storage Blob Data Reader on storage account %s: %v; run %s again.", account, storage, err, command), nil
+	}
+	return assignment, fmt.Sprintf("%s holds Storage Blob Data Reader on storage account %s, where environment %s archives its logs, so containerapp logs reads them (the role can take a few minutes to apply).", account, storage, env), nil
 }
 
 // storageChild creates a blob container, a table or a queue in an account the team owns.
