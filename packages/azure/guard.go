@@ -316,13 +316,27 @@ func (p *plugin) needSubscription() error {
 	return nil
 }
 
-// apiVersionFor answers the newest stable api-version Azure lists for a resource's type.
-func (p *plugin) apiVersionFor(r rid) (string, error) {
-	if r.ns == "" {
-		return rgAPIVersion, nil
+// ownType is the type of the resource the id names: for an extension resource such as
+// .../managedEnvironments/<env>/providers/Microsoft.Insights/diagnosticSettings/<name>, the
+// extension's own type, never the type it sits on.
+func (r rid) ownType() string {
+	if r.ext != nil {
+		return r.ext.ns + "/" + strings.Join(r.ext.types, "/")
 	}
-	if v, ok := knownVersion(r.typ()); ok {
+	return r.typ()
+}
+
+// apiVersionFor answers the api-version of the resource an id names, by the last resource type in
+// it: the version the plugin knows for that type, or else the newest stable one Azure lists for it.
+// A type with neither is refused, naming it; no version is guessed.
+func (p *plugin) apiVersionFor(r rid) (string, error) {
+	typ := r.ownType()
+	if v, ok := knownVersion(typ); ok {
 		return v, nil
+	}
+	ns, want := r.ns, strings.Join(r.types, "/")
+	if r.ext != nil {
+		ns, want = r.ext.ns, strings.Join(r.ext.types, "/")
 	}
 	var prov struct {
 		ResourceTypes []struct {
@@ -330,11 +344,10 @@ func (p *plugin) apiVersionFor(r rid) (string, error) {
 			APIVersions  []string `json:"apiVersions"`
 		} `json:"resourceTypes"`
 	}
-	found, err := p.az.get("/subscriptions/"+r.sub+"/providers/"+r.ns+"?api-version="+rgAPIVersion, &prov)
+	found, err := p.az.get("/subscriptions/"+r.sub+"/providers/"+ns+"?api-version="+rgAPIVersion, &prov)
 	if err != nil {
 		return "", err
 	}
-	want := strings.Join(r.types, "/")
 	if found {
 		for _, t := range prov.ResourceTypes {
 			if !strings.EqualFold(t.ResourceType, want) {
@@ -350,27 +363,45 @@ func (p *plugin) apiVersionFor(r rid) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("Azure lists no api-version for %s", r.typ())
+	return "", refusef("Refused: this member knows no api-version for %s, and Azure lists none for it in this subscription, so it does not read or change %s with a guessed one.", typ, r.raw)
 }
 
 const rgAPIVersion = "2021-04-01"
 
-// knownVersions are the api-versions of the types the plugin itself creates.
+// knownVersions are the api-versions of the types the plugin itself creates or names, each one Azure
+// supports for that type.
 var knownVersions = map[string]string{
-	"Microsoft.Resources/resourceGroups":                    rgAPIVersion,
-	"Microsoft.Network/dnsZones":                            dnsAPIVersion,
-	"Microsoft.ManagedIdentity/userAssignedIdentities":      "2023-01-31",
-	"Microsoft.Authorization/roleAssignments":               roleAPIVersion,
-	"Microsoft.ContainerRegistry/registries":                acrAPIVersion,
-	"Microsoft.Sql/servers":                                 sqlAPIVersion,
-	"Microsoft.Sql/servers/databases":                       sqlAPIVersion,
-	"Microsoft.Storage/storageAccounts":                     "2023-05-01",
-	"Microsoft.KeyVault/vaults":                             "2023-07-01",
-	"Microsoft.OperationalInsights/workspaces":              "2023-09-01",
-	"Microsoft.App/containerApps":                           "2024-03-01",
-	"Microsoft.App/managedEnvironments":                     "2024-03-01",
-	"Microsoft.App/managedEnvironments/certificates":        "2024-03-01",
-	"Microsoft.App/managedEnvironments/managedCertificates": "2024-03-01",
+	"Microsoft.Resources/resourceGroups":                        rgAPIVersion,
+	"Microsoft.Resources/subscriptions":                         subAPIVersion,
+	"Microsoft.Resources/deployments":                           deployAPIVersion,
+	"Microsoft.Network/dnsZones/A":                              dnsAPIVersion,
+	"Microsoft.Network/dnsZones/AAAA":                           dnsAPIVersion,
+	"Microsoft.Network/dnsZones/CNAME":                          dnsAPIVersion,
+	"Microsoft.Network/dnsZones/TXT":                            dnsAPIVersion,
+	"Microsoft.Network/dnsZones/MX":                             dnsAPIVersion,
+	"Microsoft.Sql/servers/firewallRules":                       sqlAPIVersion,
+	"Microsoft.Storage/storageAccounts/blobServices":            "2023-05-01",
+	"Microsoft.Storage/storageAccounts/blobServices/containers": "2023-05-01",
+	"Microsoft.Storage/storageAccounts/tableServices":           "2023-05-01",
+	"Microsoft.Storage/storageAccounts/tableServices/tables":    "2023-05-01",
+	"Microsoft.Storage/storageAccounts/queueServices":           "2023-05-01",
+	"Microsoft.Storage/storageAccounts/queueServices/queues":    "2023-05-01",
+	"Microsoft.KeyVault/vaults/secrets":                         "2023-07-01",
+	"Microsoft.Insights/diagnosticSettings":                     diagAPIVersion,
+	"Microsoft.Consumption/budgets":                             budgetAPIVersion,
+	"Microsoft.Network/dnsZones":                                dnsAPIVersion,
+	"Microsoft.ManagedIdentity/userAssignedIdentities":          "2023-01-31",
+	"Microsoft.Authorization/roleAssignments":                   roleAPIVersion,
+	"Microsoft.ContainerRegistry/registries":                    acrAPIVersion,
+	"Microsoft.Sql/servers":                                     sqlAPIVersion,
+	"Microsoft.Sql/servers/databases":                           sqlAPIVersion,
+	"Microsoft.Storage/storageAccounts":                         "2023-05-01",
+	"Microsoft.KeyVault/vaults":                                 "2023-07-01",
+	"Microsoft.OperationalInsights/workspaces":                  "2023-09-01",
+	"Microsoft.App/containerApps":                               "2024-03-01",
+	"Microsoft.App/managedEnvironments":                         "2024-03-01",
+	"Microsoft.App/managedEnvironments/certificates":            "2024-03-01",
+	"Microsoft.App/managedEnvironments/managedCertificates":     "2024-03-01",
 }
 
 // knownVersion answers the api-version of a type the plugin creates, in any case.

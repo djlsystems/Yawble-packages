@@ -26,6 +26,7 @@ const (
 	logsAPIVersion  = "2017-01-01-preview"
 	maxLogLines     = 500
 	appSecretFields = 8
+	clientIDVar     = "AZURE_CLIENT_ID" // the variable Azure's SDKs read for a user-assigned identity
 )
 
 var (
@@ -275,7 +276,15 @@ func (p *plugin) appCreate(args []string) (string, error) {
 	if port > 0 {
 		ingress = fmt.Sprintf("public HTTPS ingress to port %d", port)
 	}
-	steps = append(steps, fmt.Sprintf("create or update container app %s in environment %s running %s on %s, with %s, %d settings, %d Key Vault secrets and %d secrets from this member's keys", name, env.Name, image, appSize(cpu), ingress, len(envs), vaultSecrets, keySecrets))
+	// THE APP KNOWS ITS IDENTITY. Azure's SDKs (DefaultAzureCredential, ManagedIdentityCredential)
+	// read AZURE_CLIENT_ID to pick a user-assigned identity; without it an app asking for "the
+	// managed identity" finds none. The command's own AZURE_CLIENT_ID is kept as given.
+	ownClientID := seen[clientIDVar]
+	settings := fmt.Sprintf("%d settings", len(envs))
+	if !ownClientID {
+		settings = fmt.Sprintf("%d settings and %s set to %s-id's client id", len(envs), clientIDVar, name)
+	}
+	steps = append(steps, fmt.Sprintf("create or update container app %s in environment %s running %s on %s, with %s, %s, %d Key Vault secrets and %d secrets from this member's keys", name, env.Name, image, appSize(cpu), ingress, settings, vaultSecrets, keySecrets))
 	what := strings.Join(steps, "; ")
 	if !p.cfg.apply() {
 		return p.whatif("containerapp create", appID, what, map[string]int{"create": 2 + 1 + len(vaults)}), nil
@@ -310,6 +319,18 @@ func (p *plugin) appCreate(args []string) (string, error) {
 			return "", fmt.Errorf("%s could not be granted on %s: %w", grantable[g.role], g.scope, err)
 		}
 		ids = append(ids, assignment)
+	}
+
+	clientID, _ := props(identity)["clientId"].(string)
+	clientNote := ""
+	switch {
+	case ownClientID:
+		clientNote = fmt.Sprintf(" %s is the command's own, kept as given; Azure's SDKs sign in as the identity it names.", clientIDVar)
+	case clientID != "":
+		envs = append(envs, map[string]any{"name": clientIDVar, "value": clientID})
+		clientNote = fmt.Sprintf(" %s is set to %s-id's client id %s, so Azure's SDKs (DefaultAzureCredential, ManagedIdentityCredential) sign in as that identity when the app asks for its managed identity.", clientIDVar, name, clientID)
+	default:
+		clientNote = fmt.Sprintf(" %s is not set: Azure gave no client id for %s-id yet; run containerapp create again in a minute to set it.", clientIDVar, name)
 	}
 
 	var appSecrets []map[string]any
@@ -356,7 +377,7 @@ func (p *plugin) appCreate(args []string) (string, error) {
 	if fqdn := appFQDN(app); fqdn != "" {
 		answer += " It answers at https://" + fqdn + "."
 	}
-	return answer, nil
+	return answer + clientNote, nil
 }
 
 // appFQDN is the address an app with ingress answers at.

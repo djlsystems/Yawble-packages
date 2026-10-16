@@ -237,7 +237,11 @@ func (p *plugin) deploy(args []string) (string, error) {
 		return "", refusal("Refused: the deployment changes what this team does not own, so none of it is deployed:\n- " +
 			strings.Join(refusals, "\n- ") + "\n" + head)
 	}
+	archives := logArchivesIn(changes)
 	if !p.cfg.apply() {
+		for _, a := range archives {
+			report = append(report, fmt.Sprintf("- and give the signed-in account Storage Blob Data Reader on storage account %s, where environment %s archives its logs, so containerapp logs reads them", a.storageName(), a.env))
+		}
 		return head + "\n" + strings.Join(report, "\n") + "\nwhatif: nothing was deployed. A person sets mode to apply in this member's settings to deploy it.", nil
 	}
 
@@ -253,7 +257,10 @@ func (p *plugin) deploy(args []string) (string, error) {
 		return "", err
 	}
 	if _, err := p.az.wait(ans, "the deployment "+d.name); err != nil {
-		return "", err
+		if _, ok := err.(*apiError); ok {
+			return "", err // Azure could not be asked how it went; there are no operations to read
+		}
+		return "", p.whyDeploymentFailed(rgID, d.name, err)
 	}
 	var result struct {
 		Properties struct {
@@ -271,7 +278,7 @@ func (p *plugin) deploy(args []string) (string, error) {
 		return "", err
 	}
 	if !strings.EqualFold(result.Properties.ProvisioningState, "Succeeded") {
-		return "", fmt.Errorf("the deployment %s ended %s: %s %s", d.name, result.Properties.ProvisioningState, result.Properties.Error.Code, result.Properties.Error.Message)
+		return "", p.whyDeploymentFailed(rgID, d.name, fmt.Errorf("the deployment %s ended %s: %s %s", d.name, result.Properties.ProvisioningState, result.Properties.Error.Code, result.Properties.Error.Message))
 	}
 	// Each resource's action is what the what-if said of it; a resource the what-if did not name as
 	// a create or a change gets no resource event.
@@ -290,9 +297,149 @@ func (p *plugin) deploy(args []string) (string, error) {
 			ids = append(ids, r.ID)
 		}
 	}
+	// THE PERSON READS THE LOGS IT ARCHIVES: an environment's diagnostic setting pointing at a
+	// storage account gives the signed-in account Storage Blob Data Reader there, in this command.
+	var said []string
+	for _, a := range archives {
+		assignment, sentence, err := p.grantSignedInReader("deploy", a.storage, a.env)
+		if err != nil {
+			return "", err
+		}
+		if assignment != "" {
+			ids = append(ids, assignment)
+			actions[strings.ToLower(assignment)] = actionCreated
+		}
+		said = append(said, sentence)
+	}
 	p.appliedAs("deploy", rgID, summary, ids, func(id string) string { return actions[strings.ToLower(id)] })
-	return fmt.Sprintf("Deployed %s into %s as %s (sha256 %s): %d created, %d modified.\n%s",
-		filepath.Base(d.file), d.rg, d.name, d.sum[:12], counts["create"], counts["modify"], strings.Join(report, "\n")), nil
+	answer := fmt.Sprintf("Deployed %s into %s as %s (sha256 %s): %d created, %d modified.\n%s",
+		filepath.Base(d.file), d.rg, d.name, d.sum[:12], counts["create"], counts["modify"], strings.Join(report, "\n"))
+	if len(said) > 0 {
+		answer += "\n" + strings.Join(said, "\n")
+	}
+	return answer, nil
+}
+
+// logArchive is a storage account a Container Apps environment's diagnostic setting sends its logs
+// to.
+type logArchive struct{ storage, env string }
+
+func (a logArchive) storageName() string { return a.storage[strings.LastIndex(a.storage, "/")+1:] }
+
+// logArchivesIn answers each storage account a deployment points an environment's logs at: a
+// diagnostic setting on a Microsoft.App/managedEnvironments, created, changed or left as it is,
+// whose storageAccountId names a storage account. Each account is named once.
+func logArchivesIn(changes []whatIfChange) []logArchive {
+	var out []logArchive
+	seen := map[string]bool{}
+	for _, c := range changes {
+		switch strings.ToLower(c.ChangeType) {
+		case "create", "modify", "deploy", "nochange":
+		default:
+			continue
+		}
+		r, ok := parseID(c.ResourceID)
+		if !ok || r.ext == nil || !strings.EqualFold(r.ownType(), "Microsoft.Insights/diagnosticSettings") || !r.isType("Microsoft.App/managedEnvironments") {
+			continue
+		}
+		props, _ := c.After["properties"].(map[string]any)
+		storage, ok := storageAccountID(str(props["storageAccountId"]))
+		if !ok || seen[strings.ToLower(storage)] {
+			continue
+		}
+		seen[strings.ToLower(storage)] = true
+		out = append(out, logArchive{storage: storage, env: r.name()})
+	}
+	return out
+}
+
+// maxFailedOperations caps the failed operations a failed deployment reports, one line each.
+const maxFailedOperations = 10
+
+// whyDeploymentFailed adds to a failed deployment's error each failed operation Azure lists for
+// it: resource type, name, Azure's error code and message, one line each, at most
+// maxFailedOperations and then how many more. Azure's own sentence for the deployment only says
+// that one of them failed.
+func (p *plugin) whyDeploymentFailed(rgID, name string, failed error) error {
+	var lines []string
+	more := 0
+	err := p.az.list(rgID+"/providers/Microsoft.Resources/deployments/"+name+"/operations?api-version="+deployAPIVersion, func(raw json.RawMessage) {
+		var op struct {
+			Properties struct {
+				ProvisioningState string `json:"provisioningState"`
+				TargetResource    struct {
+					ResourceType string `json:"resourceType"`
+					ResourceName string `json:"resourceName"`
+					ID           string `json:"id"`
+				} `json:"targetResource"`
+				StatusMessage json.RawMessage `json:"statusMessage"`
+			} `json:"properties"`
+		}
+		if json.Unmarshal(raw, &op) != nil || !strings.EqualFold(op.Properties.ProvisioningState, "Failed") {
+			return
+		}
+		if len(lines) == maxFailedOperations {
+			more++
+			return
+		}
+		target := op.Properties.TargetResource
+		what := strings.TrimSpace(target.ResourceType + " " + target.ResourceName)
+		if what == "" {
+			what = target.ID
+		}
+		if what == "" {
+			what = "an operation naming no resource"
+		}
+		code, message := operationError(op.Properties.StatusMessage)
+		lines = append(lines, fmt.Sprintf("- %s: %s: %s", what, code, message))
+	})
+	if err != nil {
+		return fmt.Errorf("%w\nIts operations could not be read to say which failed: %v", failed, err)
+	}
+	if len(lines) == 0 {
+		return failed
+	}
+	if more > 0 {
+		lines = append(lines, fmt.Sprintf("and %d more failed operations", more))
+	}
+	return fmt.Errorf("%w\nFailed operations:\n%s", failed, strings.Join(lines, "\n"))
+}
+
+// operationError reads Azure's error code and message from a deployment operation's statusMessage:
+// {"error": {...}} or the error itself, its first detail standing in when it says nothing of its
+// own; a statusMessage that is only text is the message.
+func operationError(raw json.RawMessage) (code, message string) {
+	type azErr struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Details []struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"details"`
+	}
+	var status struct {
+		Error *azErr `json:"error"`
+		azErr
+	}
+	if json.Unmarshal(raw, &status) != nil {
+		var text string
+		_ = json.Unmarshal(raw, &text)
+		return "Failed", strings.TrimSpace(text)
+	}
+	e := status.azErr
+	if status.Error != nil {
+		e = *status.Error
+	}
+	code, message = e.Code, e.Message
+	if len(e.Details) > 0 && (message == "" || len(e.Details) == 1 && e.Details[0].Message != "") {
+		if d := e.Details[0]; d.Message != "" {
+			code, message = d.Code, d.Message
+		}
+	}
+	if code == "" {
+		code = "Failed"
+	}
+	return code, strings.TrimSpace(message)
 }
 
 // prepare reads, compiles and checks the template and its parameters.

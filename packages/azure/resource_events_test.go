@@ -264,7 +264,7 @@ func TestEachChangingCommandNamesWhatItTouched(t *testing.T) {
 	cfg := apply(map[string]any{"allowDelete": true})
 	ra := "role-assignment * created "
 	want := map[string]string{
-		"storage create":           "storage-account newstore created storage create; " + ra + "storage create; " + ra + "storage create; " + ra + "storage create",
+		"storage create":           "storage-account newstore created storage create; " + ra + "storage create; " + ra + "storage create; " + ra + "storage create; " + ra + "storage create",
 		"storage container create": "other files created storage container create",
 		"storage table create":     "other orders created storage table create",
 		"storage queue create":     "other jobs created storage queue create",
