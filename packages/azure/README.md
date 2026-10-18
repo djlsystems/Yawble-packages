@@ -1,4 +1,4 @@
-# Azure 1.1.3
+# Azure 1.1.4
 
 A plugin member that builds and runs a team's own Azure resources: resource groups, deployments
 from Bicep or ARM templates, container registries and image builds, Azure SQL databases and the SQL
@@ -9,6 +9,23 @@ rights**, so it can never do more than you can yourself in the Azure portal.
 
 Everything starts in **whatif**: each changing command says what it would do and changes nothing,
 until you set `mode` to `apply`.
+
+## New in 1.1.4
+
+- **`containerapp create` on an app that exists updates it and keeps its custom domains.** It
+  reads the app first and keeps what the command does not set: each custom domain with its binding
+  type and certificate, the other ingress settings (IP restrictions, sticky sessions, CORS, client
+  certificate mode, additional ports, and the port itself when no `port=` is given), Dapr, service
+  and inactive-revision settings, and the scale rules (the command still sets 0 to 1 replicas). A
+  secret the command no longer names is removed only when nothing kept reads it; a kept setting
+  reading a secret that holds a value is refused until the command names it again, since Azure never
+  answers a value back. Adding a secret after `domain bind` no longer takes the site down.
+- **It says so.** The what-if says "update container app my-app (exists)" and "keeps its custom
+  domains www.example.com, api.example.com"; the answer names the domains still bound as Azure
+  reads the app back after the change, and any it lost: "api.example.com is no longer bound; run
+  domain bind my-app api.example.com again".
+- **Resource events say created only for what was created.** `containerapp create` publishes
+  `changed` for an identity, role assignment or app that already existed, `created` for a new one.
 
 ## New in 1.1.3
 
@@ -268,6 +285,9 @@ domain bind my-app www.example.com
   Key Vault secrets with that identity; no password is involved. Each secret must already be in the
   vault. It sets `AZURE_CLIENT_ID` to that identity's client id, unless the command gives its own
   `env=AZURE_CLIENT_ID=...`, so Azure's SDKs in the app sign in as it.
+- `containerapp create` again on an app that exists updates it, keeping its custom domains and the
+  other settings the command does not set (see New in 1.1.4), so it is how an app gets a new secret
+  or image after `domain bind`. The answer names the domains still bound and any that Azure lost.
 - `domain bind` answers the TXT and CNAME (or, for a domain's apex, A) records the domain needs. In
   a DNS zone the team owns it sets them itself. Once they resolve, `domain bind` again creates a
   free managed certificate, which Azure renews, and binds it.

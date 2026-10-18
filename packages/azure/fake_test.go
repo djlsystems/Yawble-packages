@@ -82,12 +82,14 @@ type fake struct {
 	whatIf     []map[string]any // the changes the next what-if answers
 	echoToken  bool             // answer the subscription read with an error quoting the token
 	hosts      map[string]http.HandlerFunc
-	runPolls   int                 // how often a registry build was read
-	runStatus  string              // how a registry build ends
-	logLines   []string            // what a workspace query answers, oldest first
-	vaultNames map[string][]string // lower-case vault id -> its secrets' names
-	deployOps  []map[string]any    // when set, the next deployment fails and its operations are these
-	noGrants   bool                // every role assignment is refused, as for an account that may not assign roles
+	runPolls   int                   // how often a registry build was read
+	runStatus  string                // how a registry build ends
+	logLines   []string              // what a workspace query answers, oldest first
+	vaultNames map[string][]string   // lower-case vault id -> its secrets' names
+	deployOps  []map[string]any      // when set, the next deployment fails and its operations are these
+	noGrants   bool                  // every role assignment is refused, as for an account that may not assign roles
+	granted    map[string]bool       // lower-case role assignment ids made so far; Azure answers 409 to one again
+	afterPut   func(r *fakeResource) // when set, changes a resource after a PUT, as Azure may
 }
 
 func newFake(t *testing.T) *fake {
@@ -103,6 +105,7 @@ func newFake(t *testing.T) *fake {
 		hosts:      map[string]http.HandlerFunc{},
 		runStatus:  "Succeeded",
 		vaultNames: map[string][]string{},
+		granted:    map[string]bool{},
 	}
 	for _, ns := range providers {
 		f.providers[ns] = "Registered"
@@ -393,6 +396,11 @@ func (f *fake) group(w http.ResponseWriter, method, path string, body []byte) {
 			f.answer(w, 403, armError("AuthorizationFailed", "The client does not have authorization to perform action 'Microsoft.Authorization/roleAssignments/write'."))
 			return
 		}
+		if f.granted[strings.ToLower(id)] {
+			f.answer(w, 409, armError("RoleAssignmentExists", "The role assignment already exists."))
+			return
+		}
+		f.granted[strings.ToLower(id)] = true
 		f.answer(w, 201, map[string]any{"id": id})
 		return
 	}
@@ -440,8 +448,15 @@ func (f *fake) group(w http.ResponseWriter, method, path string, body []byte) {
 			nr.Props = map[string]any{"nameServers": []string{"ns1-01.azure-dns.example", "ns2-01.azure-dns.example"}}
 		}
 		f.created(nr)
+		if f.afterPut != nil {
+			f.afterPut(nr)
+		}
 		f.resources[strings.ToLower(id)] = nr
-		f.answer(w, 201, map[string]any{"id": id, "tags": in.Tags, "properties": nr.Props})
+		status := 201
+		if r != nil {
+			status = 200 // a change, as Azure answers one
+		}
+		f.answer(w, status, map[string]any{"id": id, "tags": in.Tags, "properties": nr.Props})
 	case http.MethodDelete:
 		if r == nil {
 			f.answer(w, 404, nil)
@@ -544,7 +559,7 @@ func runPlugin(t *testing.T, o runOpts, instruction string) *result {
 	}
 	req := map[string]any{
 		"protocol":         "harness.member/1",
-		"plugin":           map[string]any{"id": "azure", "version": "1.1.3"},
+		"plugin":           map[string]any{"id": "azure", "version": "1.1.4"},
 		"member":           map[string]any{"id": testTeam + "/Azure", "team": testTeam, "name": "Azure"},
 		"work":             []map[string]any{{"seq": 1, "instruction": instruction, "payload": map[string]any{"instruction": instruction}}},
 		"config":           cfg,

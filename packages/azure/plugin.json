@@ -3,7 +3,7 @@
   "id": "azure",
   "name": "Azure",
   "description": "Builds and runs a team's own Azure resources, signed in as the person: resource groups, Bicep and ARM deployments checked by what-if first, registry builds, Azure SQL databases and SQL, storage blobs, tables and queues, Key Vault, Container Apps with their logs and custom domains, DNS zones, budgets and role assignments for its managed identities. Key Vault and the apps' logs are reached through Azure management, so the Microsoft sign-in asks for Azure management, Azure SQL and Azure Storage only.\n\nIt changes only what it created, which carries the tags yawble-owner and yawble-plugin, plus the shared SQL servers and registries a person lists. It acts with the person's own Azure rights, never more. What-if by default: every changing command says what it would do and changes nothing until a person sets mode to apply. It never reads a key, a connection string or a Key Vault secret's value, and no token reaches its output; an app's secret comes from Key Vault or from one of this member's own keys, which a person sets on the screen, and its value is never written out.",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/azure",
