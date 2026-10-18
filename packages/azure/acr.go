@@ -80,7 +80,7 @@ func (p *plugin) acrCreate(args []string) (string, error) {
 		"location": location, "sku": map[string]any{"name": sku}, "tags": p.ownTags(),
 		"properties": map[string]any{"adminUserEnabled": false},
 	}
-	if _, err := p.put(id, body, "the registry "+name); err != nil {
+	if _, _, err := p.put(id, body, "the registry "+name); err != nil {
 		return "", err
 	}
 	p.applied("acr create", id, what, []string{id})

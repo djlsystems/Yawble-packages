@@ -90,14 +90,14 @@ func (p *plugin) envCreate(args []string) (string, error) {
 		return "", err
 	}
 	p.progress("azure: creating workspace " + name + "-logs")
-	if _, err := p.put(ws, map[string]any{
+	if _, _, err := p.put(ws, map[string]any{
 		"location": location, "tags": p.ownTags(),
 		"properties": map[string]any{"sku": map[string]any{"name": "PerGB2018"}, "retentionInDays": 30},
 	}, "the workspace "+name+"-logs"); err != nil {
 		return "", err
 	}
 	p.progress("azure: creating environment " + name + " (a few minutes)")
-	if _, err := p.put(env, map[string]any{
+	if _, _, err := p.put(env, map[string]any{
 		"location": location, "tags": p.ownTags(),
 		"properties": map[string]any{"appLogsConfiguration": map[string]any{"destination": "azure-monitor"}},
 	}, "the environment "+name); err != nil {
@@ -264,17 +264,42 @@ func (p *plugin) appCreate(args []string) (string, error) {
 		}
 	}
 
-	server := registryHost(registry.Name)
-	steps := []string{
-		"create managed identity " + name + "-id in " + rg,
-		"grant it AcrPull on registry " + registry.Name,
+	// AN APP THAT EXISTS IS UPDATED, NOT REPLACED. The PUT below is the whole app, and Azure drops
+	// whatever it leaves out, so what the command does not set is read from the app and kept: its
+	// custom domains above all, which domain bind added and a PUT without them unbinds.
+	var existing map[string]any
+	appExists, err := p.az.get(appID+"?api-version="+versionOf("Microsoft.App/containerApps"), &existing)
+	if err != nil {
+		return "", err
 	}
+	var kept keptApp
+	if appExists {
+		if !p.ownedBy(stringMap(existing["tags"])) {
+			return "", refusef("Refused: container app %s already exists in %s and does not carry this team's tags, so this member does not change it. Nothing was changed.", name, rg)
+		}
+		if kept, err = keepFrom(existing, name, secrets); err != nil {
+			return "", err
+		}
+	}
+	identityExists, err := p.az.get(identityID+"?api-version="+versionOf("Microsoft.ManagedIdentity/userAssignedIdentities"), nil)
+	if err != nil {
+		return "", err
+	}
+
+	server := registryHost(registry.Name)
+	identityStep := "create managed identity " + name + "-id in " + rg
+	if identityExists {
+		identityStep = "use managed identity " + name + "-id (exists)"
+	}
+	steps := []string{identityStep, "grant it AcrPull on registry " + registry.Name}
 	for _, v := range vaults {
 		steps = append(steps, "grant it Key Vault Secrets User on Key Vault "+v.Name)
 	}
 	ingress := "no ingress"
 	if port > 0 {
 		ingress = fmt.Sprintf("public HTTPS ingress to port %d", port)
+	} else if kept.ingress != nil {
+		ingress = fmt.Sprintf("its public HTTPS ingress to port %v, kept", kept.ingress["targetPort"])
 	}
 	// THE APP KNOWS ITS IDENTITY. Azure's SDKs (DefaultAzureCredential, ManagedIdentityCredential)
 	// read AZURE_CLIENT_ID to pick a user-assigned identity; without it an app asking for "the
@@ -284,10 +309,25 @@ func (p *plugin) appCreate(args []string) (string, error) {
 	if !ownClientID {
 		settings = fmt.Sprintf("%d settings and %s set to %s-id's client id", len(envs), clientIDVar, name)
 	}
-	steps = append(steps, fmt.Sprintf("create or update container app %s in environment %s running %s on %s, with %s, %s, %d Key Vault secrets and %d secrets from this member's keys", name, env.Name, image, appSize(cpu), ingress, settings, vaultSecrets, keySecrets))
+	appStep := "create container app " + name
+	if appExists {
+		appStep = "update container app " + name + " (exists)"
+	}
+	steps = append(steps, fmt.Sprintf("%s in environment %s running %s on %s, with %s, %s, %d Key Vault secrets and %d secrets from this member's keys", appStep, env.Name, image, appSize(cpu), ingress, settings, vaultSecrets, keySecrets))
+	if appExists {
+		steps = append(steps, kept.says())
+	}
 	what := strings.Join(steps, "; ")
 	if !p.cfg.apply() {
-		return p.whatif("containerapp create", appID, what, map[string]int{"create": 2 + 1 + len(vaults)}), nil
+		counts := map[string]int{"create": 1 + len(vaults)} // the role assignments
+		for _, exists := range []bool{identityExists, appExists} {
+			if exists {
+				counts["modify"]++
+			} else {
+				counts["create"]++
+			}
+		}
+		return p.whatif("containerapp create", appID, what, counts), nil
 	}
 
 	location := env.Location
@@ -297,12 +337,23 @@ func (p *plugin) appCreate(args []string) (string, error) {
 		}
 	}
 	ids := []string{}
-	done := func() { p.applied("containerapp create", appID, "partly: "+what, ids) }
-	identity, err := p.put(identityID, map[string]any{"location": location, "tags": p.ownTags()}, "the identity "+name+"-id")
+	actions := map[string]string{} // each id's resource event: created, or changed when it existed
+	did := func(id string, existed bool) {
+		ids = append(ids, id)
+		actions[id] = actionCreated
+		if existed {
+			actions[id] = actionChanged
+		}
+	}
+	report := func(summary string) {
+		p.appliedAs("containerapp create", appID, summary, ids, func(id string) string { return actions[id] })
+	}
+	done := func() { report("partly: " + what) }
+	identity, existed, err := p.put(identityID, map[string]any{"location": location, "tags": p.ownTags()}, "the identity "+name+"-id")
 	if err != nil {
 		return "", err
 	}
-	ids = append(ids, identityID)
+	did(identityID, existed)
 	principal, _ := props(identity)["principalId"].(string)
 	if principal == "" {
 		done()
@@ -313,12 +364,12 @@ func (p *plugin) appCreate(args []string) (string, error) {
 		grants = append(grants, struct{ scope, role string }{v.ID, roleKeyVaultSecretsUser})
 	}
 	for _, g := range grants {
-		assignment, _, err := p.grantRole(g.scope, g.role, principal)
+		assignment, existed, err := p.grantRole(g.scope, g.role, principal)
 		if err != nil {
 			done()
 			return "", fmt.Errorf("%s could not be granted on %s: %w", grantable[g.role], g.scope, err)
 		}
-		ids = append(ids, assignment)
+		did(assignment, existed)
 	}
 
 	clientID, _ := props(identity)["clientId"].(string)
@@ -343,41 +394,266 @@ func (p *plugin) appCreate(args []string) (string, error) {
 		envs = append(envs, map[string]any{"name": s.env, "secretRef": s.name})
 	}
 	sort.Slice(envs, func(i, j int) bool { return envs[i]["name"].(string) < envs[j]["name"].(string) })
+	appSecrets = append(appSecrets, kept.secrets...)
 	config := map[string]any{
 		"activeRevisionsMode": "Single",
 		"registries":          []map[string]any{{"server": server, "identity": identityID}},
+	}
+	for k, v := range kept.config {
+		config[k] = v
 	}
 	if len(appSecrets) > 0 {
 		config["secrets"] = appSecrets
 	}
 	if port > 0 {
 		config["ingress"] = map[string]any{"external": true, "targetPort": port, "transport": "auto", "allowInsecure": false}
+	} else if kept.ingress != nil {
+		config["ingress"] = map[string]any{}
+	}
+	if ing, ok := config["ingress"].(map[string]any); ok {
+		for k, v := range kept.ingress {
+			if _, set := ing[k]; !set || port == 0 {
+				ing[k] = v
+			}
+		}
+	}
+	scale := map[string]any{}
+	for k, v := range kept.scale {
+		scale[k] = v
+	}
+	scale["minReplicas"], scale["maxReplicas"] = 0, 1
+	identities := map[string]any{identityID: map[string]any{}}
+	for _, id := range kept.identities {
+		identities[id] = map[string]any{}
+	}
+	identityType := "UserAssigned"
+	if kept.systemIdentity {
+		identityType = "SystemAssigned,UserAssigned"
 	}
 	body := map[string]any{
 		"location": location, "tags": p.ownTags(),
-		"identity": map[string]any{"type": "UserAssigned", "userAssignedIdentities": map[string]any{identityID: map[string]any{}}},
+		"identity": map[string]any{"type": identityType, "userAssignedIdentities": identities},
 		"properties": map[string]any{
 			"managedEnvironmentId": env.ID,
 			"configuration":        config,
 			"template": map[string]any{
 				"containers": []map[string]any{{"name": name, "image": image, "env": envs, "resources": map[string]any{"cpu": cpu, "memory": appMemory(cpu)}}},
-				"scale":      map[string]any{"minReplicas": 0, "maxReplicas": 1},
+				"scale":      scale,
 			},
 		},
 	}
-	p.progress("azure: creating container app " + name + " (a few minutes)")
-	app, err := p.put(appID, body, "the container app "+name)
+	if appExists {
+		p.progress("azure: updating container app " + name + " (a few minutes)")
+	} else {
+		p.progress("azure: creating container app " + name + " (a few minutes)")
+	}
+	app, existed, err := p.put(appID, body, "the container app "+name)
 	if err != nil {
 		done()
 		return "", fmt.Errorf("%w. A new identity's pull right can take a few minutes to reach the registry: run containerapp create again then", err)
 	}
-	ids = append(ids, appID)
-	p.applied("containerapp create", appID, what, ids)
+	did(appID, existed || appExists)
 	answer := fmt.Sprintf("Container app %s runs %s in environment %s, pulling with its own identity %s-id.", name, image, env.Name, name)
+	if appExists {
+		answer = fmt.Sprintf("Container app %s existed and was updated: it runs %s in environment %s, pulling with its own identity %s-id.", name, image, env.Name, name)
+	}
 	if fqdn := appFQDN(app); fqdn != "" {
 		answer += " It answers at https://" + fqdn + "."
 	}
+	summary := what
+	if appExists {
+		domains := kept.domainsAfter(app, name)
+		answer += " " + domains
+		summary += "; " + domains
+	}
+	report(summary)
 	return answer + clientNote, nil
+}
+
+// keptIngress are the ingress settings containerapp create does not set itself, kept from an app
+// that exists; keptConfig likewise for its configuration.
+var (
+	keptIngress = []string{"ipSecurityRestrictions", "stickySessions", "corsPolicy", "clientCertificateMode", "additionalPortMappings"}
+	keptConfig  = []string{"dapr", "maxInactiveRevisions", "service"}
+)
+
+// keptApp is what containerapp create keeps of an app that exists: its custom domains, the ingress
+// and configuration settings the command does not set, its scale settings beyond min and max
+// replicas, the secrets those refer to and the identities those secrets are read with.
+type keptApp struct {
+	domains        []string       // the custom domains' host names, as the app had them
+	ingress        map[string]any // customDomains and keptIngress; with no port= also external, targetPort, transport, allowInsecure
+	config         map[string]any // keptConfig
+	scale          map[string]any // everything but minReplicas and maxReplicas
+	secrets        []map[string]any
+	identities     []string // other user-assigned identities a kept secret is read with
+	systemIdentity bool
+	names          []string // the settings kept, in words
+}
+
+// keepFrom reads what to keep from an app as Azure answers it. A secret the command no longer names
+// is kept only when a kept setting refers to it, and only a Key Vault one: Azure never answers a
+// secret's value, so a kept setting reading a value secret is refused, naming the secret, until the
+// command names it again.
+func keepFrom(app map[string]any, name string, given []appSecret) (keptApp, error) {
+	k := keptApp{config: map[string]any{}, scale: map[string]any{}}
+	pr := props(app)
+	cfg, _ := pr["configuration"].(map[string]any)
+	ing, _ := cfg["ingress"].(map[string]any)
+	if ing != nil {
+		k.ingress = map[string]any{}
+		var domains []map[string]any
+		for _, d := range anyList(ing["customDomains"]) {
+			host := str(d["name"])
+			if host == "" {
+				continue
+			}
+			kd := map[string]any{"name": host, "bindingType": str(d["bindingType"])}
+			if c := str(d["certificateId"]); c != "" {
+				kd["certificateId"] = c
+			}
+			domains = append(domains, kd)
+			k.domains = append(k.domains, host)
+		}
+		if len(domains) > 0 {
+			k.ingress["customDomains"] = domains
+		}
+		for _, f := range keptIngress {
+			if v, ok := ing[f]; ok && v != nil {
+				k.ingress[f] = v
+				k.names = append(k.names, "ingress "+f)
+			}
+		}
+		for _, f := range []string{"external", "targetPort", "transport", "allowInsecure"} {
+			if v, ok := ing[f]; ok && v != nil {
+				k.ingress[f] = v
+			}
+		}
+	}
+	for _, f := range keptConfig {
+		if v, ok := cfg[f]; ok && v != nil {
+			k.config[f] = v
+			k.names = append(k.names, f)
+		}
+	}
+	tpl, _ := pr["template"].(map[string]any)
+	scale, _ := tpl["scale"].(map[string]any)
+	for f, v := range scale {
+		if f != "minReplicas" && f != "maxReplicas" && v != nil {
+			k.scale[f] = v
+		}
+	}
+	if len(anyList(scale["rules"])) > 0 {
+		k.names = append(k.names, "scale rules")
+	}
+
+	// The secrets a kept setting refers to.
+	refs := map[string]bool{}
+	secretRefs(k.ingress, refs)
+	secretRefs(k.config, refs)
+	secretRefs(k.scale, refs)
+	for _, s := range given {
+		delete(refs, s.name)
+	}
+	for _, s := range anyList(cfg["secrets"]) {
+		sname := str(s["name"])
+		if !refs[sname] {
+			continue
+		}
+		delete(refs, sname)
+		url := str(s["keyVaultUrl"])
+		if url == "" {
+			return keptApp{}, refusef("Refused: container app %s has a setting that reads its secret %s, which holds a value Azure does not answer back, so a containerapp create that leaves it out would remove it. Name it again with secret=%s=appSecret<1-8>. Nothing was changed.", name, sname, strings.ToUpper(strings.ReplaceAll(sname, "-", "_")))
+		}
+		ks := map[string]any{"name": sname, "keyVaultUrl": url}
+		if id := str(s["identity"]); id != "" {
+			ks["identity"] = id
+			if !strings.EqualFold(id, "system") && !strings.HasSuffix(strings.ToLower(id), "/userassignedidentities/"+name+"-id") {
+				k.identities = append(k.identities, id)
+			}
+			k.systemIdentity = k.systemIdentity || strings.EqualFold(id, "system")
+		}
+		k.secrets = append(k.secrets, ks)
+	}
+	for _, missing := range sortedSet(refs) {
+		return keptApp{}, refusef("Refused: container app %s has a setting that reads a secret %s it does not hold. Nothing was changed.", name, missing)
+	}
+	if id, _ := app["identity"].(map[string]any); id != nil && strings.Contains(strings.ToLower(str(id["type"])), "systemassigned") {
+		k.systemIdentity = true
+	}
+	return k, nil
+}
+
+// secretRefs gathers every secretRef (and passwordSecretRef) value under v.
+func secretRefs(v any, into map[string]bool) {
+	switch t := v.(type) {
+	case map[string]any:
+		for key, val := range t {
+			if s, ok := val.(string); ok && (strings.EqualFold(key, "secretRef") || strings.EqualFold(key, "passwordSecretRef")) && s != "" {
+				into[s] = true
+				continue
+			}
+			secretRefs(val, into)
+		}
+	case []any:
+		for _, e := range t {
+			secretRefs(e, into)
+		}
+	case []map[string]any:
+		for _, e := range t {
+			secretRefs(e, into)
+		}
+	}
+}
+
+func sortedSet(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// says is the plan's words for what an existing app keeps.
+func (k keptApp) says() string {
+	s := "keeps its custom domains " + strings.Join(k.domains, ", ")
+	if len(k.domains) == 0 {
+		s = "it has no custom domains to keep"
+	}
+	if len(k.names) > 0 {
+		s += ", and keeps its " + strings.Join(k.names, ", ")
+	}
+	return s
+}
+
+// domainsAfter says which of the app's custom domains are still bound in the app Azure answers
+// after the PUT, and plainly which are not.
+func (k keptApp) domainsAfter(app map[string]any, name string) string {
+	cfg, _ := props(app)["configuration"].(map[string]any)
+	ing, _ := cfg["ingress"].(map[string]any)
+	bound := map[string]bool{}
+	var now []string
+	for _, d := range anyList(ing["customDomains"]) {
+		if h := str(d["name"]); h != "" {
+			bound[strings.ToLower(h)] = true
+			now = append(now, h)
+		}
+	}
+	var lost []string
+	for _, h := range k.domains {
+		if !bound[strings.ToLower(h)] {
+			lost = append(lost, h)
+		}
+	}
+	s := "Custom domains still bound: none."
+	if len(now) > 0 {
+		s = "Custom domains still bound: " + strings.Join(now, ", ") + "."
+	}
+	for _, h := range lost {
+		s += fmt.Sprintf(" %s is no longer bound; run domain bind %s %s again.", h, name, h)
+	}
+	return s
 }
 
 // appFQDN is the address an app with ingress answers at.

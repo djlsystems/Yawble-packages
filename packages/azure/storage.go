@@ -110,7 +110,7 @@ func (p *plugin) storageCreate(args []string) (string, error) {
 			"supportsHttpsTrafficOnly":     true,
 		},
 	}
-	if _, err := p.put(id, body, "the storage account "+name); err != nil {
+	if _, _, err := p.put(id, body, "the storage account "+name); err != nil {
 		return "", err
 	}
 	// THE PERSON READS AND WRITES IT TOO. An Owner of the subscription holds no data rights on a

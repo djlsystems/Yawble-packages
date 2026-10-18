@@ -67,7 +67,7 @@ func (p *plugin) vaultCreate(args []string) (string, error) {
 			"enableSoftDelete":        true,
 		},
 	}
-	if _, err := p.put(id, body, "the Key Vault "+name); err != nil {
+	if _, _, err := p.put(id, body, "the Key Vault "+name); err != nil {
 		return "", err
 	}
 	p.applied("keyvault create", id, what, []string{id})

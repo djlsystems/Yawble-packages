@@ -70,7 +70,7 @@ func (p *plugin) sqlServerCreate(args []string) (string, error) {
 		},
 	}
 	p.progress("azure: creating SQL server " + name + " (a few minutes)")
-	if _, err := p.put(id, body, "the SQL server "+name); err != nil {
+	if _, _, err := p.put(id, body, "the SQL server "+name); err != nil {
 		return "", err
 	}
 	p.applied("sql server create", id, what, []string{id})
@@ -121,7 +121,7 @@ func (p *plugin) sqlDBCreate(args []string) (string, error) {
 	}
 	body := map[string]any{"location": location, "tags": p.ownTags(), "sku": map[string]any{"name": sku}}
 	p.progress("azure: creating database " + name + " on " + server.Name)
-	if _, err := p.put(id, body, "the database "+name); err != nil {
+	if _, _, err := p.put(id, body, "the database "+name); err != nil {
 		return "", err
 	}
 	p.applied("sql db create", id, what, []string{id})

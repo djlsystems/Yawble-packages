@@ -49,26 +49,31 @@ func (p *plugin) rgLocation(rg string) (string, error) {
 }
 
 // put creates or changes one Azure Resource Manager resource, follows it to the end, and answers the
-// resource as Azure then reads it.
-func (p *plugin) put(id string, body any, what string) (map[string]any, error) {
+// resource as Azure then reads it, and whether it existed before. Existence is read with a GET
+// first: a long-running PUT may answer 201 for a change as well as for a creation.
+func (p *plugin) put(id string, body any, what string) (map[string]any, bool, error) {
 	r, _ := parseID(id)
 	path := id + "?api-version=" + versionOf(r.typ())
+	existed, err := p.az.get(path, nil)
+	if err != nil {
+		return nil, false, err
+	}
 	ans, err := p.az.arm(http.MethodPut, path, body, nil)
 	if err != nil {
-		return nil, err
+		return nil, existed, err
 	}
 	if _, err := p.az.wait(ans, what); err != nil {
-		return nil, err
+		return nil, existed, err
 	}
 	p.forget(id)
 	var out map[string]any
 	if _, err := p.az.get(path, &out); err != nil {
-		return nil, err
+		return nil, existed, err
 	}
 	if out == nil {
 		out = map[string]any{}
 	}
-	return out, nil
+	return out, existed, nil
 }
 
 // props reads a resource's properties object.

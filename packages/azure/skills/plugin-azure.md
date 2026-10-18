@@ -162,6 +162,16 @@ Container Apps:
   command sets `env=AZURE_CLIENT_ID=...` itself: Azure's SDKs (`DefaultAzureCredential`,
   `ManagedIdentityCredential`) read that variable to pick a user-assigned identity, and without it
   an app asking for "the managed identity" finds none and fails to reach storage, Key Vault or SQL.
+  - Running `containerapp create` on an app that exists updates it and keeps its custom domains
+  (each with its binding type and certificate), its other ingress settings (IP restrictions, sticky
+  sessions, CORS, client certificates, extra ports; and its port when no `port=` is given), its
+  Dapr, service and inactive-revision settings, its scale rules, and any secret those read. A secret
+  the command no longer names and nothing kept reads is removed. It is the way to add a secret or a
+  new image to an app after `domain bind`. The what-if says "update container app <app> (exists):
+  keeps its custom domains ..."; the answer names the domains still bound as Azure reads them back
+  and says plainly which one is lost, with the `domain bind` to run again. Pass that line on to the
+  person. An app that exists without the team's tags is refused. Its resource events say `changed`
+  for the identity, role assignments and app that already existed, `created` only for new ones.
 - `containerapp show <app>`, `containerapp revisions <app>`, `containerapp logs <app> [minutes]`
   (default 30, at most 500 lines) - reads. The logs are queried through Azure management on the
   environment's workspace; the account needs Log Analytics Reader (or Reader) on it. An
