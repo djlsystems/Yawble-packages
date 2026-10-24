@@ -17,7 +17,8 @@ import (
 	"testing"
 )
 
-// pkgDir is the package folder; the published Mail and Twilio packages sit beside it.
+// pkgDir is the package folder; the plugin packages it ships, mail-plugin and twilio-plugin, sit
+// beside it.
 const pkgDir = ".."
 
 type trigger struct {
@@ -128,9 +129,9 @@ func loadSolution(t *testing.T) (solution, string) {
 func plugins(t *testing.T) map[string]plugin {
 	t.Helper()
 	out := map[string]plugin{}
-	for _, id := range []string{"mail", "twilio"} {
+	for _, id := range []string{"mail-plugin", "twilio-plugin"} {
 		var p plugin
-		readJSON(t, filepath.Join(pkgDir, "..", id, "plugins", id, "plugin.json"), &p)
+		readJSON(t, filepath.Join(pkgDir, "..", id, "plugin.json"), &p)
 		out[id] = p
 	}
 	return out
@@ -153,7 +154,7 @@ func memberPlugin(t *testing.T, s solution, name string) plugin {
 
 func TestIdentity(t *testing.T) {
 	s, _ := loadSolution(t)
-	if s.Format != 1 || s.ID != "customer-support" || s.Name != "Customer Support" || s.Version != "1.1.1" {
+	if s.Format != 1 || s.ID != "customer-support" || s.Name != "Customer Support" || s.Version != "1.2.0" {
 		t.Fatalf("identity: format %d id %q name %q version %q", s.Format, s.ID, s.Name, s.Version)
 	}
 }
@@ -161,11 +162,11 @@ func TestIdentity(t *testing.T) {
 func TestMembers(t *testing.T) {
 	s, _ := loadSolution(t)
 	ps := plugins(t)
-	if v := ps["mail"].Version; v != "2.3.1" {
-		t.Fatalf("the published mail plugin is %s, want 2.3.1", v)
+	if v := ps["mail-plugin"].Version; v != "3.0.0" {
+		t.Fatalf("the published mail plugin is %s, want 3.0.0", v)
 	}
-	if v := ps["twilio"].Version; v != "1.5.0" {
-		t.Fatalf("the published twilio plugin is %s, want 1.5.0", v)
+	if v := ps["twilio-plugin"].Version; v != "2.0.0" {
+		t.Fatalf("the published twilio plugin is %s, want 2.0.0", v)
 	}
 	got := map[string]string{}
 	for _, m := range s.Members {
@@ -188,7 +189,7 @@ func TestMembers(t *testing.T) {
 			}
 		}
 	}
-	want := map[string]string{"Manager": "manager", "Mailer": "mail", "twilio": "twilio"}
+	want := map[string]string{"Manager": "manager", "Mailer": "mail-plugin", "twilio": "twilio-plugin"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("members %v, want %v", got, want)
 	}
@@ -237,10 +238,10 @@ func TestTriggers(t *testing.T) {
 			}
 		}
 	}
-	event("New mail", "plugin.mail.received", "", "support-playbook", "ack {event.ids}")
-	event("Unanswered inquiry", "plugin.mail.unanswered", "", "support-playbook", "ONE reminder")
-	event("Inquiry answered", "plugin.mail.answered", "", "support-playbook", "closed", "Send no text")
-	event("Summary asked by text", "plugin.twilio.command", "command eq summary", "support-playbook", "{event.from}")
+	event("New mail", "plugin.mail-plugin.received", "", "support-playbook", "ack {event.ids}")
+	event("Unanswered inquiry", "plugin.mail-plugin.unanswered", "", "support-playbook", "ONE reminder")
+	event("Inquiry answered", "plugin.mail-plugin.answered", "", "support-playbook", "closed", "Send no text")
+	event("Summary asked by text", "plugin.twilio-plugin.command", "command eq summary", "support-playbook", "{event.from}")
 
 	// Every trigger that wakes the agent has a cap; plugin members run no model.
 	for _, tr := range s.Triggers {
@@ -325,7 +326,7 @@ func TestInputsAndSetup(t *testing.T) {
 	if len(s.Inputs.Connections) != 1 || s.Inputs.Connections[0].Member != "Mailer" || s.Inputs.Connections[0].Slot != "mailbox" || !s.Inputs.Connections[0].Required {
 		t.Errorf("connections: %+v", s.Inputs.Connections)
 	}
-	if _, ok := ps["mail"].Connections["mailbox"]; !ok {
+	if _, ok := ps["mail-plugin"].Connections["mailbox"]; !ok {
 		t.Error("the mail plugin has no mailbox slot")
 	}
 
@@ -344,7 +345,7 @@ func TestInputsAndSetup(t *testing.T) {
 			t.Errorf("%s sets markRead; it stays off, at the plugin's default", m.Name)
 		}
 	}
-	if f := ps["mail"].Config["markRead"]; string(f.Default) != "false" {
+	if f := ps["mail-plugin"].Config["markRead"]; string(f.Default) != "false" {
 		t.Errorf("mail's markRead defaults to %s", f.Default)
 	}
 
@@ -392,7 +393,7 @@ func TestInputsAndSetup(t *testing.T) {
 	def("Mailer.moveTo", []any{"Junk", "New Customers"})
 	def("twilio.ownerCommands", true)
 	def("twilio.mode", "send")
-	if !slices.Contains(ps["twilio"].Config["mode"].Enum, "send") {
+	if !slices.Contains(ps["twilio-plugin"].Config["mode"].Enum, "send") {
 		t.Error("twilio's mode does not take send")
 	}
 
@@ -404,7 +405,7 @@ func TestInputsAndSetup(t *testing.T) {
 
 	// ownerKeywords is left at the plugin's default, which holds summary.
 	var kw string
-	_ = json.Unmarshal(ps["twilio"].Config["ownerKeywords"].Default, &kw)
+	_ = json.Unmarshal(ps["twilio-plugin"].Config["ownerKeywords"].Default, &kw)
 	if !slices.Contains(strings.Split(strings.ReplaceAll(kw, " ", ""), ","), "summary") {
 		t.Errorf("twilio's default ownerKeywords %q does not hold summary", kw)
 	}
@@ -512,16 +513,16 @@ func TestPluginBuildsArePublishedOnes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := `exec sh "$here/../../../` + e.Name() + `/plugins/` + e.Name() + `/build.sh"`
+		want := `exec sh "$here/../../../` + e.Name() + `/build.sh"`
 		if !bytes.Contains(script, []byte(want)) {
 			t.Errorf("plugins/%s/build.sh does not run the published build: want %s", e.Name(), want)
 		}
-		if _, err := os.Stat(filepath.Join(pkgDir, "..", e.Name(), "plugins", e.Name(), "build.sh")); err != nil {
+		if _, err := os.Stat(filepath.Join(pkgDir, "..", e.Name(), "build.sh")); err != nil {
 			t.Errorf("the published build: %v", err)
 		}
 	}
-	if !reflect.DeepEqual(ids, []string{"mail", "twilio"}) {
-		t.Errorf("plugins/ holds %v, want mail and twilio", ids)
+	if !reflect.DeepEqual(ids, []string{"mail-plugin", "twilio-plugin"}) {
+		t.Errorf("plugins/ holds %v, want mail-plugin and twilio-plugin", ids)
 	}
 }
 

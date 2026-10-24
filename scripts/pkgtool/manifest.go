@@ -172,3 +172,60 @@ func orderedObject[T any](raw json.RawMessage) ([]string, map[string]T, error) {
 	}
 	return keys, values, nil
 }
+
+// shippedPlugin is one plugin a solution ships at plugins/<id>/ in its zip: build is the folder
+// whose build.sh builds it, manifest the folder holding the plugin.json that build copies.
+type shippedPlugin struct {
+	id, build, manifest string
+}
+
+// solutionPlugins answers the plugins the solution folder dir ships, by id: each plugins/<id>/
+// folder in it, built by that folder's build.sh. A plugins/<id>/ that holds only a build.sh builds
+// a plugin whose source is elsewhere under packages; its manifest is that source's plugin.json.
+func solutionPlugins(packages, dir string) ([]shippedPlugin, error) {
+	entries, err := os.ReadDir(filepath.Join(dir, "plugins"))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	var out []shippedPlugin
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		own := filepath.Join(dir, "plugins", e.Name())
+		p := shippedPlugin{id: e.Name(), build: own, manifest: own}
+		if _, err := os.Stat(filepath.Join(own, "plugin.json")); errors.Is(err, fs.ErrNotExist) {
+			if p.manifest, err = pluginSource(packages, e.Name()); err != nil {
+				return nil, fmt.Errorf("%s: %v", own, err)
+			}
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+// pluginSource is the folder under packages holding the source of plugin id: a plugin package
+// (packages/<p>/plugin.json) or a solution's plugins/<id>/plugin.json.
+func pluginSource(packages, id string) (string, error) {
+	candidates, err := filepath.Glob(filepath.Join(packages, "*", "plugin.json"))
+	if err != nil {
+		return "", err
+	}
+	more, err := filepath.Glob(filepath.Join(packages, "*", "plugins", id, "plugin.json"))
+	if err != nil {
+		return "", err
+	}
+	for _, c := range append(candidates, more...) {
+		data, err := os.ReadFile(c)
+		if err != nil {
+			return "", err
+		}
+		var m struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(data, &m) == nil && m.ID == id {
+			return filepath.Dir(c), nil
+		}
+	}
+	return "", fmt.Errorf("no plugin.json under %s has id %s", packages, id)
+}

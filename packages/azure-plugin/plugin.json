@@ -1,0 +1,347 @@
+{
+  "schemaVersion": 1,
+  "id": "azure-plugin",
+  "name": "Azure",
+  "description": "Builds and runs a team's own Azure resources, signed in as the person: resource groups, Bicep and ARM deployments checked by what-if first, registry builds, Azure SQL databases and SQL, storage blobs, tables and queues, Key Vault, Container Apps with their logs and custom domains, DNS zones, budgets and role assignments for its managed identities. Key Vault and the apps' logs are reached through Azure management, so the Microsoft sign-in asks for Azure management, Azure SQL and Azure Storage only.\n\nIt changes only what it created, which carries the tags yawble-owner and yawble-plugin, plus the shared SQL servers and registries a person lists. It acts with the person's own Azure rights, never more. What-if by default: every changing command says what it would do and changes nothing until a person sets mode to apply. It never reads a key, a connection string or a Key Vault secret's value, and no token reaches its output; an app's secret comes from Key Vault or from one of this member's own keys, which a person sets on the screen, and its value is never written out.",
+  "version": "2.0.0",
+  "protocol": "harness.member/1",
+  "executable": {
+    "path": "bin/linux-x64/azure",
+    "args": []
+  },
+  "platforms": {
+    "linux-x64": "bin/linux-x64/azure",
+    "linux-arm64": "bin/linux-arm64/azure"
+  },
+  "requires": [],
+  "timeoutSeconds": 300,
+  "config": {
+    "subscription": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "description": "The id of the Azure subscription this member works in, such as 00000000-0000-0000-0000-000000000000; run setup after signing in and it lists the subscriptions your account can read."
+    },
+    "regions": {
+      "type": "list",
+      "enum": [
+        "eastus",
+        "eastus2",
+        "centralus",
+        "northcentralus",
+        "southcentralus",
+        "westcentralus",
+        "westus",
+        "westus2",
+        "westus3",
+        "canadacentral",
+        "canadaeast",
+        "mexicocentral",
+        "brazilsouth",
+        "chilecentral",
+        "northeurope",
+        "westeurope",
+        "uksouth",
+        "ukwest",
+        "francecentral",
+        "germanywestcentral",
+        "italynorth",
+        "norwayeast",
+        "polandcentral",
+        "spaincentral",
+        "swedencentral",
+        "switzerlandnorth",
+        "israelcentral",
+        "qatarcentral",
+        "uaenorth",
+        "southafricanorth",
+        "centralindia",
+        "southindia",
+        "westindia",
+        "eastasia",
+        "southeastasia",
+        "japaneast",
+        "japanwest",
+        "koreacentral",
+        "koreasouth",
+        "indonesiacentral",
+        "malaysiawest",
+        "australiaeast",
+        "australiasoutheast",
+        "australiacentral",
+        "newzealandnorth"
+      ],
+      "default": [
+        "eastus2"
+      ],
+      "setBy": "person",
+      "description": "The Azure regions resource groups may be created in, chosen from the list; eastus2 unless a person picks others."
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "whatif",
+        "apply"
+      ],
+      "default": "whatif",
+      "setBy": "person",
+      "description": "whatif answers what each changing command would do and changes nothing in Azure; apply makes the changes."
+    },
+    "allowDelete": {
+      "type": "bool",
+      "default": false,
+      "setBy": "person",
+      "description": "Off: every delete is refused, in whatif and apply; on: the member may delete what its team owns."
+    },
+    "sharedSqlServers": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "Existing SQL servers, by name such as my-sql-server, on which the member may create its own databases; it never changes the server or another database on it."
+    },
+    "sharedContainerRegistries": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "Existing Azure Container Registries (ACR), by name such as myregistry, that the member may build and push images to and grant pull rights on to its own managed identities; a Container App's image is pulled from one of them."
+    },
+    "sharedRegistries": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "advanced": true,
+      "description": "The old name of sharedContainerRegistries, still read; move its registries to sharedContainerRegistries."
+    },
+    "monthlyBudget": {
+      "type": "number",
+      "min": 0,
+      "default": 0,
+      "setBy": "person",
+      "description": "A monthly budget, in the subscription's currency, put on every resource group the member creates, with alerts at 80% and 100%; 0 means no budget."
+    },
+    "budgetEmails": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "The email addresses the budget alerts go to; needed when monthlyBudget is more than 0."
+    },
+    "namePrefix": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "advanced": true,
+      "description": "Text put before the name of every resource group the member creates, such as team1-; empty by default."
+    }
+  },
+  "secrets": {
+    "appSecret1": {
+      "description": "A value an app made by containerapp create may read as a secret environment variable, through secret=<NAME>=appSecret1; a person binds it to a key and sets that key on the screen (this member's settings).",
+      "required": false
+    },
+    "appSecret2": {
+      "description": "A value an app made by containerapp create may read as a secret environment variable, through secret=<NAME>=appSecret2; a person binds it to a key and sets that key on the screen (this member's settings).",
+      "required": false
+    },
+    "appSecret3": {
+      "description": "A value an app made by containerapp create may read as a secret environment variable, through secret=<NAME>=appSecret3; a person binds it to a key and sets that key on the screen (this member's settings).",
+      "required": false
+    },
+    "appSecret4": {
+      "description": "A value an app made by containerapp create may read as a secret environment variable, through secret=<NAME>=appSecret4; a person binds it to a key and sets that key on the screen (this member's settings).",
+      "required": false
+    },
+    "appSecret5": {
+      "description": "A value an app made by containerapp create may read as a secret environment variable, through secret=<NAME>=appSecret5; a person binds it to a key and sets that key on the screen (this member's settings).",
+      "required": false
+    },
+    "appSecret6": {
+      "description": "A value an app made by containerapp create may read as a secret environment variable, through secret=<NAME>=appSecret6; a person binds it to a key and sets that key on the screen (this member's settings).",
+      "required": false
+    },
+    "appSecret7": {
+      "description": "A value an app made by containerapp create may read as a secret environment variable, through secret=<NAME>=appSecret7; a person binds it to a key and sets that key on the screen (this member's settings).",
+      "required": false
+    },
+    "appSecret8": {
+      "description": "A value an app made by containerapp create may read as a secret environment variable, through secret=<NAME>=appSecret8; a person binds it to a key and sets that key on the screen (this member's settings).",
+      "required": false
+    }
+  },
+  "connections": {
+    "microsoft": {
+      "description": "The Microsoft account that signs in to Azure; the member acts with that account's own Azure rights.",
+      "providers": [
+        "microsoft"
+      ],
+      "scopes": {
+        "microsoft": [
+          "https://management.azure.com/user_impersonation",
+          "https://database.windows.net/user_impersonation",
+          "https://storage.azure.com/user_impersonation",
+          "offline_access"
+        ]
+      },
+      "required": true
+    }
+  },
+  "events": {
+    "publishes": [
+      {
+        "type": "planned",
+        "summary": "What a changing command would do, or what a deployment's what-if found: counts by change type and any refusals.",
+        "highVolume": false,
+        "fields": [
+          {
+            "name": "command",
+            "kind": "string",
+            "summary": "The command, such as deploy or rg create, without its arguments."
+          },
+          {
+            "name": "target",
+            "kind": "string",
+            "summary": "The resource group or resource id it acts on."
+          },
+          {
+            "name": "summary",
+            "kind": "string",
+            "summary": "What it would do, in words."
+          },
+          {
+            "name": "mode",
+            "kind": "string",
+            "summary": "whatif or apply."
+          },
+          {
+            "name": "create",
+            "kind": "number",
+            "summary": "Resources it would create."
+          },
+          {
+            "name": "modify",
+            "kind": "number",
+            "summary": "Resources it would change."
+          },
+          {
+            "name": "delete",
+            "kind": "number",
+            "summary": "Resources it would delete."
+          },
+          {
+            "name": "unchanged",
+            "kind": "number",
+            "summary": "Resources a deployment leaves as they are."
+          },
+          {
+            "name": "refusals",
+            "kind": "list",
+            "summary": "Each change refused, naming its resource; empty when none."
+          }
+        ]
+      },
+      {
+        "type": "applied",
+        "summary": "A change was made in apply mode.",
+        "highVolume": false,
+        "fields": [
+          {
+            "name": "command",
+            "kind": "string",
+            "summary": "The command, such as deploy or rg create, without its arguments."
+          },
+          {
+            "name": "target",
+            "kind": "string",
+            "summary": "The resource group or resource id it acted on."
+          },
+          {
+            "name": "summary",
+            "kind": "string",
+            "summary": "What changed, in words."
+          },
+          {
+            "name": "resourceIds",
+            "kind": "list",
+            "summary": "The id of each resource created or changed."
+          }
+        ]
+      },
+      {
+        "type": "resource",
+        "summary": "One Azure resource a command created, changed or deleted in apply mode, beside that command's applied summary; at most 25 a command, and past that the summary alone covers the rest.",
+        "highVolume": true,
+        "fields": [
+          {
+            "name": "resourceId",
+            "kind": "string",
+            "summary": "The resource's Azure id."
+          },
+          {
+            "name": "resourceType",
+            "kind": "string",
+            "summary": "Its kind: resource-group, sql-server, sql-database, container-app, container-app-environment, container-registry, key-vault, secret, storage-account, managed-identity, role-assignment, log-analytics, budget, dns-zone or other."
+          },
+          {
+            "name": "name",
+            "kind": "string",
+            "summary": "The resource's own name, read from its id; never a secret's value."
+          },
+          {
+            "name": "action",
+            "kind": "string",
+            "summary": "created, changed or deleted."
+          },
+          {
+            "name": "command",
+            "kind": "string",
+            "summary": "The command, such as deploy or rg create, without its arguments."
+          }
+        ],
+        "monitor": {
+          "icon": "cloud",
+          "iconBy": {
+            "field": "resourceType",
+            "icons": {
+              "resource-group": "folder",
+              "sql-server": "dns",
+              "sql-database": "database",
+              "container-app": "deployed_code",
+              "container-app-environment": "lan",
+              "container-registry": "inventory_2",
+              "key-vault": "key",
+              "secret": "key",
+              "storage-account": "hard_drive",
+              "managed-identity": "badge",
+              "role-assignment": "admin_panel_settings",
+              "log-analytics": "monitoring",
+              "budget": "savings",
+              "dns-zone": "language",
+              "other": "cloud"
+            }
+          },
+          "actionField": "action",
+          "label": "{name}"
+        }
+      },
+      {
+        "type": "refused",
+        "summary": "A command was refused: outside what the team owns, a role or principal not allowed, a delete with allowDelete off, a path outside the team's folders, a secret outside Key Vault and this member's own keys, or bad arguments.",
+        "highVolume": false,
+        "fields": [
+          {
+            "name": "command",
+            "kind": "string",
+            "summary": "The command, without its arguments."
+          },
+          {
+            "name": "reason",
+            "kind": "string",
+            "summary": "Why, in the plugin's words."
+          }
+        ]
+      }
+    ]
+  },
+  "skills": [
+    "skills/plugin-azure-plugin.md"
+  ]
+}

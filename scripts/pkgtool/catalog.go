@@ -53,6 +53,7 @@ type entry struct {
 	Platforms   []string    `json:"platforms"`
 	Download    download    `json:"download"`
 	Source      string      `json:"source"`
+	Contents    contents    `json:"contents"`
 }
 
 type needs struct {
@@ -209,6 +210,7 @@ func newEntry(kind, id, name, version, description string) entry {
 		},
 		Plugins:   []pluginRef{},
 		Platforms: []string{},
+		Contents:  emptyContents(),
 	}
 }
 
@@ -216,13 +218,18 @@ func newEntry(kind, id, name, version, description string) entry {
 // "plugins/<id>/" in a solution zip).
 type builtPlugin struct {
 	manifest  pluginManifest
+	raw       json.RawMessage
 	platforms []string
 }
 
 func readPlugin(files zipFiles, prefix string) (builtPlugin, error) {
-	var m pluginManifest
-	if err := files.readJSON(prefix+"plugin.json", &m); err != nil {
+	var raw json.RawMessage
+	if err := files.readJSON(prefix+"plugin.json", &raw); err != nil {
 		return builtPlugin{}, err
+	}
+	var m pluginManifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return builtPlugin{}, fmt.Errorf("%splugin.json: %v", prefix, err)
 	}
 	if prefix != "" && prefix != "plugins/"+m.ID+"/" {
 		return builtPlugin{}, fmt.Errorf("%splugin.json says id %q; its folder must be named after it", prefix, m.ID)
@@ -242,7 +249,7 @@ func readPlugin(files zipFiles, prefix string) (builtPlugin, error) {
 	if _, ok := files[prefix+m.Executable.Path]; !ok {
 		return builtPlugin{}, fmt.Errorf("%splugin.json's executable %s is not in the zip", prefix, m.Executable.Path)
 	}
-	return builtPlugin{manifest: m, platforms: keys}, nil
+	return builtPlugin{manifest: m, raw: raw, platforms: keys}, nil
 }
 
 func pluginEntry(files zipFiles) (entry, error) {
@@ -286,13 +293,20 @@ func pluginEntry(files zipFiles) (entry, error) {
 	e.Needs.Runtimes = sortedUnique(m.Requires)
 	e.Plugins = []pluginRef{{m.ID, m.Version}}
 	e.Platforms = nonNil(p.platforms)
+	if e.Contents, err = pluginContents(p.raw); err != nil {
+		return entry{}, fmt.Errorf("plugin.json: %v", err)
+	}
 	return e, nil
 }
 
 func solutionEntry(files zipFiles) (entry, error) {
-	var s solutionManifest
-	if err := files.readJSON("solution.json", &s); err != nil {
+	var raw json.RawMessage
+	if err := files.readJSON("solution.json", &raw); err != nil {
 		return entry{}, err
+	}
+	var s solutionManifest
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return entry{}, fmt.Errorf("solution.json: %v", err)
 	}
 	e := newEntry("solution", s.ID, s.Name, s.Version, s.Description)
 
@@ -306,6 +320,7 @@ func solutionEntry(files zipFiles) (entry, error) {
 	plugins := map[string]builtPlugin{}
 	var runtimes []string
 	var platforms []string
+	var manifests []json.RawMessage
 	declared := false
 	for _, prefix := range prefixes {
 		p, err := readPlugin(files, prefix)
@@ -313,6 +328,7 @@ func solutionEntry(files zipFiles) (entry, error) {
 			return entry{}, err
 		}
 		plugins[p.manifest.ID] = p
+		manifests = append(manifests, p.raw)
 		e.Plugins = append(e.Plugins, pluginRef{p.manifest.ID, p.manifest.Version})
 		runtimes = append(runtimes, p.manifest.Requires...)
 		// A plugin without `platforms` (a script) runs wherever its runtime does and narrows
@@ -400,6 +416,10 @@ func solutionEntry(files zipFiles) (entry, error) {
 	}
 	for _, st := range s.Inputs.Settings {
 		e.Needs.Inputs = append(e.Needs.Inputs, inputNeed{st.Setting, "setting", st.Required, st.Description})
+	}
+	var err error
+	if e.Contents, err = solutionContents(raw, manifests); err != nil {
+		return entry{}, fmt.Errorf("solution.json: %v", err)
 	}
 	return e, nil
 }

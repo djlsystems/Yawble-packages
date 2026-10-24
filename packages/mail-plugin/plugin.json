@@ -1,0 +1,209 @@
+{
+  "schemaVersion": 1,
+  "id": "mail-plugin",
+  "name": "Mail",
+  "description": "Lists, searches, reads, marks, moves and labels mail, drafts or sends email - as HTML made from the text by default, or as plain text with format: text - drafts or sends a reply threaded to the message it answers, says whether a message was replied to, follows a message until it is, and watches a folder for new mail, over an IMAP app-password mailbox, Microsoft or Google. Drafts only by default; sends only to a person's allowlist; never deletes.",
+  "version": "3.0.0",
+  "protocol": "harness.member/1",
+  "executable": { "path": "bin/linux-x64/mail", "args": [] },
+  "platforms": {
+    "linux-x64": "bin/linux-x64/mail",
+    "linux-arm64": "bin/linux-arm64/mail"
+  },
+  "timeoutSeconds": 120,
+  "config": {
+    "mode": {
+      "type": "string",
+      "enum": ["draft", "send"],
+      "default": "draft",
+      "setBy": "person",
+      "description": "draft saves a draft the person sends from their mailbox and never sends anything; send sends, and only to addresses on sendAllowlist."
+    },
+    "format": {
+      "type": "string",
+      "enum": ["html", "text"],
+      "default": "html",
+      "description": "html sends the body as written plus an HTML version made from it (Markdown: headings, bold, lists, links; HTML tags in the body are shown as text, never used); text sends plain text only."
+    },
+    "sendAllowlist": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "Who it may draft to or send to: full addresses (person+tag@example.com) or whole domains (@example.com). Case is ignored; a +tag must match exactly as written. Every To, Cc and Bcc recipient must be on it, in draft mode too."
+    },
+    "markRead": {
+      "type": "bool",
+      "default": false,
+      "setBy": "person",
+      "description": "Lets mark-read and mark-unread change whether a message is read. Off: both are refused."
+    },
+    "moveTo": {
+      "type": "list",
+      "default": [],
+      "setBy": "person",
+      "description": "The only folders and labels move and label may use (Archive, Receipts). One the mailbox does not have is created at the top level on its first move or label; a nested one (Clients/Acme) must exist, and Junk, Sent and Trash are never created. The folders command lists what exists. Empty: move and label are refused. Nothing is ever deleted."
+    },
+    "maxResults": {
+      "type": "number",
+      "integer": true,
+      "min": 1,
+      "max": 100,
+      "default": 20,
+      "description": "The most messages one command reads: list and search (a max:<n> may only lower it), the ids one mark, move or label takes, and the new messages one watch check takes."
+    },
+    "maxBodyChars": {
+      "type": "number",
+      "integer": true,
+      "min": 1000,
+      "max": 200000,
+      "default": 20000,
+      "description": "read cuts a message's body to this many characters and says it was cut."
+    },
+    "watchFolder": {
+      "type": "string",
+      "default": "INBOX",
+      "description": "The folder watch checks for new mail."
+    },
+    "watchUnreadOnly": {
+      "type": "bool",
+      "default": true,
+      "description": "watch lists only new mail that is still unread."
+    },
+    "watchSenders": {
+      "type": "list",
+      "default": [],
+      "description": "When set, watch lists only mail whose sender contains one of these (an address or @example.com)."
+    },
+    "watchQuery": {
+      "type": "string",
+      "default": "",
+      "description": "When set, watch lists only mail matching it: from:<text>, subject:<text>, and words that must appear in the sender, subject or snippet."
+    },
+    "watchLookbackDays": {
+      "type": "number",
+      "integer": true,
+      "min": 0,
+      "max": 30,
+      "default": 0,
+      "description": "How many days back the first check lists mail that is already there. 0: the watch starts from now."
+    },
+    "followQuietStart": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "description": "When follow reminders stop each day, as HH:MM in followTimeZone (22:00). Empty, or followQuietEnd empty: no quiet hours. In quiet hours the watch lists no followed message as unanswered; the first check after lists each one due, once."
+    },
+    "followQuietEnd": {
+      "type": "string",
+      "default": "",
+      "setBy": "person",
+      "description": "When follow reminders start again each day, as HH:MM in followTimeZone (07:00). Empty, or followQuietStart empty: no quiet hours."
+    },
+    "followTimeZone": {
+      "type": "string",
+      "default": "UTC",
+      "setBy": "person",
+      "description": "The IANA time zone quiet hours are in (Europe/London, America/New_York). Default UTC."
+    }
+  },
+  "connections": {
+    "mailbox": {
+      "description": "The mailbox to read, draft and send from: an IMAP app password (Gmail, iCloud, Yahoo, other), a Microsoft account or a Google account.",
+      "providers": ["imap", "microsoft", "google"],
+      "scopes": {
+        "google": [
+          "https://www.googleapis.com/auth/gmail.readonly",
+          "https://www.googleapis.com/auth/gmail.compose",
+          "https://www.googleapis.com/auth/gmail.modify"
+        ],
+        "microsoft": [
+          "https://graph.microsoft.com/Mail.ReadWrite",
+          "https://graph.microsoft.com/Mail.Send",
+          "offline_access"
+        ]
+      },
+      "required": true
+    }
+  },
+  "reads": [
+    { "site": "mail", "collection": "watch" },
+    { "site": "mail", "collection": "follows" }
+  ],
+  "events": {
+    "publishes": [
+      {
+        "type": "received",
+        "summary": "One check of the watch found new mail, or mail nobody acknowledged yet: every such message, never a body.",
+        "highVolume": false,
+        "fields": [
+          { "name": "mailbox", "kind": "string", "summary": "The mailbox's address." },
+          { "name": "folder", "kind": "string", "summary": "The folder watched." },
+          { "name": "count", "kind": "number", "summary": "How many messages the event lists." },
+          { "name": "ids", "kind": "string", "summary": "Their ids, comma-separated, as ack takes them." },
+          { "name": "messages", "kind": "list", "summary": "Each message: id, thread, from, subject, date, a short snippet, and listed (how many checks have listed it)." },
+          { "name": "more", "kind": "number", "summary": "How many more did not fit in this event; the next check lists them." }
+        ]
+      },
+      {
+        "type": "unanswered",
+        "summary": "One check of the watch found followed messages with no reply yet whose reminder interval has passed, outside quiet hours: every such message, never a body. Published only when at least one is due.",
+        "highVolume": false,
+        "fields": [
+          { "name": "mailbox", "kind": "string", "summary": "The mailbox's address." },
+          { "name": "count", "kind": "number", "summary": "How many followed messages the event lists." },
+          { "name": "ids", "kind": "string", "summary": "Their ids, comma-separated." },
+          { "name": "messages", "kind": "list", "summary": "Each message: id, from, subject, since (when it arrived) and hoursWaiting." }
+        ]
+      },
+      {
+        "type": "answered",
+        "summary": "One check of the watch found followed messages with a reply from this mailbox in Sent: every such message, no longer followed, never a body.",
+        "highVolume": false,
+        "fields": [
+          { "name": "mailbox", "kind": "string", "summary": "The mailbox's address." },
+          { "name": "count", "kind": "number", "summary": "How many followed messages the event lists." },
+          { "name": "ids", "kind": "string", "summary": "Their ids, comma-separated." },
+          { "name": "messages", "kind": "list", "summary": "Each message: id, from, subject, since (when it arrived) and repliedAt (when the reply was sent)." }
+        ]
+      },
+      {
+        "type": "sent",
+        "summary": "Mail sent one email: the send command, or reply, in send mode. One event per message sent; never a body, an address or an attachment.",
+        "highVolume": false,
+        "monitor": { "icon": "send", "action": "created", "label": "{subject}" },
+        "fields": [
+          { "name": "mailbox", "kind": "string", "summary": "The mailbox's address." },
+          { "name": "id", "kind": "string", "summary": "The sent message's id: Gmail's message id, the Message-ID over SMTP; empty from Microsoft Graph, which answers none." },
+          { "name": "thread", "kind": "string", "summary": "Its thread: Gmail's threadId, the original's conversationId for a Microsoft reply, the Message-ID over SMTP; empty where the provider answers none." },
+          { "name": "to", "kind": "number", "summary": "How many recipients it went to (To, Cc and Bcc), never who." },
+          { "name": "subject", "kind": "string", "summary": "Its subject on one line, cut to 120 characters." }
+        ]
+      },
+      {
+        "type": "drafted",
+        "summary": "Mail saved one draft: the draft command, send in draft mode, or reply in draft mode. Nothing was sent; never a body, an address or an attachment.",
+        "highVolume": false,
+        "monitor": { "icon": "drafts", "action": "created", "label": "{subject}" },
+        "fields": [
+          { "name": "mailbox", "kind": "string", "summary": "The mailbox's address." },
+          { "name": "id", "kind": "string", "summary": "The draft's message id; empty when the IMAP server answers none." },
+          { "name": "subject", "kind": "string", "summary": "Its subject on one line, cut to 120 characters." }
+        ]
+      },
+      {
+        "type": "changed",
+        "summary": "Mail marked one message read or unread, moved it or labelled it. One event per message; Mail never deletes.",
+        "highVolume": true,
+        "monitor": { "icon": "mail", "actionField": "action", "label": "{change}: {subject}" },
+        "fields": [
+          { "name": "mailbox", "kind": "string", "summary": "The mailbox's address." },
+          { "name": "id", "kind": "string", "summary": "The message's id; after a move, its new id where the provider gives one." },
+          { "name": "subject", "kind": "string", "summary": "Its subject on one line, cut to 120 characters; empty when it could not be read." },
+          { "name": "action", "kind": "string", "summary": "Always changed: no command here makes or removes a message." },
+          { "name": "change", "kind": "string", "summary": "read (mark-read), unread (mark-unread), moved or labelled." }
+        ]
+      }
+    ]
+  },
+  "skills": ["skills/plugin-mail-plugin.md"]
+}

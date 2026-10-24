@@ -220,6 +220,13 @@ func TestAPluginZipsEntryIsReadFromItsManifestAndTheZip(t *testing.T) {
 			SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(data)),
 		},
 		Source: "https://github.com/djlsystems/Yawble-packages/tree/main/packages/hello",
+		Contents: func() contents {
+			c := emptyContents()
+			c.Settings = []contentsSetting{{"greeting", "", "string", false, "hi"}, {"allow", "", "list", false, ""}}
+			c.Secrets = []contentsSecret{{"token", "", false, true}}
+			c.Connections = []contentsConnection{{"account", []string{"google", "microsoft"}, true}}
+			return c
+		}(),
 	}
 	if c.Schema != 1 || c.GeneratedAt != "2026-10-08T12:00:00Z" || len(c.Packages) != 1 {
 		t.Fatalf("catalog %+v", c)

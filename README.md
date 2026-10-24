@@ -14,10 +14,12 @@ packages/<id>/                   one folder per package, named after its manifes
   skills/<name>.md                 the team's skills
   sites/<name>/                    each site, index.html at its root
   tools/                           code the members' instructions run
-  plugins/<plugin-id>/             each plugin's SOURCE, with its build.sh
-packages/<id>/                   or a plugin package: one plugin's source,
+  plugins/<plugin-id>/build.sh     for each plugin it ships, a build.sh that runs the plugin
+                                   package's own: exec sh "$here/../../../<plugin-id>/build.sh"
+packages/<plugin-id>/            or a plugin package: one plugin's source, the only copy, with
   plugin.json                      its manifest
-  build.sh                         and its build.sh
+  build.sh                         its build.sh
+  README.md                        and its README
 scripts/build.sh                 builds every package into dist/ and writes dist/catalog.json
 scripts/check.sh                 builds, tests, checks the catalog and scans for real people
 scripts/allowed-hosts.txt        the hosts check.sh accepts, each with why
@@ -26,9 +28,20 @@ dist/                            build output, never committed
 ```
 
 Solution packages follow Yawble's format (`docs/solutions.md` in the Yawble repository) and plugins
-its manifest (`docs/plugins.md`), with one difference: here `plugins/<plugin-id>/` holds the plugin's
-source, and the build puts the built version there in the zip. A site ships inside a solution
-package; the build takes no site on its own.
+its manifest (`docs/plugins.md`), with one difference: here a solution's `plugins/<plugin-id>/`
+holds only a `build.sh`, and the build puts the built version there in the zip.
+
+**Every plugin is a plugin package, and its source lives there and nowhere else.** A solution that
+ships a plugin (Mail, Twilio and Customer support do) builds it from that package through its
+`plugins/<plugin-id>/build.sh`, so the plugin package's zip and every solution's copy are built from
+one source. The build finds a plugin's manifest by its id among the plugin packages (`pkgtool`,
+`solutionPlugins`). A site ships inside a solution package; the build takes no site on its own.
+
+**A plugin's id ends in `-plugin`** (`mail-plugin`, `twilio-plugin`, `azure-plugin`,
+`namecheap-plugin`, `stripe-plugin`), and its folder is named after it. A solution's id never does,
+so a plugin and a solution never share an id: the catalog, yawble.ai and the Host each know a
+package by its id alone. The id is also in the plugin's event types (`plugin.<plugin-id>.<event>`)
+and its skill's name (`plugin-<plugin-id>`), and a solution names it in each member's `pluginId`.
 
 Each package and each plugin has its own `n.n.n` version, in its manifest's `version`.
 
@@ -108,6 +121,20 @@ for is an empty list, never left out and never `null`.
 - `download` is `https://yawble.ai/api/marketplace/download/<id>/<version>.zip`, where the
   Marketplace serves that version once it is uploaded, with the zip's `sha256` and `bytes`.
 - `source` is the package's folder on `main` in this repository.
+- `contents` is what the package holds, exactly as yawble.ai derives it from an uploaded zip
+  (Yawble-web `marketplace/admin/package.ts`; `scripts/pkgtool/contents.go` is the same rules):
+  `plugins` (each plugin a solution ships, its version and `minimum`), `members`, `skills`,
+  `triggers` (each in words), `sites`, `settings`, `secrets`, `connections` and `events`. A
+  plugin's settings, secrets and connections are every one its manifest declares; a solution's are
+  what its `inputs` ask a person for and the keys its members bind. The `contents` test compares it
+  with `scripts/pkgtool/testdata/yawble-ai-contents.json`, recorded from the live catalog
+  (`https://yawble.ai/api/marketplace/catalog.json`); re-record it when a published version's
+  contents change.
+
+A plugin never names the solutions that ship it: no manifest and no catalog entry says which
+solutions include a plugin. A solution names `pluginMinimums` (`{ "<plugin id>": "<version>" }`)
+only for a plugin known to work at a version lower than the one it ships; otherwise the minimum is
+the version shipped, and it names none.
 
 `schema` goes up by one, in `scripts/pkgtool/catalog.go`, on any change a reader must know about: a
 field removed or renamed, a field's type or meaning changed, or a field added that a reader must act

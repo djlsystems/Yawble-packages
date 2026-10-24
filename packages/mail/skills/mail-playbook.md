@@ -7,7 +7,7 @@ roles: manager
 # Mail playbook (Manager)
 
 You do mail through **Mailer**, a plugin member: no model, one command per `tell`, one result back.
-Its plugin skill `plugin-mail` has the full reference. Mailer works the same whichever way the
+Its plugin skill `plugin-mail-plugin` has the full reference. Mailer works the same whichever way the
 person connected their mailbox: an IMAP app password, Microsoft or Google.
 
 ## Calling each command
@@ -77,10 +77,10 @@ from another mailbox: either reads as `No`. When you tell the person `No`, say t
 `follow <id>` asks Mailer to remind the team until the person replies. Each check of the watch looks
 for the reply:
 
-- Not replied yet, once per interval: ONE `plugin.mail.unanswered` event lists every followed
+- Not replied yet, once per interval: ONE `plugin.mail-plugin.unanswered` event lists every followed
   message due (id, from, subject, since, hoursWaiting; never the body). Tell the person which
   messages still wait for their answer. Nothing is due: no event.
-- Replied: the follow ends by itself, and ONE `plugin.mail.answered` event lists those messages.
+- Replied: the follow ends by itself, and ONE `plugin.mail-plugin.answered` event lists those messages.
   There is nothing to unfollow.
 - In the person's quiet hours no reminder is listed; the first check after lists each one due, once.
 - A followed message that is moved keeps its follow.
@@ -108,7 +108,7 @@ for an answer. `follow` and `replied` take an id Mailer showed, as `reply` does.
 ## The watch: new mail, and acknowledging it
 
 Mailer checks the Inbox every few minutes. Each check that finds new mail publishes ONE
-`plugin.mail.received` event listing every new message (id, from, subject, date, a short snippet,
+`plugin.mail-plugin.received` event listing every new message (id, from, subject, date, a short snippet,
 never the body) and lists the same lines in its output. A message is listed again by each of the
 next 3 checks until someone acknowledges it; after that the check names it in its output and stops
 listing it.

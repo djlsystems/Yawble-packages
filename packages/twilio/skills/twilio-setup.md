@@ -11,7 +11,7 @@ the Twilio Console; you tell them exactly where, then run `check` on the plugin 
 and say what is done and what is next. Setup can take days (registration review), so the person
 may come back to it many times: always start from `check`, never from memory.
 
-The commands, output and refusals of `twilio` are in the skill `plugin-twilio`. Load it too.
+The commands, output and refusals of `twilio` are in the skill `plugin-twilio-plugin`. Load it too.
 
 ## The rules of this conversation
 
@@ -217,7 +217,7 @@ body. The next poll (within 5 minutes) records its status.
 
 `check` evidence: `Waiting: first message — <sid> to <cell> is <status> since <time>; …` until
 the poll sees it, then `Done: first message delivered to <own cell>`. A `Next: first message —
-<failure sentence>` is explained with plugin-twilio's failures.
+<failure sentence>` is explained with plugin-twilio-plugin's failures.
 
 ### 9. Wider sending (optional, later)
 
@@ -239,13 +239,13 @@ When steps 1–8 are Done, walk the person through this acceptance test, one ste
 
 1. **`check`** - every step 1–8 shows `Done:` (step 5 may be skipped).
 2. **One real SMS to their own cell** - send it with `sms`; the person confirms it arrived. Within 5
-   minutes the poll reports it delivered (the `plugin.twilio.delivery` event, `status <sid>`, and
+   minutes the poll reports it delivered (the `plugin.twilio-plugin.delivery` event, `status <sid>`, and
    `Done: first message delivered to <cell>` in `check`).
 3. **A reply** - the person replies to that text from their phone with any words. Within 5 minutes
-   it arrives as `plugin.twilio.received` and you summarise it for them.
+   it arrives as `plugin.twilio-plugin.received` and you summarise it for them.
 4. **STOP** - the person texts `STOP` from that phone. Within 5 minutes it is reported as an
-   opt-out (`plugin.twilio.optout`), and twilio refuses to text that cell while it is opted out.
-   Then they text `START` so Twilio lifts its block; the plugin reports `plugin.twilio.optin` and
+   opt-out (`plugin.twilio-plugin.optout`), and twilio refuses to text that cell while it is opted out.
+   Then they text `START` so Twilio lifts its block; the plugin reports `plugin.twilio-plugin.optin` and
    clears the opt-out itself, because their cell is on `sendAllowlist` and has no recipients entry.
    Nothing more is needed.
 
