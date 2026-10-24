@@ -17,7 +17,8 @@ import (
 	"testing"
 )
 
-// pkgDir is the package folder; the published Mail and Twilio packages sit beside it.
+// pkgDir is the package folder; the plugin packages it ships, mail-plugin and twilio-plugin, sit
+// beside it.
 const pkgDir = ".."
 
 type trigger struct {

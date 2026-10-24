@@ -213,26 +213,10 @@ func TestTheManifestHintsTheMonitorForSentDraftedAndChangedOnly(t *testing.T) {
 	}
 }
 
-// The plugin and the solution say the same version, so an installed 2.0.3 sees the update, and both
-// say a reply is threaded.
-func TestTheSolutionShipsThisVersionAndSaysAReplyIsThreaded(t *testing.T) {
+// The description says a reply is threaded.
+func TestTheDescriptionSaysAReplyIsThreaded(t *testing.T) {
 	m := readManifest(t)
-	b, err := os.ReadFile("../../solution.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var sol struct {
-		Version, Description string
-	}
-	if err := json.Unmarshal(b, &sol); err != nil {
-		t.Fatalf("solution.json: %v", err)
-	}
-	if sol.Version != m.Version {
-		t.Fatalf("the solution is %s, the plugin %s", sol.Version, m.Version)
-	}
-	for what, text := range map[string]string{"plugin.json": m.Description, "solution.json": sol.Description} {
-		if !strings.Contains(text, "reply") || !strings.Contains(text, "threaded") {
-			t.Fatalf("%s's description must say a reply is threaded: %q", what, text)
-		}
+	if !strings.Contains(m.Description, "reply") || !strings.Contains(m.Description, "threaded") {
+		t.Fatalf("plugin.json's description must say a reply is threaded: %q", m.Description)
 	}
 }

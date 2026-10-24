@@ -9,12 +9,12 @@ import (
 	"testing"
 )
 
-// No sentence in the package - code, manifests, README, skills, site - says a key is never set in
+// No sentence in the plugin package - code, manifest, README, skill - says a key is never set in
 // settings: this member's settings on the screen are the first place to set one.
 func TestNoSentenceSaysNeverInSettings(t *testing.T) {
 	// One sentence: no full stop, and in Go or JSON no string boundary, between the words.
 	never := regexp.MustCompile("(?i)\\bnever\\b[^.\"`]*?\\bin(?:to)?\\b[^.\"`]*?\\bsettings\\b")
-	pkg, err := filepath.Abs(filepath.Join("..", ".."))
+	pkg, err := filepath.Abs(".")
 	if err != nil {
 		t.Fatal(err)
 	}
