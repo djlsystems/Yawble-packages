@@ -3,7 +3,7 @@
   "id": "stripe-plugin",
   "name": "Stripe",
   "description": "Sets up Stripe products, one-time prices and webhook endpoints with a restricted key, and reads checkouts, payments, customers and events. Webhook signing secrets go straight into an Azure Key Vault, never into any output. Dry run by default; never moves money.",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/stripe",
@@ -17,6 +17,7 @@
   "timeoutSeconds": 120,
   "config": {
     "mode": {
+      "label": "Mode",
       "type": "string",
       "enum": [
         "dryrun",
@@ -27,12 +28,14 @@
       "description": "dryrun looks everything up and says what it would do, and changes nothing in Stripe or Key Vault; setup in dryrun only reads, and checks each listed vault is reached through Azure management. apply makes the changes; setup in apply also writes the check secret stripe-plugin-check to each listed vault to confirm it can be written."
     },
     "keyVaults": {
+      "label": "Key vaults",
       "type": "list",
       "default": [],
       "setBy": "person",
       "description": "The Azure Key Vaults a webhook signing secret may be written to, by name, such as payments-vault, or by its address ending in vault.azure.net. The plugin finds each vault in the subscriptions the signed-in Microsoft account can read and writes to it through Azure management. Any other vault is refused. Empty: no webhook secret is written anywhere."
     },
     "expectedAccount": {
+      "label": "Expected Stripe account",
       "type": "string",
       "default": "",
       "setBy": "person",
@@ -42,6 +45,7 @@
   },
   "secrets": {
     "apiKey": {
+      "label": "Restricted API key",
       "description": "A Stripe restricted key (rk_test_... or rk_live_...). A secret key (sk_...) is refused. Make it in the Stripe Dashboard under Developers, API keys, Create restricted key, with the permissions the package README lists under \"The restricted key's permissions\".",
       "required": true
     }

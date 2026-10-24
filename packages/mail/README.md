@@ -1,4 +1,4 @@
-# Mail 2.4.0
+# Mail 2.4.1
 
 A team that works with your mailbox: a Manager you talk to, and a plugin member, Mailer, that lists,
 searches and reads your mail, files it when you allow that, watches your Inbox for new mail, and
@@ -123,6 +123,11 @@ for triggers and have no Monitor line. Mailer never deletes, so nothing is ever 
   mode; every recipient must still be on `sendAllowlist`. The original is quoted below the reply
   only when you ask.
 - No deleting, ever. No forwards, and no attachments.
+
+## What changed in 2.4.1
+
+- Mailer is `mail-plugin` 3.0.1: every one of its settings has a short label on its settings
+  screen.
 
 ## What changed in 2.4.0
 

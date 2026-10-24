@@ -1,4 +1,4 @@
-# Azure 2.0.0
+# Azure 2.0.1
 
 A plugin member that builds and runs a team's own Azure resources: resource groups, deployments
 from Bicep or ARM templates, container registries and image builds, Azure SQL databases and the SQL
@@ -9,6 +9,12 @@ rights**, so it can never do more than you can yourself in the Azure portal.
 
 Everything starts in **whatif**: each changing command says what it would do and changes nothing,
 until you set `mode` to `apply`.
+
+## New in 2.0.1
+
+- **Every setting and secret has a short label** on the member's settings screen, such as
+  "Subscription ID", "Monthly budget" and "App secret 1". The app secrets stay masked and optional:
+  each is a value an app reads as a secret, and the plugin runs without any.
 
 ## New in 2.0.0
 

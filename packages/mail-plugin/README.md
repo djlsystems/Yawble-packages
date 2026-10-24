@@ -1,4 +1,4 @@
-# Mail 3.0.0
+# Mail 3.0.1
 
 The `mail-plugin` plugin: a plugin member that lists, searches, reads, marks, moves and labels
 mail, drafts or sends email (HTML made from the text by default, or plain text with
@@ -31,13 +31,18 @@ them. The skill `plugin-mail-plugin` lists every command and what each answer me
 ## Build and test
 
 ```sh
-packages/mail-plugin/build.sh ~/plugins-build/mail-plugin/3.0.0   # one installable version
+packages/mail-plugin/build.sh ~/plugins-build/mail-plugin/3.0.1   # one installable version
 (cd packages/mail-plugin && go test ./...)                       # against fake IMAP, Graph and Gmail servers
 ```
 
-`scripts/build.sh` puts the package zip in `dist/mail-plugin-3.0.0.zip`. A solution that hires
+`scripts/build.sh` puts the package zip in `dist/mail-plugin-3.0.1.zip`. A solution that hires
 this plugin ships it from this same source: its `plugins/mail-plugin/build.sh` runs this folder's
 `build.sh`.
+
+## 3.0.1
+
+- **Every setting has a short label** on the member's settings screen, such as "Send allowlist",
+  "Watch folder" and "Quiet hours start". It has no secrets: the mailbox is a connection.
 
 ## 3.0.0
 

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds one installable version of the plugin into <out> (default: this folder): the two static
 # binaries the manifest's `platforms` names, plus the manifest and the skill.
-#   ./build.sh ~/plugins-build/mail-plugin/3.0.0
+#   ./build.sh ~/plugins-build/mail-plugin/3.0.1
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
 out=${1:-$here}

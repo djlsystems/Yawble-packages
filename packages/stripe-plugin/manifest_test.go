@@ -46,7 +46,7 @@ func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
 	}
-	if m.ID != "stripe-plugin" || m.Version != "2.0.0" {
+	if m.ID != "stripe-plugin" || m.Version != "2.0.1" {
 		t.Fatalf("id %q version %q", m.ID, m.Version)
 	}
 	for _, name := range []string{"mode", "keyVaults", "expectedAccount"} {

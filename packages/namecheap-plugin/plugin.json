@@ -3,7 +3,7 @@
   "id": "namecheap-plugin",
   "name": "Namecheap DNS",
   "description": "Adds and changes DNS records for the domains you list, registered at Namecheap and using Namecheap DNS, without ever losing an existing record.\n\nIt sets A, AAAA, CNAME, MX, TXT and CAA records: a custom domain's verification and certificate records for a hosted app, or a mailbox's MX, SPF, DKIM and DMARC records. It may also remove a URL redirect record, so an app's A record can take the host's place, but never adds or changes one. Every change reads the domain's current records, changes only the one named, saves the records before the change as a backup that restore puts back, and reads them again after writing to check every earlier record is still there. After each change it asks the domain's own name servers directly, for up to a minute, and says per record whether it is live on them; the check command asks them about any name. Dry run by default: it shows the records before and after and changes nothing until you set mode to apply.\n\nThe setup command checks that API access is on, that this computer's address is on Namecheap's API allow-list (naming the address), and that each listed domain is in the account and on Namecheap DNS.",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/namecheap",
@@ -17,12 +17,14 @@
   "timeoutSeconds": 600,
   "config": {
     "domains": {
+      "label": "Domains",
       "type": "list",
       "default": [],
       "setBy": "person",
       "description": "The only domains this member may read or change, such as example.com. Each must be in the Namecheap account and use Namecheap DNS."
     },
     "mode": {
+      "label": "Mode",
       "type": "string",
       "enum": [
         "dryrun",
@@ -33,6 +35,7 @@
       "description": "dryrun shows each change as the records before and after and changes nothing. apply makes the change, after saving a backup."
     },
     "defaultTtl": {
+      "label": "Default TTL",
       "type": "number",
       "integer": true,
       "min": 60,
@@ -43,6 +46,7 @@
       "advanced": true
     },
     "clientIp": {
+      "label": "Client IP",
       "type": "string",
       "default": "",
       "setBy": "person",
@@ -50,6 +54,7 @@
       "advanced": true
     },
     "sandbox": {
+      "label": "Use the sandbox",
       "type": "bool",
       "default": false,
       "setBy": "person",
@@ -59,12 +64,15 @@
   },
   "secrets": {
     "apiUser": {
+      "label": "API user",
+      "masked": false,
       "description": "Your Namecheap user name, which is the API user. It is the name you sign in to Namecheap with.",
-      "required": false
+      "required": true
     },
     "apiKey": {
+      "label": "API key",
       "description": "The API key from Namecheap: Profile, Tools, Namecheap API Access (shown once API access is on). Anyone with it and an allowed address can change your domains, so it goes only in this key field.",
-      "required": false
+      "required": true
     }
   },
   "events": {

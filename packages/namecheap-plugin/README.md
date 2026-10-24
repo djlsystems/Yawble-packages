@@ -119,14 +119,23 @@ holds records only: never the API user or key.
 ## Build and test
 
 ```sh
-packages/namecheap-plugin/build.sh ~/plugins-build/namecheap-plugin/2.0.0   # one installable version
+packages/namecheap-plugin/build.sh ~/plugins-build/namecheap-plugin/2.0.1   # one installable version
 (cd packages/namecheap-plugin && go test ./...)                              # against a fake Namecheap API and fake name servers
 ```
 
-`scripts/build.sh` puts the package zip in `dist/namecheap-plugin-2.0.0.zip`. The tests run the plugin
+`scripts/build.sh` puts the package zip in `dist/namecheap-plugin-2.0.1.zip`. The tests run the plugin
 against a fake Namecheap API, a fake address service and two fake authoritative name servers on the
 test machine's loopback address, with a test clock so no test waits the 60 s; they never reach the
 network.
+
+## 2.0.1
+
+- **Every setting and secret has a short label** on the member's settings screen: "API user", "API
+  key", "Client IP", "Default TTL" and so on.
+- **The API user is shown, not masked**: it is your Namecheap user name, which grants nothing on its
+  own. The API key stays masked.
+- **Both are required**: no command can reach Namecheap without them, so a new member waits for a
+  person to set them, and the settings screen says which is missing.
 
 ## 2.0.0
 

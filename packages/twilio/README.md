@@ -1,4 +1,4 @@
-# Twilio SMS/MMS 1.6.0
+# Twilio SMS/MMS 1.6.1
 
 A team that texts through your Twilio account. The **Texting Assistant** guides you through
 Twilio setup, writes texts for you and sends them through the **twilio** plugin member, and tells
@@ -144,6 +144,12 @@ With your real Twilio account, after setup: `check` shows every step done; one r
 your cell and the next poll reports it `delivered`; your reply appears as a received text; and
 `STOP` from your phone is reported as an opt-out (text `START` afterwards). The Texting Assistant
 walks you through it.
+
+## What changed in 1.6.1
+
+- twilio is `twilio-plugin` 2.0.1: every setting and secret has a short label on its settings
+  screen, and the Account SID and API key SID are shown there (they grant nothing without the key's
+  secret, which stays masked).
 
 ## What changed in 1.6.0
 

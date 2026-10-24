@@ -158,7 +158,7 @@ func stdin(instruction string, o opts) io.Reader {
 	}
 	req := map[string]any{
 		"protocol":    "harness.member/1",
-		"plugin":      map[string]any{"id": "mail-plugin", "version": "3.0.0"},
+		"plugin":      map[string]any{"id": "mail-plugin", "version": "3.0.1"},
 		"member":      map[string]any{"id": "Mail/Mailer", "team": "Mail", "name": "Mailer"},
 		"work":        work,
 		"config":      config,

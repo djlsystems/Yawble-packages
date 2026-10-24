@@ -1,4 +1,4 @@
-# Stripe 2.0.0
+# Stripe 2.0.1
 
 A plugin member that sets up a team's Stripe objects - products, one-time prices and webhook
 endpoints - and reads checkouts, payments, customers and events. It works through a **restricted
@@ -157,13 +157,18 @@ labelled with the lookup key (an endpoint's URL). Refusals, reads and dry runs s
 ## Build and test
 
 ```sh
-packages/stripe-plugin/build.sh ~/plugins-build/stripe-plugin/2.0.0
+packages/stripe-plugin/build.sh ~/plugins-build/stripe-plugin/2.0.1
 (cd packages/stripe-plugin && go test ./...)
 ```
 
 The tests run the plugin against a fake Stripe API and a fake Azure Resource Manager (subscriptions,
 each subscription's Key Vaults, and a vault's secrets) on a local test server; they reach no real
 service.
+
+## 2.0.1
+
+- **Every setting and the key have a short label** on the member's settings screen: "Mode", "Key
+  vaults", "Expected Stripe account" and "Restricted API key". The key stays masked and required.
 
 ## 2.0.0
 

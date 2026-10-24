@@ -135,7 +135,7 @@ func run(t *testing.T, f *fake, instr string, c cfg) result {
 			"scopes": []string{scopeRO, scopeCompose}}
 	}
 	req, _ := json.Marshal(map[string]any{
-		"protocol": "harness.member/1", "plugin": map[string]any{"id": "mail-plugin", "version": "3.0.0"},
+		"protocol": "harness.member/1", "plugin": map[string]any{"id": "mail-plugin", "version": "3.0.1"},
 		"work":   []any{map[string]any{"seq": 1, "instruction": instr}},
 		"config": config, "secrets": map[string]any{}, "connections": conns,
 	})

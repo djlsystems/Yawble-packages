@@ -1,4 +1,4 @@
-# Twilio 2.0.0
+# Twilio 2.0.1
 
 The `twilio-plugin` plugin: a plugin member that sends SMS and MMS through a person's Twilio
 account with a restricted API key, and reads delivery status and replies by polling. It keeps a
@@ -25,13 +25,23 @@ skill `plugin-twilio-plugin` lists every command and what each answer means.
 ## Build and test
 
 ```sh
-packages/twilio-plugin/build.sh ~/plugins-build/twilio-plugin/2.0.0   # one installable version
+packages/twilio-plugin/build.sh ~/plugins-build/twilio-plugin/2.0.1   # one installable version
 (cd packages/twilio-plugin && go test ./...)                         # against a fake Twilio API
 ```
 
-`scripts/build.sh` puts the package zip in `dist/twilio-plugin-2.0.0.zip`. A solution that hires
+`scripts/build.sh` puts the package zip in `dist/twilio-plugin-2.0.1.zip`. A solution that hires
 this plugin ships it from this same source: its `plugins/twilio-plugin/build.sh` runs this folder's
 `build.sh`.
+
+## 2.0.1
+
+- **Every setting and secret has a short label** on the member's settings screen, such as "From
+  number", "Daily send cap", "Account SID" and "API key secret".
+- **The Account SID and the API key SID are shown, not masked**: each names an account or a key and
+  grants nothing without the key's secret, which stays masked.
+- **The three stay optional**: `check` and the poll run before they are set and fill the setup
+  checklist on the twilio page, saying which is missing; a required secret would stop every run
+  until all three were set.
 
 ## 2.0.0
 

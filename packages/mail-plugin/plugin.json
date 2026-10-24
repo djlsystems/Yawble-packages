@@ -3,7 +3,7 @@
   "id": "mail-plugin",
   "name": "Mail",
   "description": "Lists, searches, reads, marks, moves and labels mail, drafts or sends email - as HTML made from the text by default, or as plain text with format: text - drafts or sends a reply threaded to the message it answers, says whether a message was replied to, follows a message until it is, and watches a folder for new mail, over an IMAP app-password mailbox, Microsoft or Google. Drafts only by default; sends only to a person's allowlist; never deletes.",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "protocol": "harness.member/1",
   "executable": { "path": "bin/linux-x64/mail", "args": [] },
   "platforms": {
@@ -13,6 +13,7 @@
   "timeoutSeconds": 120,
   "config": {
     "mode": {
+      "label": "Mode",
       "type": "string",
       "enum": ["draft", "send"],
       "default": "draft",
@@ -20,30 +21,35 @@
       "description": "draft saves a draft the person sends from their mailbox and never sends anything; send sends, and only to addresses on sendAllowlist."
     },
     "format": {
+      "label": "Format",
       "type": "string",
       "enum": ["html", "text"],
       "default": "html",
       "description": "html sends the body as written plus an HTML version made from it (Markdown: headings, bold, lists, links; HTML tags in the body are shown as text, never used); text sends plain text only."
     },
     "sendAllowlist": {
+      "label": "Send allowlist",
       "type": "list",
       "default": [],
       "setBy": "person",
       "description": "Who it may draft to or send to: full addresses (person+tag@example.com) or whole domains (@example.com). Case is ignored; a +tag must match exactly as written. Every To, Cc and Bcc recipient must be on it, in draft mode too."
     },
     "markRead": {
+      "label": "Allow mark read",
       "type": "bool",
       "default": false,
       "setBy": "person",
       "description": "Lets mark-read and mark-unread change whether a message is read. Off: both are refused."
     },
     "moveTo": {
+      "label": "Move and label folders",
       "type": "list",
       "default": [],
       "setBy": "person",
       "description": "The only folders and labels move and label may use (Archive, Receipts). One the mailbox does not have is created at the top level on its first move or label; a nested one (Clients/Acme) must exist, and Junk, Sent and Trash are never created. The folders command lists what exists. Empty: move and label are refused. Nothing is ever deleted."
     },
     "maxResults": {
+      "label": "Most messages per command",
       "type": "number",
       "integer": true,
       "min": 1,
@@ -52,6 +58,7 @@
       "description": "The most messages one command reads: list and search (a max:<n> may only lower it), the ids one mark, move or label takes, and the new messages one watch check takes."
     },
     "maxBodyChars": {
+      "label": "Most body characters",
       "type": "number",
       "integer": true,
       "min": 1000,
@@ -60,26 +67,31 @@
       "description": "read cuts a message's body to this many characters and says it was cut."
     },
     "watchFolder": {
+      "label": "Watch folder",
       "type": "string",
       "default": "INBOX",
       "description": "The folder watch checks for new mail."
     },
     "watchUnreadOnly": {
+      "label": "Watch unread only",
       "type": "bool",
       "default": true,
       "description": "watch lists only new mail that is still unread."
     },
     "watchSenders": {
+      "label": "Watch senders",
       "type": "list",
       "default": [],
       "description": "When set, watch lists only mail whose sender contains one of these (an address or @example.com)."
     },
     "watchQuery": {
+      "label": "Watch query",
       "type": "string",
       "default": "",
       "description": "When set, watch lists only mail matching it: from:<text>, subject:<text>, and words that must appear in the sender, subject or snippet."
     },
     "watchLookbackDays": {
+      "label": "Watch lookback days",
       "type": "number",
       "integer": true,
       "min": 0,
@@ -88,18 +100,21 @@
       "description": "How many days back the first check lists mail that is already there. 0: the watch starts from now."
     },
     "followQuietStart": {
+      "label": "Quiet hours start",
       "type": "string",
       "default": "",
       "setBy": "person",
       "description": "When follow reminders stop each day, as HH:MM in followTimeZone (22:00). Empty, or followQuietEnd empty: no quiet hours. In quiet hours the watch lists no followed message as unanswered; the first check after lists each one due, once."
     },
     "followQuietEnd": {
+      "label": "Quiet hours end",
       "type": "string",
       "default": "",
       "setBy": "person",
       "description": "When follow reminders start again each day, as HH:MM in followTimeZone (07:00). Empty, or followQuietStart empty: no quiet hours."
     },
     "followTimeZone": {
+      "label": "Quiet hours time zone",
       "type": "string",
       "default": "UTC",
       "setBy": "person",

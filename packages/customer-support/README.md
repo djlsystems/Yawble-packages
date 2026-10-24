@@ -1,4 +1,4 @@
-# Customer Support 1.2.0
+# Customer Support 1.2.1
 
 A solution package: a team that watches your mailbox, sorts new mail by your rules and texts your
 cell about it. Each batch of new mail gets a short summary text; each inquiry gets an alert at once
@@ -11,8 +11,8 @@ counts and open inquiries back within a minute.
 | `skills/support-playbook.md` | The rules the Manager follows for every event. You edit it in Team settings, Skills. |
 | `sites/support/` | The team's page: running counts, the last summary, open and closed inquiries. |
 | `sites/mail/`, `sites/twilio/` | The pages the mail and twilio plugins keep their state on, as the Mail and Twilio packages ship them. |
-| `plugins/mail-plugin/build.sh` | Builds the mail-plugin plugin 3.0.0 from its plugin package, `packages/mail-plugin`. |
-| `plugins/twilio-plugin/build.sh` | Builds the twilio-plugin plugin 2.0.0 from its plugin package, `packages/twilio-plugin`. |
+| `plugins/mail-plugin/build.sh` | Builds the mail-plugin plugin 3.0.1 from its plugin package, `packages/mail-plugin`. |
+| `plugins/twilio-plugin/build.sh` | Builds the twilio-plugin plugin 2.0.1 from its plugin package, `packages/twilio-plugin`. |
 | `.tests/` | The package's tests (Go); not part of the zip. |
 
 ## The team
@@ -105,6 +105,12 @@ counting started, the last summary and whether its text went out) and the `inqui
 `open` or `closed`). The launcher tile shows the open inquiries. The `mail` and `twilio` sites show
 Mailer's watch and follows and twilio's texts and setup.
 
+## What changed in 1.2.1
+
+- Mailer is `mail-plugin` 3.0.1 and twilio is `twilio-plugin` 2.0.1: every setting and secret has a
+  short label on the member's settings screen, and twilio's Account SID and API key SID are shown
+  there (they grant nothing without the key's secret, which stays masked).
+
 ## What changed in 1.2.0
 
 - The package ships the plugins under their new ids: Mailer is hired on `plugin:mail-plugin` 3.0.0
@@ -160,7 +166,7 @@ From the repository root:
 ```
 (cd packages/customer-support/.tests && go test -count=1 ./...)
 scripts/build.sh
-mkdir /tmp/customer-support && cd /tmp/customer-support && unzip <repository>/dist/customer-support-1.2.0.zip
+mkdir /tmp/customer-support && cd /tmp/customer-support && unzip <repository>/dist/customer-support-1.2.1.zip
 yawble solution check /tmp/customer-support
 ```
 

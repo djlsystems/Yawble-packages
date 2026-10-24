@@ -108,7 +108,7 @@ var gmailState = map[string]*fakeGmail{}
 func runMail(t *testing.T, base, instruction string, moveTo []string) (ok bool, text string) {
 	t.Helper()
 	req, _ := json.Marshal(map[string]any{
-		"protocol": "harness.member/1", "plugin": map[string]any{"id": "mail-plugin", "version": "3.0.0"},
+		"protocol": "harness.member/1", "plugin": map[string]any{"id": "mail-plugin", "version": "3.0.1"},
 		"work":    []any{map[string]any{"seq": 1, "instruction": instruction}},
 		"config":  map[string]any{"moveTo": moveTo},
 		"secrets": map[string]any{},

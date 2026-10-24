@@ -186,7 +186,7 @@ func run2(t *testing.T, instr string, r req2, secrets ...string) res2 {
 		docs = []any{}
 	}
 	body, _ := json.Marshal(map[string]any{
-		"protocol": "harness.member/1", "plugin": map[string]any{"id": "mail-plugin", "version": "3.0.0"},
+		"protocol": "harness.member/1", "plugin": map[string]any{"id": "mail-plugin", "version": "3.0.1"},
 		"work":   []any{map[string]any{"seq": 1, "instruction": instr}},
 		"config": config, "secrets": map[string]any{}, "connections": map[string]any{"mailbox": r.conn},
 		"sites": []any{map[string]any{"site": "mail", "collection": "watch", "documents": docs, "total": len(docs)}},

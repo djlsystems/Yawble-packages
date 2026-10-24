@@ -5,7 +5,7 @@
 # platform's is about 120 MB, over the Marketplace's 100 MB limit for a package): the plugin
 # downloads its own platform's pinned release the first time it deploys a Bicep file, and uses it
 # only when its sha256 is the one pinned in bicep.go.
-#   ./build.sh ~/plugins-build/azure-plugin/2.0.0
+#   ./build.sh ~/plugins-build/azure-plugin/2.0.1
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
 out=${1:?usage: build.sh <out folder>}

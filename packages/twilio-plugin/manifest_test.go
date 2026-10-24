@@ -35,7 +35,7 @@ func TestTheManifestDeclaresTheSentEventAndItsMonitorHint(t *testing.T) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
 	}
-	if m.ID != "twilio-plugin" || m.Version != "2.0.0" {
+	if m.ID != "twilio-plugin" || m.Version != "2.0.1" {
 		t.Fatalf("id %q version %q", m.ID, m.Version)
 	}
 	var types []string

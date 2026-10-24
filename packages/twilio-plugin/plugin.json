@@ -3,7 +3,7 @@
   "id": "twilio-plugin",
   "name": "Twilio",
   "description": "Sends SMS and MMS through Twilio with a restricted API key, reads delivery status and replies by polling, and keeps a consented-recipients list and opt-outs on the twilio site. Dry run by default; sends only to your numbers or person-activated consented recipients; never buys numbers or deletes anything.",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/twilio",
@@ -17,6 +17,7 @@
   "timeoutSeconds": 120,
   "config": {
     "mode": {
+      "label": "Mode",
       "type": "string",
       "enum": [
         "dryRun",
@@ -27,24 +28,28 @@
       "description": "dryRun checks and reports each text and never sends. send sends for real."
     },
     "sendAllowlist": {
+      "label": "Send allowlist",
       "type": "list",
       "default": [],
       "setBy": "person",
       "description": "Your cell and any other number texts may always go to, up to 20. +country format (+15551234567); 10 US digits are read as +1."
     },
     "fromNumber": {
+      "label": "From number",
       "type": "string",
       "default": "",
       "setBy": "person",
       "description": "Your Twilio number texts come from, in +country format. Empty: the account's only SMS number is used; check says when there is none or several."
     },
     "messagePrefix": {
+      "label": "Message prefix",
       "type": "string",
       "default": "",
       "setBy": "person",
       "description": "Put at the start of every text: your business name as the campaign registered it, such as \"Acme Plumbing: \". A text that already starts with that name is left as it is. At most 40 characters."
     },
     "messagingServiceSid": {
+      "label": "Messaging Service SID",
       "type": "string",
       "default": "",
       "setBy": "person",
@@ -52,6 +57,7 @@
       "advanced": true
     },
     "allowConsentedRecipients": {
+      "label": "Text consented recipients",
       "type": "bool",
       "default": false,
       "setBy": "person",
@@ -59,6 +65,7 @@
       "advanced": true
     },
     "maxConsentedRecipients": {
+      "label": "Most consented recipients",
       "type": "number",
       "integer": true,
       "min": 1,
@@ -69,6 +76,7 @@
       "advanced": true
     },
     "dailySendCap": {
+      "label": "Daily send cap",
       "type": "number",
       "integer": true,
       "min": 1,
@@ -79,6 +87,7 @@
       "advanced": true
     },
     "perRecipientDailyCap": {
+      "label": "Daily cap per recipient",
       "type": "number",
       "integer": true,
       "min": 1,
@@ -89,6 +98,7 @@
       "advanced": true
     },
     "mediaUrlHosts": {
+      "label": "Media URL hosts",
       "type": "list",
       "default": [],
       "setBy": "person",
@@ -96,6 +106,7 @@
       "advanced": true
     },
     "allowedCountries": {
+      "label": "Allowed countries",
       "type": "list",
       "enum": [
         "US",
@@ -109,6 +120,7 @@
       "advanced": true
     },
     "optOutFooter": {
+      "label": "Opt-out footer",
       "type": "string",
       "enum": [
         "every",
@@ -121,6 +133,7 @@
       "advanced": true
     },
     "privacyUrl": {
+      "label": "Privacy policy URL",
       "type": "string",
       "default": "",
       "setBy": "person",
@@ -128,6 +141,7 @@
       "advanced": true
     },
     "termsUrl": {
+      "label": "Terms URL",
       "type": "string",
       "default": "",
       "setBy": "person",
@@ -135,18 +149,21 @@
       "advanced": true
     },
     "autoReply": {
+      "label": "Auto-reply",
       "type": "bool",
       "default": false,
       "setBy": "person",
       "description": "Answer each new text with autoReplyText at the next poll, by itself and through every check a send has: dry run records it, only sendAllowlist numbers or active consented recipients, never an opted-out number or a STOP, START or HELP text."
     },
     "autoReplyText": {
+      "label": "Auto-reply text",
       "type": "string",
       "default": "",
       "setBy": "person",
       "description": "The auto-reply, at most 300 characters. messagePrefix and the opt-out line are added as for any text. Empty: no auto-reply is sent and check says so."
     },
     "autoReplyOncePerHours": {
+      "label": "Auto-reply once per hours",
       "type": "number",
       "integer": true,
       "min": 1,
@@ -156,18 +173,21 @@
       "description": "At most one auto-reply to a number in this many hours."
     },
     "ownerCommands": {
+      "label": "Owner commands",
       "type": "bool",
       "default": false,
       "setBy": "person",
       "description": "Let you text a keyword (ownerKeywords) from your own phone to have the team act on it at the next poll, such as \"summary\" for a short text back. The plugin matches the keyword and publishes plugin.twilio-plugin.command naming only the keyword; the text itself is never an instruction to anyone. A spoofed sender can at worst make the team text your own number."
     },
     "ownerNumbers": {
+      "label": "Owner numbers",
       "type": "list",
       "default": [],
       "setBy": "person",
       "description": "The numbers that may send owner commands, up to 20, in +country format (+15551234567); 10 US digits are read as +1. Empty: the numbers on sendAllowlist. An owner number also needs to be on sendAllowlist for the answer to be sent."
     },
     "ownerKeywords": {
+      "label": "Owner keywords",
       "type": "string",
       "default": "summary, status, updates",
       "setBy": "person",
@@ -176,14 +196,19 @@
   },
   "secrets": {
     "accountSid": {
+      "label": "Account SID",
+      "masked": false,
       "description": "Your Twilio Account SID (AC…). The twilio solution binds it to the key TWILIO_ACCOUNT_SID. A person sets the bound key in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for it. It is shown on the Twilio Console home page: https://console.twilio.com/ or, in the new Twilio Console: https://1console.twilio.com/",
       "required": false
     },
     "apiKeySid": {
+      "label": "API key SID",
+      "masked": false,
       "description": "The SID (SK…) of a Restricted API key. The twilio solution binds it to the key TWILIO_API_KEY_SID. A person sets the bound key in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for it. Press Create API key and choose Restricted; tick only the permissions listed in the solution's README under \"The API key's permissions\" (messages create, read and list; services read; active numbers read and list; accounts read). Make the key on the API keys & tokens page: https://console.twilio.com/us1/account/keys-credentials/api-keys or, in the new Twilio Console: https://1console.twilio.com/go?to=/account/__account__/settings/us1/api-keys/list",
       "required": false
     },
     "apiKeySecret": {
+      "label": "API key secret",
       "description": "That API key's secret. The twilio solution binds it to the key TWILIO_API_KEY_SECRET. A person sets the bound key in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for it. Twilio shows it only once, when the key is created: copy it before leaving that page, and if it is lost, make a new key. The page: https://console.twilio.com/us1/account/keys-credentials/api-keys or, in the new Twilio Console: https://1console.twilio.com/go?to=/account/__account__/settings/us1/api-keys/list",
       "required": false
     }

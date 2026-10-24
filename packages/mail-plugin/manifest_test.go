@@ -57,8 +57,8 @@ func readManifest(t *testing.T) manifest {
 
 func TestTheManifestKeepsTheSafetySettingsThePersonsAndOff(t *testing.T) {
 	m := readManifest(t)
-	if m.Version != "3.0.0" {
-		t.Fatalf("want version 3.0.0, got %s", m.Version)
+	if m.Version != "3.0.1" {
+		t.Fatalf("want version 3.0.1, got %s", m.Version)
 	}
 	off := map[string]string{"mode": `"draft"`, "sendAllowlist": `[]`, "markRead": `false`, "moveTo": `[]`}
 	for name, def := range off {
