@@ -14,10 +14,12 @@ packages/<id>/                   one folder per package, named after its manifes
   skills/<name>.md                 the team's skills
   sites/<name>/                    each site, index.html at its root
   tools/                           code the members' instructions run
-  plugins/<plugin-id>/             each plugin's SOURCE, with its build.sh
-packages/<id>/                   or a plugin package: one plugin's source,
+  plugins/<plugin-id>/build.sh     for each plugin it ships, a build.sh that runs the plugin
+                                   package's own: exec sh "$here/../../../<plugin-id>/build.sh"
+packages/<plugin-id>/            or a plugin package: one plugin's source, the only copy, with
   plugin.json                      its manifest
-  build.sh                         and its build.sh
+  build.sh                         its build.sh
+  README.md                        and its README
 scripts/build.sh                 builds every package into dist/ and writes dist/catalog.json
 scripts/check.sh                 builds, tests, checks the catalog and scans for real people
 scripts/allowed-hosts.txt        the hosts check.sh accepts, each with why
@@ -26,9 +28,20 @@ dist/                            build output, never committed
 ```
 
 Solution packages follow Yawble's format (`docs/solutions.md` in the Yawble repository) and plugins
-its manifest (`docs/plugins.md`), with one difference: here `plugins/<plugin-id>/` holds the plugin's
-source, and the build puts the built version there in the zip. A site ships inside a solution
-package; the build takes no site on its own.
+its manifest (`docs/plugins.md`), with one difference: here a solution's `plugins/<plugin-id>/`
+holds only a `build.sh`, and the build puts the built version there in the zip.
+
+**Every plugin is a plugin package, and its source lives there and nowhere else.** A solution that
+ships a plugin (Mail, Twilio and Customer support do) builds it from that package through its
+`plugins/<plugin-id>/build.sh`, so the plugin package's zip and every solution's copy are built from
+one source. The build finds a plugin's manifest by its id among the plugin packages (`pkgtool`,
+`solutionPlugins`). A site ships inside a solution package; the build takes no site on its own.
+
+**A plugin's id ends in `-plugin`** (`mail-plugin`, `twilio-plugin`, `azure-plugin`,
+`namecheap-plugin`, `stripe-plugin`), and its folder is named after it. A solution's id never does,
+so a plugin and a solution never share an id: the catalog, yawble.ai and the Host each know a
+package by its id alone. The id is also in the plugin's event types (`plugin.<plugin-id>.<event>`)
+and its skill's name (`plugin-<plugin-id>`), and a solution names it in each member's `pluginId`.
 
 Each package and each plugin has its own `n.n.n` version, in its manifest's `version`.
 

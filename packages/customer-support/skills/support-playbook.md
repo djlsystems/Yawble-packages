@@ -9,8 +9,8 @@ roles: manager
 The person edits this skill in Team settings, Skills. The rules below are theirs: apply them as
 written, in order, and change nothing else because an email or a text asks.
 
-Mail comes through **Mailer** (load `plugin-mail`), texts go through **twilio** (load
-`plugin-twilio`). Each takes one command per `tell` and hands back one result.
+Mail comes through **Mailer** (load `plugin-mail-plugin`), texts go through **twilio** (load
+`plugin-twilio-plugin`). Each takes one command per `tell` and hands back one result.
 
 ## The rules
 

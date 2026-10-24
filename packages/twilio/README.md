@@ -1,4 +1,4 @@
-# Twilio SMS/MMS 1.5.0
+# Twilio SMS/MMS 1.6.0
 
 A team that texts through your Twilio account. The **Texting Assistant** guides you through
 Twilio setup, writes texts for you and sends them through the **twilio** plugin member, and tells
@@ -58,7 +58,7 @@ answered.
 
 ## What the Monitor shows
 
-twilio publishes `plugin.twilio.sent` for each text it actually sent: an `sms` or `mms` command in
+twilio publishes `plugin.twilio-plugin.sent` for each text it actually sent: an `sms` or `mms` command in
 `send` mode, and each auto-reply a poll sends (one poll can send several). It carries our number,
 the recipient (`to`), the text's SID and `autoReply`, never the text itself. The Monitor shows each
 one briefly off the twilio member as an `sms` icon, marked created and labelled with the recipient's
@@ -69,7 +69,7 @@ auto-reply, `optout`, or received texts, opt-outs, opt-ins, delivery results and
 
 You can text a keyword such as `summary` from your own phone, and the Texting Assistant answers
 with a short text back to you, within one poll. Your text is never an instruction to an agent:
-twilio matches the keyword itself and publishes `plugin.twilio.command` naming only the keyword,
+twilio matches the keyword itself and publishes `plugin.twilio-plugin.command` naming only the keyword,
 the number it came from, when, and the text's SID. Three settings, on the solution's panel:
 
 - `ownerCommands` (off): turns it on. Off, every text is an ordinary received text.
@@ -144,3 +144,12 @@ With your real Twilio account, after setup: `check` shows every step done; one r
 your cell and the next poll reports it `delivered`; your reply appears as a received text; and
 `STOP` from your phone is reported as an opt-out (text `START` afterwards). The Texting Assistant
 walks you through it.
+
+## What changed in 1.6.0
+
+- The twilio member is the plugin `twilio-plugin` 2.0.0 (it was `twilio` 1.5.0), now a plugin
+  package of its own, built from `packages/twilio-plugin`. It works as 1.5.0 did; its events are
+  `plugin.twilio-plugin.*` and its skill is `plugin-twilio-plugin`.
+  A team that has this package installed and updates to this version: the Host installs the
+  renamed plugin beside the old one but leaves each plugin member on the old id, so after the
+  update repoint each one (its settings and secrets stay) and check its triggers.

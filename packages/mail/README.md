@@ -1,4 +1,4 @@
-# Mail 2.3.1
+# Mail 2.4.0
 
 A team that works with your mailbox: a Manager you talk to, and a plugin member, Mailer, that lists,
 searches and reads your mail, files it when you allow that, watches your Inbox for new mail, and
@@ -43,7 +43,7 @@ sent or drafted. No instruction and no email can change these settings: only you
 
 The install runs Mailer's first check at once, and then every 5 minutes. The first check starts
 from now: mail already in your Inbox is not listed (set `watchLookbackDays` to look back). Each
-later check that finds new mail publishes one `plugin.mail.received` event listing every new message
+later check that finds new mail publishes one `plugin.mail-plugin.received` event listing every new message
 - sender, subject, date and a short snippet, never the body - and the team acknowledges each message
 once handled. A message nobody acknowledges is listed again by the next 3 checks and then named in
 the check's output.
@@ -66,8 +66,8 @@ mailbox: either reads as not replied.
 
 `follow <id> [every:<hours>h]` follows a message until you reply, and `unfollow <id>` stops. Each
 check of the watch looks for the reply. Once you reply, the follow ends and one
-`plugin.mail.answered` event lists the message. Until then, once per interval (1 to 24 hours,
-1 by default), one `plugin.mail.unanswered` event lists every followed message still waiting -
+`plugin.mail-plugin.answered` event lists the message. Until then, once per interval (1 to 24 hours,
+1 by default), one `plugin.mail-plugin.unanswered` event lists every followed message still waiting -
 sender, subject, since when and how many hours, never the body. In your quiet hours no reminder is
 listed; the first check after lists each one due, once. A followed message you move keeps its
 follow. `replied` and `follow` take only a message Mailer listed or read, as `reply` does, and a
@@ -76,8 +76,8 @@ mailbox follows at most 50 messages.
 The Mail site lists the followed messages: from, subject, waiting since and last reminded.
 
 The install wakes nobody when new mail arrives. To have the Manager told, add an event trigger on
-`plugin.mail.received` for the Manager in the team's Triggers dialog (with a daily token cap); the
-same goes for `plugin.mail.unanswered` and `plugin.mail.answered`.
+`plugin.mail-plugin.received` for the Manager in the team's Triggers dialog (with a daily token cap); the
+same goes for `plugin.mail-plugin.unanswered` and `plugin.mail-plugin.answered`.
 
 ## What the Monitor shows
 
@@ -98,7 +98,7 @@ line:
 
 A subject is shown on one line, cut to 120 characters. Reading mail (`list`, `search`, `read`,
 `folders`, `watch`, `replied`), a refused command, and `follow` or `unfollow` (which change only
-Mailer's own records) show nothing. `plugin.mail.received`, `unanswered` and `answered` are events
+Mailer's own records) show nothing. `plugin.mail-plugin.received`, `unanswered` and `answered` are events
 for triggers and have no Monitor line. Mailer never deletes, so nothing is ever shown as deleted.
 
 ## What it does and does not do
@@ -123,6 +123,15 @@ for triggers and have no Monitor line. Mailer never deletes, so nothing is ever 
   mode; every recipient must still be on `sendAllowlist`. The original is quoted below the reply
   only when you ask.
 - No deleting, ever. No forwards, and no attachments.
+
+## What changed in 2.4.0
+
+- Mailer is the plugin `mail-plugin` 3.0.0 (it was `mail` 2.3.1), now a plugin package of its own,
+  built from `packages/mail-plugin`. It works as 2.3.1 did; its events are
+  `plugin.mail-plugin.received`, `unanswered` and `answered`.
+  A team that has this package installed and updates to this version: the Host installs the
+  renamed plugin beside the old one but leaves each plugin member on the old id, so after the
+  update repoint each one (its settings and secrets stay) and check its triggers.
 
 ## What changed in 2.3.1
 

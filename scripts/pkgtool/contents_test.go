@@ -5,13 +5,16 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"testing"
 )
 
 // testdata/yawble-ai-contents.json is each package's contents as the live yawble.ai catalog served
 // them (https://yawble.ai/api/marketplace/catalog.json, generatedAt in the file), which yawble.ai
-// derives from the uploaded zip (Yawble-web marketplace/admin/package.ts). Re-record it from that
-// address when a published version's contents change.
+// derives from the uploaded zip (Yawble-web marketplace/admin/package.ts). testdata/yawble-ai-zips/
+// <id>-<version>/ holds the manifests of the zip that catalog downloads for each of them
+// (solution.json and plugins/<id>/plugin.json, or plugin.json), checked against its sha256. Re-record
+// both from that address when a published version's contents change.
 type liveContents struct {
 	Source      string `json:"source"`
 	GeneratedAt string `json:"generatedAt"`
@@ -76,14 +79,42 @@ func asJSON(t *testing.T, v any) any {
 	return out
 }
 
-// The contents pkgtool writes for this repository's own packages are what yawble.ai serves for the
-// same versions. A package at a version yawble.ai does not have yet is not compared: it is new, and
-// is published after this check passes.
+// pkgtool reads the zips yawble.ai serves to exactly the contents yawble.ai derived from them: each
+// published version of this repository's packages, as uploaded. It compares every package the
+// recorded catalog lists, so a fixture that lost one fails.
 func TestContentsMatchYawbleAI(t *testing.T) {
-	var live liveContents
-	if err := json.Unmarshal(readRaw(t, filepath.Join("testdata", "yawble-ai-contents.json")), &live); err != nil {
-		t.Fatal(err)
+	live := readLive(t)
+	for id, want := range live.Packages {
+		dir := filepath.Join("testdata", "yawble-ai-zips", id+"-"+want.Version)
+		var got contents
+		var err error
+		if want.Kind == "plugin" {
+			got, err = pluginContents(readRaw(t, filepath.Join(dir, "plugin.json")))
+		} else {
+			// The zip's plugins/<id>/ in the order the zip holds them, as yawble.ai reads them.
+			shipped, _ := filepath.Glob(filepath.Join(dir, "plugins", "*", "plugin.json"))
+			sort.Strings(shipped)
+			var manifests []json.RawMessage
+			for _, m := range shipped {
+				manifests = append(manifests, readRaw(t, m))
+			}
+			got, err = solutionContents(readRaw(t, filepath.Join(dir, "solution.json")), manifests)
+		}
+		if err != nil {
+			t.Fatalf("%s %s: %v", id, want.Version, err)
+		}
+		compareContents(t, id, want.Version, got, want.Contents)
 	}
+	if len(live.Packages) == 0 {
+		t.Fatal("testdata/yawble-ai-contents.json lists no package")
+	}
+}
+
+// The contents pkgtool writes for this repository's own packages are what yawble.ai serves for the
+// same id and version. A package at an id or version yawble.ai does not have yet is not compared: it
+// is new, and is published after this check passes.
+func TestContentsOfPublishedVersionsMatchYawbleAI(t *testing.T) {
+	live := readLive(t)
 	packages, err := filepath.Abs(filepath.Join("..", "..", "packages"))
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +123,6 @@ func TestContentsMatchYawbleAI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	compared := 0
 	for _, d := range dirs {
 		if !d.IsDir() || d.Name()[0] == '.' {
 			continue
@@ -103,19 +133,29 @@ func TestContentsMatchYawbleAI(t *testing.T) {
 			t.Logf("%s %s %s: yawble.ai serves no such version yet (%s); not compared", kind, id, version, live.GeneratedAt)
 			continue
 		}
-		var wantContents any
-		if err := json.Unmarshal(want.Contents, &wantContents); err != nil {
-			t.Fatal(err)
-		}
-		if g := asJSON(t, got); !reflect.DeepEqual(g, wantContents) {
-			gj, _ := json.MarshalIndent(g, "", "  ")
-			wj, _ := json.MarshalIndent(wantContents, "", "  ")
-			t.Errorf("%s %s: pkgtool's contents differ from yawble.ai's\npkgtool:\n%s\nlive catalog:\n%s", id, version, gj, wj)
-		}
-		compared++
+		compareContents(t, id, version, got, want.Contents)
 	}
-	if compared == 0 {
-		t.Fatalf("no package here is at a version %s served; re-record testdata/yawble-ai-contents.json", live.Source)
+}
+
+func readLive(t *testing.T) liveContents {
+	t.Helper()
+	var live liveContents
+	if err := json.Unmarshal(readRaw(t, filepath.Join("testdata", "yawble-ai-contents.json")), &live); err != nil {
+		t.Fatal(err)
+	}
+	return live
+}
+
+func compareContents(t *testing.T, id, version string, got contents, want json.RawMessage) {
+	t.Helper()
+	var wantContents any
+	if err := json.Unmarshal(want, &wantContents); err != nil {
+		t.Fatal(err)
+	}
+	if g := asJSON(t, got); !reflect.DeepEqual(g, wantContents) {
+		gj, _ := json.MarshalIndent(g, "", "  ")
+		wj, _ := json.MarshalIndent(wantContents, "", "  ")
+		t.Errorf("%s %s: pkgtool's contents differ from yawble.ai's\npkgtool:\n%s\nlive catalog:\n%s", id, version, gj, wj)
 	}
 }
 
@@ -222,18 +262,19 @@ func TestContentsAsYawbleWebReadsThem(t *testing.T) {
 
 func TestTriggerInWords(t *testing.T) {
 	for raw, want := range map[string]string{
-		`{"kind":"schedule","schedule":{"everySeconds":60}}`:                                            "every minute",
-		`{"kind":"schedule","schedule":{"everySeconds":7200}}`:                                          "every 2 hours",
-		`{"kind":"schedule","schedule":{"everySeconds":90}}`:                                            "every 90 seconds",
-		`{"kind":"schedule","schedule":{"cron":"0 30 7 * * 1-5"}}`:                                      "Monday to Friday at 07:30 (UTC)",
-		`{"kind":"schedule","schedule":{"cron":"0 0 9 * * 1,3","timezone":"Europe/London"}}`:            "on Mondays and Wednesdays at 09:00 (Europe/London)",
-		`{"kind":"schedule","schedule":{"cron":"0 0 9 * * *"}}`:                                         "every day at 09:00 (UTC)",
-		`{"kind":"schedule","schedule":{"cron":"0 */5 * * * *"}}`:                                       "on the schedule 0 */5 * * * * (UTC)",
-		`{"kind":"folder","folder":{"path":"In/","glob":"*.pdf"}}`:                                      "when a file matching *.pdf arrives in In/",
-		`{"kind":"event","event":{"type":"plugin.twilio.command","filter":"command eq summary"}}`:       "when the twilio plugin announces command with command is summary",
-		`{"kind":"event","event":{"type":"plugin.twilio.received","filter":"source contains /twilio"}}`: "when the twilio plugin announces received with source containing /twilio",
-		`{"kind":"event","event":{"type":"site.action","filter":"siteAction eq desk/approve"}}`:         "when someone presses approve on the desk site",
-		`{"kind":"event","event":{"type":"workflow.completed"}}`:                                        "when workflow.completed happens",
+		`{"kind":"schedule","schedule":{"everySeconds":60}}`:                                                   "every minute",
+		`{"kind":"schedule","schedule":{"everySeconds":7200}}`:                                                 "every 2 hours",
+		`{"kind":"schedule","schedule":{"everySeconds":90}}`:                                                   "every 90 seconds",
+		`{"kind":"schedule","schedule":{"cron":"0 30 7 * * 1-5"}}`:                                             "Monday to Friday at 07:30 (UTC)",
+		`{"kind":"schedule","schedule":{"cron":"0 0 9 * * 1,3","timezone":"Europe/London"}}`:                   "on Mondays and Wednesdays at 09:00 (Europe/London)",
+		`{"kind":"schedule","schedule":{"cron":"0 0 9 * * *"}}`:                                                "every day at 09:00 (UTC)",
+		`{"kind":"schedule","schedule":{"cron":"0 */5 * * * *"}}`:                                              "on the schedule 0 */5 * * * * (UTC)",
+		`{"kind":"folder","folder":{"path":"In/","glob":"*.pdf"}}`:                                             "when a file matching *.pdf arrives in In/",
+		`{"kind":"event","event":{"type":"plugin.twilio.command","filter":"command eq summary"}}`:              "when the twilio plugin announces command with command is summary",
+		`{"kind":"event","event":{"type":"plugin.twilio-plugin.command","filter":"command eq summary"}}`:       "when the twilio-plugin plugin announces command with command is summary",
+		`{"kind":"event","event":{"type":"plugin.twilio-plugin.received","filter":"source contains /twilio"}}`: "when the twilio-plugin plugin announces received with source containing /twilio",
+		`{"kind":"event","event":{"type":"site.action","filter":"siteAction eq desk/approve"}}`:                "when someone presses approve on the desk site",
+		`{"kind":"event","event":{"type":"workflow.completed"}}`:                                               "when workflow.completed happens",
 		`{"kind":"manual"}`: "when it is fired",
 	} {
 		if got := triggerInWords(json.RawMessage(raw)); got != want {

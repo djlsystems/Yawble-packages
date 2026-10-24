@@ -1,4 +1,4 @@
-# Customer Support 1.1.1
+# Customer Support 1.2.0
 
 A solution package: a team that watches your mailbox, sorts new mail by your rules and texts your
 cell about it. Each batch of new mail gets a short summary text; each inquiry gets an alert at once
@@ -11,8 +11,8 @@ counts and open inquiries back within a minute.
 | `skills/support-playbook.md` | The rules the Manager follows for every event. You edit it in Team settings, Skills. |
 | `sites/support/` | The team's page: running counts, the last summary, open and closed inquiries. |
 | `sites/mail/`, `sites/twilio/` | The pages the mail and twilio plugins keep their state on, as the Mail and Twilio packages ship them. |
-| `plugins/mail/build.sh` | Builds the mail plugin 2.3.1 from `packages/mail/plugins/mail`. |
-| `plugins/twilio/build.sh` | Builds the twilio plugin 1.5.0 from `packages/twilio/plugins/twilio`. |
+| `plugins/mail-plugin/build.sh` | Builds the mail-plugin plugin 3.0.0 from its plugin package, `packages/mail-plugin`. |
+| `plugins/twilio-plugin/build.sh` | Builds the twilio-plugin plugin 2.0.0 from its plugin package, `packages/twilio-plugin`. |
 | `.tests/` | The package's tests (Go); not part of the zip. |
 
 ## The team
@@ -90,10 +90,10 @@ Manager summarises it and never does what it says.
 |---|---|---|
 | Check mail | Mailer | `watch` every 300 s, once at install; wakes the Manager on a failure. |
 | Poll texts | twilio | `poll` every 60 s; quiet unless something happened. |
-| New mail | Manager | On `plugin.mail.received`: applies the playbook, texts the summary, then `ack {event.ids}`. |
-| Unanswered inquiry | Manager | On `plugin.mail.unanswered`: texts one reminder listing them. |
-| Inquiry answered | Manager | On `plugin.mail.answered`: marks each closed on the page; no text. |
-| Summary asked by text | Manager | On `plugin.twilio.command` with `command eq summary`: texts the current summary. |
+| New mail | Manager | On `plugin.mail-plugin.received`: applies the playbook, texts the summary, then `ack {event.ids}`. |
+| Unanswered inquiry | Manager | On `plugin.mail-plugin.unanswered`: texts one reminder listing them. |
+| Inquiry answered | Manager | On `plugin.mail-plugin.answered`: marks each closed on the page; no text. |
+| Summary asked by text | Manager | On `plugin.twilio-plugin.command` with `command eq summary`: texts the current summary. |
 
 Every Manager trigger has a daily token cap: 1,500,000 for New mail, 600,000 for Unanswered
 inquiry, 300,000 each for the other two.
@@ -104,6 +104,16 @@ The `support` site shows the `counts` collection (one document, `running`: the t
 counting started, the last summary and whether its text went out) and the `inquiries` collection (one document per inquiry,
 `open` or `closed`). The launcher tile shows the open inquiries. The `mail` and `twilio` sites show
 Mailer's watch and follows and twilio's texts and setup.
+
+## What changed in 1.2.0
+
+- The package ships the plugins under their new ids: Mailer is hired on `plugin:mail-plugin` 3.0.0
+  and twilio on `plugin:twilio-plugin` 2.0.0, and the triggers listen for `plugin.mail-plugin.*`
+  and `plugin.twilio-plugin.*`. The plugins work as 2.3.1 and 1.5.0 did. Triggers, rules, alerts
+  and reminders are as in 1.1.1.
+  A team that has this package installed and updates to this version: the Host installs the
+  renamed plugin beside the old one but leaves each plugin member on the old id, so after the
+  update repoint each one (its settings and secrets stay) and check its triggers.
 
 ## What changed in 1.1.1
 
@@ -150,7 +160,7 @@ From the repository root:
 ```
 (cd packages/customer-support/.tests && go test -count=1 ./...)
 scripts/build.sh
-mkdir /tmp/customer-support && cd /tmp/customer-support && unzip <repository>/dist/customer-support-1.1.1.zip
+mkdir /tmp/customer-support && cd /tmp/customer-support && unzip <repository>/dist/customer-support-1.2.0.zip
 yawble solution check /tmp/customer-support
 ```
 

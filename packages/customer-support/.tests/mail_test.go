@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-// The published mail plugin, built from packages/mail, run as the Host runs it against a fake
+// The published mail plugin, built from packages/mail-plugin, run as the Host runs it against a fake
 // Gmail with the moveTo this package's setup gives it: rule 1's move to Junk and rule 3's move to
 // New Customers, which the first move creates.
 
@@ -36,7 +36,7 @@ func mailPlugin(t *testing.T) string {
 		}
 		mailBin = filepath.Join(dir, "mail")
 		cmd := exec.Command("go", "build", "-o", mailBin, ".")
-		cmd.Dir = filepath.Join(pkgDir, "..", "mail", "plugins", "mail")
+		cmd.Dir = filepath.Join(pkgDir, "..", "mail-plugin")
 		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			buildErr = err
@@ -108,7 +108,7 @@ var gmailState = map[string]*fakeGmail{}
 func runMail(t *testing.T, base, instruction string, moveTo []string) (ok bool, text string) {
 	t.Helper()
 	req, _ := json.Marshal(map[string]any{
-		"protocol": "harness.member/1", "plugin": map[string]any{"id": "mail", "version": "2.2.1"},
+		"protocol": "harness.member/1", "plugin": map[string]any{"id": "mail-plugin", "version": "3.0.0"},
 		"work":    []any{map[string]any{"seq": 1, "instruction": instruction}},
 		"config":  map[string]any{"moveTo": moveTo},
 		"secrets": map[string]any{},
