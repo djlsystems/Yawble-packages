@@ -110,7 +110,7 @@ func TestContentsMatchYawbleAI(t *testing.T) {
 		if g := asJSON(t, got); !reflect.DeepEqual(g, wantContents) {
 			gj, _ := json.MarshalIndent(g, "", "  ")
 			wj, _ := json.MarshalIndent(wantContents, "", "  ")
-			t.Errorf("%s %s: pkgtool's contents differ from yawble.ai's\npkgtool:\n%s\nyawble.ai:\n%s", id, version, gj, wj)
+			t.Errorf("%s %s: pkgtool's contents differ from yawble.ai's\npkgtool:\n%s\nlive catalog:\n%s", id, version, gj, wj)
 		}
 		compared++
 	}
