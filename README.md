@@ -108,6 +108,20 @@ for is an empty list, never left out and never `null`.
 - `download` is `https://yawble.ai/api/marketplace/download/<id>/<version>.zip`, where the
   Marketplace serves that version once it is uploaded, with the zip's `sha256` and `bytes`.
 - `source` is the package's folder on `main` in this repository.
+- `contents` is what the package holds, exactly as yawble.ai derives it from an uploaded zip
+  (Yawble-web `marketplace/admin/package.ts`; `scripts/pkgtool/contents.go` is the same rules):
+  `plugins` (each plugin a solution ships, its version and `minimum`), `members`, `skills`,
+  `triggers` (each in words), `sites`, `settings`, `secrets`, `connections` and `events`. A
+  plugin's settings, secrets and connections are every one its manifest declares; a solution's are
+  what its `inputs` ask a person for and the keys its members bind. The `contents` test compares it
+  with `scripts/pkgtool/testdata/yawble-ai-contents.json`, recorded from the live catalog
+  (`https://yawble.ai/api/marketplace/catalog.json`); re-record it when a published version's
+  contents change.
+
+A plugin never names the solutions that ship it: no manifest and no catalog entry says which
+solutions include a plugin. A solution names `pluginMinimums` (`{ "<plugin id>": "<version>" }`)
+only for a plugin known to work at a version lower than the one it ships; otherwise the minimum is
+the version shipped, and it names none.
 
 `schema` goes up by one, in `scripts/pkgtool/catalog.go`, on any change a reader must know about: a
 field removed or renamed, a field's type or meaning changed, or a field added that a reader must act

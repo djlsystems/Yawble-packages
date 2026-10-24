@@ -1,0 +1,645 @@
+{
+  "source": "https://yawble.ai/api/marketplace/catalog.json",
+  "generatedAt": "2026-10-24T01:26:50Z",
+  "note": "Each package's kind, version and contents exactly as the live yawble.ai catalog served them; yawble.ai derives contents from the uploaded zip (Yawble-web marketplace/admin/package.ts).",
+  "packages": {
+    "azure": {
+      "kind": "plugin",
+      "version": "1.1.4",
+      "contents": {
+        "plugins": [],
+        "members": [],
+        "skills": [
+          "plugin-azure"
+        ],
+        "triggers": [],
+        "sites": [],
+        "settings": [
+          {
+            "name": "subscription",
+            "label": "",
+            "kind": "string",
+            "required": false,
+            "default": ""
+          },
+          {
+            "name": "regions",
+            "label": "",
+            "kind": "list",
+            "required": false,
+            "default": "eastus2"
+          },
+          {
+            "name": "mode",
+            "label": "",
+            "kind": "string",
+            "required": false,
+            "default": "whatif"
+          },
+          {
+            "name": "allowDelete",
+            "label": "",
+            "kind": "bool",
+            "required": false,
+            "default": "Off"
+          },
+          {
+            "name": "sharedSqlServers",
+            "label": "",
+            "kind": "list",
+            "required": false,
+            "default": ""
+          },
+          {
+            "name": "sharedContainerRegistries",
+            "label": "",
+            "kind": "list",
+            "required": false,
+            "default": ""
+          },
+          {
+            "name": "sharedRegistries",
+            "label": "",
+            "kind": "list",
+            "required": false,
+            "default": ""
+          },
+          {
+            "name": "monthlyBudget",
+            "label": "",
+            "kind": "number",
+            "required": false,
+            "default": "0"
+          },
+          {
+            "name": "budgetEmails",
+            "label": "",
+            "kind": "list",
+            "required": false,
+            "default": ""
+          },
+          {
+            "name": "namePrefix",
+            "label": "",
+            "kind": "string",
+            "required": false,
+            "default": ""
+          }
+        ],
+        "secrets": [
+          {
+            "name": "appSecret1",
+            "label": "",
+            "required": false,
+            "masked": true
+          },
+          {
+            "name": "appSecret2",
+            "label": "",
+            "required": false,
+            "masked": true
+          },
+          {
+            "name": "appSecret3",
+            "label": "",
+            "required": false,
+            "masked": true
+          },
+          {
+            "name": "appSecret4",
+            "label": "",
+            "required": false,
+            "masked": true
+          },
+          {
+            "name": "appSecret5",
+            "label": "",
+            "required": false,
+            "masked": true
+          },
+          {
+            "name": "appSecret6",
+            "label": "",
+            "required": false,
+            "masked": true
+          },
+          {
+            "name": "appSecret7",
+            "label": "",
+            "required": false,
+            "masked": true
+          },
+          {
+            "name": "appSecret8",
+            "label": "",
+            "required": false,
+            "masked": true
+          }
+        ],
+        "connections": [
+          {
+            "slot": "microsoft",
+            "providers": [
+              "microsoft"
+            ],
+            "required": true
+          }
+        ],
+        "events": [
+          {
+            "type": "planned",
+            "summary": "What a changing command would do, or what a deployment's what-if found: counts by change type and any refusals."
+          },
+          {
+            "type": "applied",
+            "summary": "A change was made in apply mode."
+          },
+          {
+            "type": "resource",
+            "summary": "One Azure resource a command created, changed or deleted in apply mode, beside that command's applied summary; at most 25 a command, and past that the summary alone covers the rest."
+          },
+          {
+            "type": "refused",
+            "summary": "A command was refused: outside what the team owns, a role or principal not allowed, a delete with allowDelete off, a path outside the team's folders, a secret outside Key Vault and this member's own keys, or bad arguments."
+          }
+        ]
+      }
+    },
+    "customer-support": {
+      "kind": "solution",
+      "version": "1.1.1",
+      "contents": {
+        "plugins": [
+          {
+            "id": "mail",
+            "version": "2.3.1",
+            "minimum": "2.3.1"
+          },
+          {
+            "id": "twilio",
+            "version": "1.5.0",
+            "minimum": "1.5.0"
+          }
+        ],
+        "members": [
+          {
+            "name": "Manager",
+            "role": "manager",
+            "agent": true
+          },
+          {
+            "name": "Mailer",
+            "role": "mail",
+            "agent": false
+          },
+          {
+            "name": "twilio",
+            "role": "twilio",
+            "agent": false
+          }
+        ],
+        "skills": [
+          "support-playbook"
+        ],
+        "triggers": [
+          {
+            "name": "Check mail",
+            "words": "every 5 minutes"
+          },
+          {
+            "name": "Poll texts",
+            "words": "every minute"
+          },
+          {
+            "name": "New mail",
+            "words": "when the mail plugin announces received"
+          },
+          {
+            "name": "Unanswered inquiry",
+            "words": "when the mail plugin announces unanswered"
+          },
+          {
+            "name": "Inquiry answered",
+            "words": "when the mail plugin announces answered"
+          },
+          {
+            "name": "Summary asked by text",
+            "words": "when the twilio plugin announces command with command is summary"
+          }
+        ],
+        "sites": [
+          "support",
+          "mail",
+          "twilio"
+        ],
+        "settings": [
+          {
+            "name": "sendAllowlist",
+            "label": "",
+            "kind": "list",
+            "required": true,
+            "default": ""
+          },
+          {
+            "name": "mode",
+            "label": "",
+            "kind": "string",
+            "required": false,
+            "default": "dryRun"
+          },
+          {
+            "name": "ownerCommands",
+            "label": "",
+            "kind": "bool",
+            "required": false,
+            "default": "Off"
+          },
+          {
+            "name": "fromNumber",
+            "label": "",
+            "kind": "string",
+            "required": false,
+            "default": ""
+          },
+          {
+            "name": "moveTo",
+            "label": "",
+            "kind": "list",
+            "required": false,
+            "default": ""
+          }
+        ],
+        "secrets": [
+          {
+            "name": "TWILIO_ACCOUNT_SID",
+            "label": "",
+            "required": true,
+            "masked": true
+          },
+          {
+            "name": "TWILIO_API_KEY_SID",
+            "label": "",
+            "required": true,
+            "masked": true
+          },
+          {
+            "name": "TWILIO_API_KEY_SECRET",
+            "label": "",
+            "required": true,
+            "masked": true
+          }
+        ],
+        "connections": [
+          {
+            "slot": "mailbox",
+            "providers": [
+              "imap",
+              "microsoft",
+              "google"
+            ],
+            "required": true
+          }
+        ],
+        "events": []
+      }
+    },
+    "mail": {
+      "kind": "solution",
+      "version": "2.3.1",
+      "contents": {
+        "plugins": [
+          {
+            "id": "mail",
+            "version": "2.3.1",
+            "minimum": "2.3.1"
+          }
+        ],
+        "members": [
+          {
+            "name": "Manager",
+            "role": "manager",
+            "agent": true
+          },
+          {
+            "name": "Mailer",
+            "role": "mail",
+            "agent": false
+          }
+        ],
+        "skills": [
+          "mail-playbook"
+        ],
+        "triggers": [
+          {
+            "name": "Check for new mail",
+            "words": "every 5 minutes"
+          }
+        ],
+        "sites": [
+          "mail"
+        ],
+        "settings": [
+          {
+            "name": "mode",
+            "label": "",
+            "kind": "string",
+            "required": false,
+            "default": "draft"
+          },
+          {
+            "name": "sendAllowlist",
+            "label": "",
+            "kind": "list",
+            "required": false,
+            "default": ""
+          },
+          {
+            "name": "markRead",
+            "label": "",
+            "kind": "bool",
+            "required": false,
+            "default": "Off"
+          },
+          {
+            "name": "moveTo",
+            "label": "",
+            "kind": "list",
+            "required": false,
+            "default": ""
+          },
+          {
+            "name": "followQuietStart",
+            "label": "",
+            "kind": "string",
+            "required": false,
+            "default": ""
+          },
+          {
+            "name": "followQuietEnd",
+            "label": "",
+            "kind": "string",
+            "required": false,
+            "default": ""
+          },
+          {
+            "name": "followTimeZone",
+            "label": "",
+            "kind": "string",
+            "required": false,
+            "default": "UTC"
+          }
+        ],
+        "secrets": [],
+        "connections": [
+          {
+            "slot": "mailbox",
+            "providers": [
+              "imap",
+              "microsoft",
+              "google"
+            ],
+            "required": true
+          }
+        ],
+        "events": []
+      }
+    },
+    "namecheap": {
+      "kind": "plugin",
+      "version": "1.0.4",
+      "contents": {
+        "plugins": [],
+        "members": [],
+        "skills": [
+          "plugin-namecheap"
+        ],
+        "triggers": [],
+        "sites": [],
+        "settings": [
+          {
+            "name": "domains",
+            "label": "",
+            "kind": "list",
+            "required": false,
+            "default": ""
+          },
+          {
+            "name": "mode",
+            "label": "",
+            "kind": "string",
+            "required": false,
+            "default": "dryrun"
+          },
+          {
+            "name": "defaultTtl",
+            "label": "",
+            "kind": "number",
+            "required": false,
+            "default": "1799"
+          },
+          {
+            "name": "clientIp",
+            "label": "",
+            "kind": "string",
+            "required": false,
+            "default": ""
+          },
+          {
+            "name": "sandbox",
+            "label": "",
+            "kind": "bool",
+            "required": false,
+            "default": "Off"
+          }
+        ],
+        "secrets": [
+          {
+            "name": "apiUser",
+            "label": "",
+            "required": false,
+            "masked": true
+          },
+          {
+            "name": "apiKey",
+            "label": "",
+            "required": false,
+            "masked": true
+          }
+        ],
+        "connections": [],
+        "events": [
+          {
+            "type": "changed",
+            "summary": "A domain's records were changed (ensure, remove or restore in apply mode), written and checked."
+          },
+          {
+            "type": "record",
+            "summary": "One DNS record was added, changed or removed by ensure, remove or restore in apply mode, written and checked. At most 25 per command; changed covers the rest."
+          },
+          {
+            "type": "refused",
+            "summary": "A command was refused or failed: the domain is not listed or not on Namecheap DNS, the records could not be read, the arguments were wrong, or a write failed."
+          }
+        ]
+      }
+    },
+    "stripe": {
+      "kind": "plugin",
+      "version": "1.2.0",
+      "contents": {
+        "plugins": [],
+        "members": [],
+        "skills": [
+          "stripe"
+        ],
+        "triggers": [],
+        "sites": [],
+        "settings": [
+          {
+            "name": "mode",
+            "label": "",
+            "kind": "string",
+            "required": false,
+            "default": "dryrun"
+          },
+          {
+            "name": "keyVaults",
+            "label": "",
+            "kind": "list",
+            "required": false,
+            "default": ""
+          },
+          {
+            "name": "expectedAccount",
+            "label": "",
+            "kind": "string",
+            "required": false,
+            "default": ""
+          }
+        ],
+        "secrets": [
+          {
+            "name": "apiKey",
+            "label": "",
+            "required": true,
+            "masked": true
+          }
+        ],
+        "connections": [
+          {
+            "slot": "microsoft",
+            "providers": [
+              "microsoft"
+            ],
+            "required": false
+          }
+        ],
+        "events": [
+          {
+            "type": "changed",
+            "summary": "A Stripe object was created, updated or removed in apply mode."
+          },
+          {
+            "type": "refused",
+            "summary": "A command was refused: a secret key, a key for another account, a vault not in keyVaults, or bad arguments; or setup found the key lacks a needed permission, which the reason names."
+          }
+        ]
+      }
+    },
+    "twilio": {
+      "kind": "solution",
+      "version": "1.5.0",
+      "contents": {
+        "plugins": [
+          {
+            "id": "twilio",
+            "version": "1.5.0",
+            "minimum": "1.5.0"
+          }
+        ],
+        "members": [
+          {
+            "name": "Texting Assistant",
+            "role": "manager",
+            "agent": true
+          },
+          {
+            "name": "twilio",
+            "role": "twilio",
+            "agent": false
+          }
+        ],
+        "skills": [
+          "twilio-setup"
+        ],
+        "triggers": [
+          {
+            "name": "Poll Twilio",
+            "words": "every 5 minutes"
+          },
+          {
+            "name": "Texts received",
+            "words": "when the twilio plugin announces received with source containing /twilio"
+          },
+          {
+            "name": "Opt-outs",
+            "words": "when the twilio plugin announces optout with source containing /twilio"
+          },
+          {
+            "name": "Opt-ins",
+            "words": "when the twilio plugin announces optin with source containing /twilio"
+          },
+          {
+            "name": "Delivery results",
+            "words": "when the twilio plugin announces delivery with source containing /twilio"
+          },
+          {
+            "name": "Owner command",
+            "words": "when the twilio plugin announces command with source containing /twilio"
+          }
+        ],
+        "sites": [
+          "twilio"
+        ],
+        "settings": [
+          {
+            "name": "sendAllowlist",
+            "label": "",
+            "kind": "list",
+            "required": true,
+            "default": ""
+          },
+          {
+            "name": "messagePrefix",
+            "label": "",
+            "kind": "string",
+            "required": false,
+            "default": ""
+          }
+        ],
+        "secrets": [
+          {
+            "name": "TWILIO_ACCOUNT_SID",
+            "label": "",
+            "required": true,
+            "masked": true
+          },
+          {
+            "name": "TWILIO_API_KEY_SID",
+            "label": "",
+            "required": true,
+            "masked": true
+          },
+          {
+            "name": "TWILIO_API_KEY_SECRET",
+            "label": "",
+            "required": true,
+            "masked": true
+          }
+        ],
+        "connections": [],
+        "events": []
+      }
+    }
+  }
+}
