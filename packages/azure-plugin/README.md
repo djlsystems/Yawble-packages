@@ -1,4 +1,4 @@
-# Azure 2.0.1
+# Azure 2.1.0
 
 A plugin member that builds and runs a team's own Azure resources: resource groups, deployments
 from Bicep or ARM templates, container registries and image builds, Azure SQL databases and the SQL
@@ -9,6 +9,18 @@ rights**, so it can never do more than you can yourself in the Azure portal.
 
 Everything starts in **whatif**: each changing command says what it would do and changes nothing,
 until you set `mode` to `apply`.
+
+## New in 2.1.0
+
+- **App secrets by name.** The member's settings screen has an **App secrets** table: you give each
+  secret a name you choose, such as `MicrosoftClientSecret`, and type its value masked beside it. The
+  team refers to it by that name - `containerapp create ... secret=AUTH_MICROSOFT_SECRET=MicrosoftClientSecret`
+  puts that value in the app's secrets - so nobody has to remember what "App secret 1" holds. A name
+  you have not added is refused before anything changes, telling the team to ask you to add a secret
+  by that name on the Azure member's settings screen; nobody sends a value in a message. It needs a
+  Yawble whose plugins may declare named secrets.
+- **`appSecret1` to `appSecret8` keep working** exactly as before, so apps and instructions that use
+  them do not break; for anything new, use a named secret.
 
 ## New in 2.0.1
 
@@ -241,7 +253,7 @@ keyvault create <resource group> <vault>
 keyvault secrets <vault>
 
 containerapp env create <resource group> <environment>
-containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [cpu=<0.25 to 2>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>|appSecret<1-8>]...
+containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [cpu=<0.25 to 2>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>|<named secret>|appSecret<1-8>]...
 containerapp show <app>
 containerapp revisions <app>
 containerapp restart <app>
@@ -337,15 +349,27 @@ reads it with its managed identity; `keyvault secrets <vault>` lists the names a
 never their values. The member never calls Key Vault itself: Azure reads the secret with the
 app's identity.
 
-An app's secret can also come from this member's own keys. The member has eight optional secret
+An app's secret can also come from this member's own **App secrets**, each with a name a person
+chooses. On the member's settings screen (Add member, Member settings, or a solution's setup), the
+App secrets table takes a **Name** - a letter, then letters, digits and underscores, such as
+`MicrosoftClientSecret` - and its **Value**, typed masked and never shown again; at most 20 a member.
+`containerapp create ... secret=<NAME>=<name>` then puts that value in the app's own secrets, named
+after `<NAME>` in lower case with hyphens for underscores, and the app reads it as the environment
+variable `<NAME>`: `secret=AUTH_MICROSOFT_SECRET=MicrosoftClientSecret`. The name matches ignoring
+case. A name the member does not hold is refused before anything changes, in one sentence naming
+it and telling the team to ask the person to add a secret by that name on the Azure member's
+settings screen; a value is never asked for in a message, and a secret's value typed where its name
+belongs is refused without writing it out. This is the form to use.
+
+The older form still works unchanged: the member has eight optional secret
 fields, `appSecret1` to `appSecret8`. A person binds one to a key and sets that key's value on the
 screen, in this member's settings, under the field (or with `yawble secret set <KEY>` and
 `yawble up`). `containerapp create ... secret=<NAME>=appSecret<N>` then puts that value in the
 app's own secrets, named after `<NAME>` in lower case with hyphens for underscores, and the app
 reads it as the environment variable `<NAME>`. The value goes only to Azure, in the app's
 configuration: no what-if, answer, event or progress line holds it, and every value the member is
-given is redacted from what it writes. The what-if and the answer count these as "secrets from
-this member's keys", apart from the Key Vault secrets. A field that is not one of the eight, one
+given (named secrets too) is redacted from what it writes. The what-if and the answer count these as "secrets from
+this member's keys", named secrets among them, apart from the Key Vault secrets. A field that is not one of the eight, one
 the member does not bind, or one whose key is not set is refused before anything changes, naming
 the field and the key, and saying a person sets it on the screen first.
 

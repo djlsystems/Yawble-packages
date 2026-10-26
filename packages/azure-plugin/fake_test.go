@@ -504,6 +504,7 @@ type runOpts struct {
 	config     map[string]any
 	secrets    map[string]string // the request's secrets: field -> value
 	secretKeys map[string]string // the request's secretKeys: field -> key name
+	named      map[string]string // the request's namedSecrets: name -> value; nil: the Host sends none
 	noConnect  bool              // no microsoft slot bound
 	tokens     map[string]string // the slot's tokens map; nil: one per API
 	trees      []string
@@ -559,7 +560,7 @@ func runPlugin(t *testing.T, o runOpts, instruction string) *result {
 	}
 	req := map[string]any{
 		"protocol":         "harness.member/1",
-		"plugin":           map[string]any{"id": "azure-plugin", "version": "2.0.1"},
+		"plugin":           map[string]any{"id": "azure-plugin", "version": "2.1.0"},
 		"member":           map[string]any{"id": testTeam + "/Azure", "team": testTeam, "name": "Azure"},
 		"work":             []map[string]any{{"seq": 1, "instruction": instruction, "payload": map[string]any{"instruction": instruction}}},
 		"config":           cfg,
@@ -570,6 +571,14 @@ func runPlugin(t *testing.T, o runOpts, instruction string) *result {
 		"worktrees":        trees,
 		"siteFiles":        []any{},
 		"sites":            []any{},
+	}
+	if o.named != nil {
+		names := make([]string, 0, len(o.named))
+		for n := range o.named {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		req["namedSecrets"], req["namedSecretNames"] = o.named, names
 	}
 	in, _ := json.Marshal(req)
 	var out bytes.Buffer

@@ -151,13 +151,13 @@ Container Apps:
   workspace `<environment>-logs`.
 - `containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag>
   [port=<n>] [cpu=<0.25 to 2>] [env=<NAME>=<value>]... [secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name>]...
-  [secret=<NAME>=appSecret<1-8>]...`
+  [secret=<NAME>=<named secret>]... [secret=<NAME>=appSecret<1-8>]...`
   - in an owned environment, from an owned or shared registry. Creates the identity
   `<app>-id`, grants it AcrPull on the registry and Key Vault Secrets User on each owned vault a
   `secret=` names, then creates or updates the app (0 to 1 replicas, 0.5 CPU and 1 GiB unless `cpu=` names
   another size, which gets twice as many GiB). `port=`
-  gives it public HTTPS ingress. Each Key Vault secret must already be in the vault, and each
-  `appSecret<N>` must be bound and set (see Secrets). An `env=` that looks like a secret is
+  gives it public HTTPS ingress. Each Key Vault secret must already be in the vault, each named
+  secret must be one this member holds, and each `appSecret<N>` must be bound and set (see Secrets). An `env=` that looks like a secret is
   refused. The app's environment gets `AZURE_CLIENT_ID` set to `<app>-id`'s client id, unless the
   command sets `env=AZURE_CLIENT_ID=...` itself: Azure's SDKs (`DefaultAzureCredential`,
   `ManagedIdentityCredential`) read that variable to pick a user-assigned identity, and without it
@@ -229,7 +229,18 @@ a message. A template refers to it with a Key Vault reference; a container app w
 `secret=<NAME>=<the secret's address>`. The app reads it with its managed identity (Key Vault
 Secrets User). The member never calls Key Vault for a value.
 
-An app secret can also come from this member's own keys, `appSecret1` to `appSecret8`: a person
+An app secret can also come from this member's own named secrets, and this is the form to use. A
+person adds each on the screen (the Azure member's settings, under App secrets), with a name they
+choose, such as `MicrosoftClientSecret`, and its value typed masked; the `status` tool lists the
+names this member holds, never a value.
+`secret=<NAME>=<name>` on `containerapp create` puts that value in the app's own secrets, and the
+app reads it as `<NAME>`: `secret=AUTH_MICROSOFT_SECRET=MicrosoftClientSecret`. When the app needs a
+secret the member does not hold, ask the person to add a secret named, say, `StripeApiKey` on the
+Azure member's settings screen - name it, say what it is for, and never ask for its value in a
+message - then run the command again. A name the member does not hold is refused before anything
+changes, naming it.
+
+The older keys still work: `appSecret1` to `appSecret8`: a person
 binds the field to a key and sets the key's value on the screen (this member's settings).
 `secret=<NAME>=appSecret<N>` on `containerapp create` puts the value in the app's own secrets and
 nowhere else; the member never writes it out. When the field is unbound or its key is not set, the

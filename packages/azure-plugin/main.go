@@ -5,6 +5,7 @@
 //
 //	connections: { microsoft: { account, accessToken, tokens: { <API>: { accessToken } } } },
 //	secrets: { appSecret<N>: <value> }, secretKeys: { appSecret<N>: <key name> },
+//	namedSecrets: { <name>: <value> }, namedSecretNames: [<name>],
 //	workingDirectory, worktrees: [{ path }], siteFiles: [{ folder }], ... }.
 //
 // Out: JSON Lines on stdout - progress, publish, then exactly one result.
@@ -40,6 +41,7 @@ type request struct {
 	Connections      map[string]connection      `json:"connections"`
 	Secrets          map[string]string          `json:"secrets"`
 	SecretKeys       map[string]string          `json:"secretKeys"`
+	NamedSecrets     map[string]string          `json:"namedSecrets"`
 	WorkingDirectory string                     `json:"workingDirectory"`
 	Worktrees        []struct {
 		Path string `json:"path"`
@@ -97,9 +99,13 @@ type plugin struct {
 	// bound to, set or not. A value is only ever put in a container app's configuration.
 	appSecrets    map[string]string
 	appSecretKeys map[string]string
+	// namedSecrets holds the member's named secrets, by the name a person gave each on the screen
+	// (this member's settings); like an app secret's, a value only ever goes in an app's
+	// configuration.
+	namedSecrets map[string]string
 
 	// hidden holds every value that must never be written out: each API's token and each app
-	// secret's value.
+	// secret's and named secret's value.
 	hidden []string
 	// tags caches the tags read this run, by lower-case resource id; nil for a resource not found.
 	tags map[string]map[string]string
@@ -140,6 +146,13 @@ func run(in io.Reader, out io.Writer, now func() time.Time) int {
 		p.hide(value)
 		if _, ok := appSecretField(field); ok && value != "" {
 			p.appSecrets[field] = value
+		}
+	}
+	p.namedSecrets = map[string]string{}
+	for name, value := range req.NamedSecrets {
+		p.hide(value)
+		if value != "" {
+			p.namedSecrets[name] = value
 		}
 	}
 	for field, key := range req.SecretKeys {
@@ -265,6 +278,17 @@ func (p *plugin) hide(value string) {
 		p.hidden = append(p.hidden, value)
 		sort.Slice(p.hidden, func(i, j int) bool { return len(p.hidden[i]) > len(p.hidden[j]) })
 	}
+}
+
+// isHidden answers whether value is one this run must never write out, such as a secret's value
+// typed where a name belongs.
+func (p *plugin) isHidden(value string) bool {
+	for _, h := range p.hidden {
+		if h == value {
+			return true
+		}
+	}
+	return false
 }
 
 // credentialShaped matches what a credential looks like when it was not one of this run's tokens:
