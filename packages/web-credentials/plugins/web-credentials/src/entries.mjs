@@ -179,13 +179,20 @@ const NOT_SECRET = new Set(['true', 'false', 'null', 'none', 'undefined', 'yes',
 // Whatever the row's method, so a page that prints its own cookie does not put it in an answer.
 export function stateSecretValues(state) {
   const out = new Map();
-  const add = (v, min = 4) => {
-    if (typeof v !== 'string' || v.length < min || NOT_SECRET.has(v.toLowerCase())) return;
+  const one = (v, whole) => {
+    if (NOT_SECRET.has(v.toLowerCase())) return;
     if (v.length >= 8) out.set(v, v);
-    else if (!out.has(v)) out.set(v, { token: v });
+    else if (whole && v.length >= 4 && !out.has(v)) out.set(v, { token: v });
+  };
+  // Each value and its URL-decoded form ('+' as a space), as the platform's SecretParts.
+  const add = (v, whole = true) => {
+    if (typeof v !== 'string') return;
+    one(v, whole);
+    const decoded = urlDecoded(v);
+    if (decoded !== v) one(decoded, whole);
   };
   const inside = (v) => {
-    if (typeof v === 'string') add(v, 8);
+    if (typeof v === 'string') add(v, false);
     else if (Array.isArray(v)) v.forEach(inside);
     else if (v && typeof v === 'object') Object.values(v).forEach(inside);
   };
@@ -201,6 +208,17 @@ export function stateSecretValues(state) {
     }
   }
   return [...out.values()];
+}
+
+// Uri.UnescapeDataString of v with '+' as a space: each run of %XX decoded, one that is not UTF-8 left.
+function urlDecoded(v) {
+  return v.replace(/\+/g, ' ').replace(/(?:%[0-9A-Fa-f]{2})+/g, (m) => {
+    try {
+      return decodeURIComponent(m);
+    } catch {
+      return m;
+    }
+  });
 }
 
 // A saved session as the platform's sign-in page keeps it: the v2 envelope

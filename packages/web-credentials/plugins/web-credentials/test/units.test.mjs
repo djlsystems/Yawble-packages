@@ -87,6 +87,29 @@ test('out redacts a 4-7 character session value only as a whole token, an 8+ one
   assert.equal(JSON.parse(lines[1]).output, 'x[redacted]x');
 });
 
+test('out: an escape right before or after a 4-7 character value is a token boundary, as the platform ValueRedactor', () => {
+  const lines = [];
+  const out = makeOut((l) => lines.push(l));
+  out.setSecrets([{ token: 'k7q2z' }]);
+  out.result(true, 'a \\u0022k7q2z\\u0022 b %22k7q2z%22 c \\nk7q2z\\t d %3dK7Q2Z e \\u00e9k7q2z9 f u0022k7q2z');
+  assert.equal(JSON.parse(lines[0]).output, 'a \\u0022[redacted]\\u0022 b %22[redacted]%22 c \\n[redacted]\\t d %3d[redacted] e \\u00e9k7q2z9 f u0022k7q2z');
+  // The JSON-escaped spellings of a value are redacted too: "a+b<c" printed by .NET's default encoder.
+  out.setSecrets(['ab+cd<ef"gh', { token: 'q"1+' }]);
+  out.result(true, 'x ab\\u002Bcd\\u003Cef\\u0022gh x ab+cd<ef\\"gh y q\\u00221\\u002B');
+  assert.equal(JSON.parse(lines[1]).output, 'x [redacted] x [redacted] y [redacted]');
+});
+
+test('stateSecretValues: "undefined" (9 characters) as a JSON string is a settings word, never redacted; a URL-decoded value joins too', () => {
+  const vals = stateSecretValues({
+    cookies: [{ value: 'a%2Fb%3Dcd' }],
+    origins: [{ localStorage: [{ value: JSON.stringify({ theme: 'undefined', other: 'UNDEFINED', k: 'secret-part-1' }) }] }],
+  });
+  const all = vals.map((v) => (typeof v === 'string' ? v : v.token));
+  assert.ok(!all.some((v) => v.toLowerCase() === 'undefined'), 'undefined is in the set');
+  assert.ok(all.includes('secret-part-1'));
+  assert.ok(all.includes('a%2Fb%3Dcd') && all.includes('a/b=cd'), all.join(','));
+});
+
 test('secretValues pulls cookie and local-storage values out of a saved session', () => {
   const session = JSON.stringify({ cookies: [{ value: 'cookievalue1234' }], origins: [{ localStorage: [{ value: 'lsvalue5678' }] }] });
   const vals = secretValues({ secrets: { entries: { e: { session } } } }, [{ secrets: { session }, session: readSession(session) }]);

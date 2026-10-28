@@ -114,6 +114,11 @@ test('P3: check on a page that prints its own cookie and local-storage token sho
     // D13: a 4-7 character value only as a whole token, and settings words never.
     assert.match(blob, /consent true trueness/, 'consent=true over-redacted');
     assert.match(blob, /word abck7q2z9/, 'a 5-character value inside a longer word was redacted');
+    // An escape right before or after a 4-7 character value is a token boundary, as in the platform.
+    assert.ok(!blob.includes('k7q2z\\\\u0022') && !blob.includes('k7q2z%22'), 'a 5-character value after an escape is in a record');
+    assert.match(blob, /json \\\\u0022\[redacted\]\\\\u0022 url %22\[redacted\]%22/);
+    // A settings word inside a JSON value is never redacted, even at 8+ characters.
+    assert.match(blob, /prefs undefined/, '"undefined" in a JSON value was redacted');
   } finally {
     cleanup(ws);
   }

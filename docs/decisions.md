@@ -109,19 +109,32 @@ A site must not be able to tell the plugin's browser from the person on their ow
   images, scripts and styles from a CDN still load, since real sign-in pages need them and they are
   not where a redirect takes the browser.
 - **The session a run holds is redacted, whatever the method.** When the browser closes, its storage
-  state joins the run's redaction set part by part, as the platform does for a saved session (the
-  same rule as Yawble's sign-in page after D11): each WHOLE cookie value and each WHOLE
-  local-storage value is redacted on its own when it is 4 or more characters; strings inside a JSON
-  local-storage value are redacted at 8 or more; values of 1-3 characters are never redacted (they
-  would blank ordinary text). Refined after Ingrid's D13 (consent=true turned "trueness" into
-  "[redacted]ness"), the same rule as Tobias's platform fix: a whole value of 4-7 characters is
-  redacted only as a whole token - not where a letter or digit (any script) comes right before or
-  after it - while a value of 8 or more, and a string of 8 or more inside a JSON value, is still
-  redacted wherever it appears. A whole value that is a settings word - true, false, null, none,
-  undefined, yes, no, on, off, dark, light, auto, default, in any case - is never redacted, nor is
-  such a string inside a JSON value. Secret cells the run is handed (a password, a token) are not
-  sessions: they stay redacted wherever they appear, at 4 or more characters. This applies to every session the plugin holds - one it signed in
-  for with a password, one from a token entry's page, and an interactive row's saved session.
+  state joins the run's redaction set part by part, by the same rule as the platform's saved session
+  (Yawble docs/plugins.md, "Redacted part by part"; `SignInSessionValue.SecretParts` and
+  `ValueRedactor`, Tobias's D13 fix 4f9b75e). Each WHOLE cookie value and each WHOLE local-storage
+  value joins on its own, with its URL-decoded form (`+` as a space):
+  - **8 characters or more:** redacted wherever it appears, in any case, inside other words too. So is
+    each string of 8 characters or more inside a local-storage value that is JSON; shorter strings
+    inside JSON are left out.
+  - **4-7 characters:** redacted only as a WHOLE TOKEN, in any case: where no letter or digit (any
+    script) is right before or after it. `flag=code123;`, `mid k9x4z` and `"k9x4z"` are redacted;
+    `trueness` and `code1234x` are left as they are. An escape right before it (`\uXXXX`, as JSON
+    writes a quote `\u0022`; `\n`, `\r`, `\t`, `\b`, `\f`; `%XX`, as `%22` or `%3D`) counts as no
+    letter, so an escaped copy is still caught; an escape after it starts with `\` or `%`, which is no
+    letter already. Ingrid's case: a value printed out of JSON or a URL is not left in the clear.
+  - **1-3 characters** (`1`, `ok`): left out, so they do not blank ordinary text (D11).
+  - **Never redacted:** a value, or a string inside JSON, that is one of `true`, `false`, `null`,
+    `none`, `undefined`, `yes`, `no`, `on`, `off`, `dark`, `light`, `auto`, `default`, ignoring case,
+    whatever its length (`undefined` is 9). These are settings, not secrets (D13: consent=true had
+    turned "trueness" into "[redacted]ness").
+
+  Like the platform's set, every value is also matched as a JSON writer prints it: .NET's default
+  encoder (`+ < > & ' "` and non-ASCII as `\uXXXX`), the relaxed one (`\"`, `\\`), and that with
+  `/` as `\/`; the longest spelling first, one redacted anywhere before a whole token of the same
+  length. Secret cells the run is handed (a password, a token) are not sessions: they stay redacted
+  wherever they appear, at 4 or more characters. This applies to every session the plugin holds - one
+  it signed in for with a password, one from a token entry's page, and an interactive row's saved
+  session.
 - **The documents folder is the platform's.** A check's screenshot goes to `<team documents>/Web
   Credentials/`, the team documents taken from the request's `siteFiles` (`<documents>/<team>/sites/
   <site>/files`) or the workspace's place (`<data>/teams/<team>/workspaces/<name>` beside

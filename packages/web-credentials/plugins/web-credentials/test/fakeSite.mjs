@@ -143,7 +143,9 @@ export function startFakeSite(opts = {}) {
       const sess = cookies(req).sess || '';
       // More cookies the page sets and prints: a 7-character one (redacted at 4+), a 3-character one
       // (too short to redact), consent=true (a settings word, never redacted, nor inside "trueness")
-      // and a 5-character one printed only inside a longer word (not a whole token, so not redacted).
+      // and a 5-character one printed only inside a longer word (not a whole token, so not redacted)
+      // and after an escape, as JSON (\u0022) and a URL (%22) write a quote (a whole token, redacted).
+      // A JSON local-storage value holds "undefined", a settings word that is never redacted.
       return send(200, `<!doctype html><html><head><title>Session ${sess}</title></head><body><h1>Cookie ${sess}</h1><p id="ls"></p><p id="short"></p><script>
         document.cookie = 'code=code123; Path=/';
         document.cookie = 'tiny=xq7; Path=/';
@@ -151,6 +153,9 @@ export function startFakeSite(opts = {}) {
         document.cookie = 'pin=k7q2z; Path=/';
         document.getElementById('short').textContent = 'Code ' + 'code123' + ' tiny ' + 'xq7' + ' consent true trueness word abck7q2z9';
         document.title = document.title + ' code123 consent true trueness word abck7q2z9';
+        document.title += ' json \\\\u0022k7q2z\\\\u0022 url %22k7q2z%22';
+        localStorage.setItem('prefs', JSON.stringify({ theme: 'undefined', mode: 'undefined' }));
+        document.title += ' prefs ' + JSON.parse(localStorage.getItem('prefs')).theme;
         localStorage.setItem('auth', JSON.stringify({ accessToken: 'ls-access-${sess}-token', n: 1 }));
         document.getElementById('ls').textContent = JSON.parse(localStorage.getItem('auth')).accessToken;
         document.title = document.title + ' ' + JSON.parse(localStorage.getItem('auth')).accessToken;
