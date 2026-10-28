@@ -1,0 +1,15 @@
+{
+  "name": "web-credentials",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The Web Credentials plugin for Yawble.",
+  "license": "Apache-2.0",
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "playwright-core": "1.64.1"
+  },
+  "scripts": {
+    "test": "sh tools/browser.sh browsers && node --test --test-concurrency=1 test/"
+  }
+}

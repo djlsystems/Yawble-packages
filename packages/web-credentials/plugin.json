@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "id": "web-credentials",
+  "name": "Web Credentials",
+  "description": "Keeps a team's website sign-ins in one table a person fills in - password (with an optional two-step code), token or interactive sign-in - checks each active entry on its own schedule, and tells the team when one needs the person. A team member asks it for a short-lived browser session for one entry, or has it open a page signed in and report what it shows with a screenshot; no password, token or session ever leaves it in any output. Chromium and Playwright ship inside the plugin; it never gets around a CAPTCHA or a device approval.",
+  "version": "1.0.0",
+  "protocol": "harness.member/1",
+  "executable": { "path": "bin/web-credentials", "args": [] },
+  "platforms": {
+    "linux-x64": "bin/web-credentials"
+  },
+  "requires": ["node"],
+  "timeoutSeconds": 120,
+  "config": {
+    "entries": {
+      "type": "table",
+      "label": "Entries",
+      "description": "One row per website sign-in. Inactive rows are never used and never checked. Status, Last check, Session expires and Detail are written by the plugin.",
+      "key": "name",
+      "maxRows": 100,
+      "columns": [
+        { "name": "name", "type": "string", "required": true, "label": "Name", "description": "Unique per member, such as yawblelabel-prod-admin: letters, digits, - and _." },
+        { "name": "siteUrl", "type": "string", "required": true, "label": "Site URL", "description": "The origin the entry may sign in to, such as https://app.example.com." },
+        { "name": "hosts", "type": "string", "label": "Other hosts", "description": "Other hosts this entry may use, such as www.example.com, separated by commas or spaces." },
+        { "name": "method", "type": "enum", "enum": ["password", "token", "interactive"], "required": true, "label": "Method", "description": "password fills the sign-in form; token sends a header; interactive uses the session you save with Sign in." },
+        { "name": "signInUrl", "type": "string", "label": "Sign-in URL", "description": "For password: the sign-in page, a path on the site (/login) or a full URL on its hosts." },
+        { "name": "checkUrl", "type": "string", "label": "Signed-in check URL", "description": "A page only a signed-in user can see, such as /dashboard. Default: the Site URL." },
+        { "name": "checkText", "type": "string", "label": "Signed-in check text", "description": "Optional: text that must appear on the check page, or a CSS selector written css=<selector>." },
+        { "name": "username", "type": "string", "label": "Username", "description": "For password: the username or email address." },
+        { "name": "password", "type": "secret", "label": "Password", "description": "For password: the password or app password. Never shown again." },
+        { "name": "totpSecret", "type": "secret", "label": "TOTP secret", "description": "Optional, for password: the two-step secret (base32), so the plugin can type the code." },
+        { "name": "token", "type": "secret", "label": "Token", "description": "For token: the token. Never shown again." },
+        { "name": "tokenHeader", "type": "string", "default": "Authorization", "label": "Token header", "description": "For token: the header name. Authorization sends Bearer <token>; any other header sends the token as it is." },
+        { "name": "usernameSelector", "type": "string", "label": "Username field selector", "description": "Optional, for password: a CSS selector when the username field is not found on its own." },
+        { "name": "passwordSelector", "type": "string", "label": "Password field selector", "description": "Optional, for password: a CSS selector for the password field." },
+        { "name": "submitSelector", "type": "string", "label": "Submit button selector", "description": "Optional, for password: a CSS selector for the sign-in button." },
+        { "name": "totpSelector", "type": "string", "label": "Code field selector", "description": "Optional, for password: a CSS selector for the two-step code field." },
+        { "name": "verifyEvery", "type": "number", "integer": true, "min": 0, "max": 8760, "default": 24, "label": "Verify every (hours)", "description": "How often the hourly check verifies this entry, in hours. 0 turns scheduled checks off for it." },
+        { "name": "active", "type": "bool", "default": true, "label": "Active", "description": "Off: the entry is never used and never checked." },
+        { "name": "session", "type": "secret", "readOnly": true, "label": "Saved session", "description": "For interactive: the session Sign in saves. Never shown." },
+        { "name": "status", "type": "string", "readOnly": true, "label": "Status", "description": "Verified, Expired, Needs you, Failed or Never checked." },
+        { "name": "lastCheck", "type": "string", "readOnly": true, "label": "Last check", "description": "When the plugin last checked this entry (UTC)." },
+        { "name": "sessionExpires", "type": "string", "readOnly": true, "label": "Session expires", "description": "When the site says the session ends, when it says so (UTC)." },
+        { "name": "detail", "type": "string", "readOnly": true, "label": "Detail", "description": "What the last check found and what to do." }
+      ],
+      "rowActions": [
+        { "action": "sign-in", "label": "Sign in", "when": { "column": "method", "equals": "interactive" } }
+      ]
+    }
+  },
+  "events": {
+    "publishes": [
+      {
+        "type": "status.changed",
+        "summary": "An entry's status changed, such as Verified to Needs you: the entry's name, the status before and after, and why. Never a secret.",
+        "highVolume": false,
+        "fields": [
+          { "name": "entry", "kind": "string", "summary": "The entry's name." },
+          { "name": "from", "kind": "string", "summary": "The status before: Verified, Expired, Needs you, Failed or Never checked." },
+          { "name": "to", "kind": "string", "summary": "The status now." },
+          { "name": "reason", "kind": "string", "summary": "What the check found, in one sentence." }
+        ]
+      }
+    ]
+  },
+  "skills": ["skills/plugin-web-credentials.md"]
+}
