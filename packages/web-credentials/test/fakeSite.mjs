@@ -26,6 +26,7 @@ function cookies(req) {
 
 // opts: { captcha, offsite, rejectPassword } flip the awkward behaviours on.
 export function startFakeSite(opts = {}) {
+  const bindHost = opts.host || '127.0.0.1';
   const sessions = new Set(); // live session tokens
   let counter = 0;
 
@@ -55,7 +56,7 @@ export function startFakeSite(opts = {}) {
     }
 
     if (url.pathname === '/offsite-login') {
-      return send(302, '', { location: 'http://127.0.0.2:' + (opts.otherPort || url.port) + '/elsewhere' });
+      return send(302, '', { location: (opts.offsiteOrigin || `http://127.0.0.2:${url.port}`) + '/elsewhere' });
     }
 
     if (url.pathname === '/elsewhere') {
@@ -107,11 +108,12 @@ export function startFakeSite(opts = {}) {
 
   const server = createServer(handler);
   return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(0, bindHost, () => {
       const port = server.address().port;
       resolve({
+        host: bindHost,
         port,
-        origin: `http://127.0.0.1:${port}`,
+        origin: `http://${bindHost}:${port}`,
         // A valid storageState for the interactive method: a known live session cookie.
         liveSession(host = '127.0.0.1') {
           const token = 'sess-live-' + ++counter;

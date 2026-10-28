@@ -112,50 +112,59 @@ export async function verifyInteractive(entry) {
   }, { storageState }).catch((e) => ({ status: Status.failed, reason: `${entry.name}: ${e.message}` }));
 }
 
-export async function verifyPassword(entry) {
+// Signs in with the password form on the given page (so a `check` can reuse the same context).
+// Answers { ok } on success, else { status, reason, captcha?, badPassword? }. Never tries a
+// password sign-in for an interactive entry: that is the caller's to keep straight.
+export async function signInOnPage(page, entry) {
   const password = entry.secrets.password;
   if (!password) return { status: Status.needsYou, reason: `${entry.name} needs you: it has no password. Edit the row and set the Password.` };
   if (!entry.username) return { status: Status.needsYou, reason: `${entry.name} needs you: it has no username.` };
   const signIn = resolveOnSite(entry, entry.signInUrl || entry.siteUrl, 'the sign-in URL');
   if (signIn.refusal) return { status: Status.needsYou, reason: signIn.refusal };
+
+  await page.goto(signIn.url.toString(), nav);
+  if (!hostAllowed(entry, new URL(page.url()))) {
+    return { status: Status.needsYou, reason: `${entry.name} needs you: the sign-in page went to ${new URL(page.url()).hostname}, off the entry's hosts. Use its Sign in link for a sign-in that passes through other hosts.` };
+  }
+  if (await looksLikeCaptcha(page)) {
+    return { status: Status.needsYou, captcha: true, reason: `${entry.name} needs you: the sign-in page shows a CAPTCHA or device approval. Use its Sign in link.` };
+  }
+  const userField = await findField(page, entry.selectors.username, ['input[type="email"]', 'input[autocomplete="username"]', 'input[name*="user" i]', 'input[name*="email" i]', 'input[type="text"]']);
+  const passField = await findField(page, entry.selectors.password, ['input[type="password"]']);
+  if (!userField || !passField) {
+    return { status: Status.needsYou, reason: `${entry.name} needs you: the username or password field was not found on the sign-in page. Set the field selectors on the row, or use its Sign in link.` };
+  }
+  await userField.fill(entry.username);
+  await passField.fill(password);
+  const submit = await findField(page, entry.selectors.submit, ['button[type="submit"]', 'input[type="submit"]', 'button']);
+  await Promise.all([page.waitForLoadState('domcontentloaded', { timeout: 20000 }).catch(() => {}), submit ? submit.click() : passField.press('Enter')]);
+
+  if (entry.secrets.totpSecret) {
+    const codeField = await findField(page, entry.selectors.totp, ['input[autocomplete="one-time-code"]', 'input[name*="otp" i]', 'input[name*="code" i]', 'input[name*="totp" i]']);
+    if (codeField) {
+      await codeField.fill(totp(entry.secrets.totpSecret));
+      const go = await findField(page, entry.selectors.submit, ['button[type="submit"]', 'input[type="submit"]', 'button']);
+      await Promise.all([page.waitForLoadState('domcontentloaded', { timeout: 20000 }).catch(() => {}), go ? go.click() : codeField.press('Enter')]);
+    }
+  }
+
+  if (await looksLikeCaptcha(page)) {
+    return { status: Status.needsYou, captcha: true, reason: `${entry.name} needs you: a CAPTCHA or device approval was shown during sign-in. Use its Sign in link.` };
+  }
+  const now = new URL(page.url());
+  if (!hostAllowed(entry, now)) {
+    return { status: Status.needsYou, reason: `${entry.name} needs you: sign-in moved to ${now.hostname}, off the entry's hosts. Use its Sign in link.` };
+  }
+  return { ok: true, signInPath: signIn.url.pathname };
+}
+
+export async function verifyPassword(entry) {
   const check = resolveOnSite(entry, entry.checkUrl, 'the signed-in check URL');
   if (check.refusal) return { status: Status.needsYou, reason: check.refusal };
 
   return withPage(async (page, context) => {
-    await page.goto(signIn.url.toString(), nav);
-    const landed = new URL(page.url());
-    if (!hostAllowed(entry, landed)) {
-      return { status: Status.needsYou, reason: `${entry.name} needs you: the sign-in page went to ${landed.hostname}, off the entry's hosts. Use its Sign in link for a sign-in that passes through other hosts.` };
-    }
-    if (await looksLikeCaptcha(page)) {
-      return { status: Status.needsYou, captcha: true, reason: `${entry.name} needs you: the sign-in page shows a CAPTCHA or device approval. Use its Sign in link.` };
-    }
-    const userField = await findField(page, entry.selectors.username, ['input[type="email"]', 'input[autocomplete="username"]', 'input[name*="user" i]', 'input[name*="email" i]', 'input[type="text"]']);
-    const passField = await findField(page, entry.selectors.password, ['input[type="password"]']);
-    if (!userField || !passField) {
-      return { status: Status.needsYou, reason: `${entry.name} needs you: the username or password field was not found on the sign-in page. Set the field selectors on the row, or use its Sign in link.` };
-    }
-    await userField.fill(entry.username);
-    await passField.fill(password);
-    const submit = await findField(page, entry.selectors.submit, ['button[type="submit"]', 'input[type="submit"]', 'button']);
-    await Promise.all([page.waitForLoadState('domcontentloaded', { timeout: 20000 }).catch(() => {}), submit ? submit.click() : passField.press('Enter')]);
-
-    if (entry.secrets.totpSecret) {
-      const codeField = await findField(page, entry.selectors.totp, ['input[autocomplete="one-time-code"]', 'input[name*="otp" i]', 'input[name*="code" i]', 'input[name*="totp" i]']);
-      if (codeField) {
-        await codeField.fill(totp(entry.secrets.totpSecret));
-        const go = await findField(page, entry.selectors.submit, ['button[type="submit"]', 'input[type="submit"]', 'button']);
-        await Promise.all([page.waitForLoadState('domcontentloaded', { timeout: 20000 }).catch(() => {}), go ? go.click() : codeField.press('Enter')]);
-      }
-    }
-
-    if (await looksLikeCaptcha(page)) {
-      return { status: Status.needsYou, captcha: true, reason: `${entry.name} needs you: a CAPTCHA or device approval was shown during sign-in. Use its Sign in link.` };
-    }
-    const now = new URL(page.url());
-    if (!hostAllowed(entry, now)) {
-      return { status: Status.needsYou, reason: `${entry.name} needs you: sign-in moved to ${now.hostname}, off the entry's hosts. Use its Sign in link.` };
-    }
+    const signedIn = await signInOnPage(page, entry);
+    if (!signedIn.ok) return signedIn;
 
     const response = await page.goto(check.url.toString(), nav).catch(() => null);
     const after = new URL(page.url());
@@ -164,7 +173,7 @@ export async function verifyPassword(entry) {
     }
     const result = await confirm(page, entry, response);
     if (!result.ok) {
-      const onSignIn = after.pathname === signIn.url.pathname;
+      const onSignIn = after.pathname === signedIn.signInPath;
       return {
         status: Status.expired,
         badPassword: onSignIn,

@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { Status, findEntry, resolveOnSite, hostAllowed } from './entries.mjs';
 import { entryState, fingerprint, sweepHandoffs } from './state.mjs';
-import { verify } from './verify.mjs';
+import { verify, signInOnPage } from './verify.mjs';
 import { withPage, pruneState } from './browser.mjs';
 
 const MaxPasswordFailures = 2; // lockout guard
@@ -206,9 +206,9 @@ export async function cmdCheck(args, entries, state, ctx) {
   const storageState = entry.method === 'interactive' ? JSON.parse(entry.secrets.session) : undefined;
   const run = await withPage(async (page) => {
     if (entry.method === 'password') {
-      // Sign in first so the page load is authenticated.
-      const out = await checkEntry(entry, state, ctx);
-      if (out.result && out.result.status !== Status.verified) throw new Error(out.result.reason);
+      // Sign in on this very page, so the path below is opened by the signed-in context.
+      const signedIn = await signInOnPage(page, entry);
+      if (!signedIn.ok) return { refusal: signedIn.reason };
     }
     const response = await page.goto(target.url.toString(), { waitUntil: 'domcontentloaded', timeout: 20000 });
     const landed = new URL(page.url());
