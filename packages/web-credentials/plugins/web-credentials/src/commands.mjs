@@ -94,7 +94,7 @@ function fold(entry, state, result, ctx) {
       s.held = true;
       result.status = Status.needsYou;
       // No count in the words: after a change, one refusal holds it again.
-      result.reason = `${entry.name} needs you: the site refused the password, so the plugin has stopped signing in, to keep the account from being locked. ${TryAgainPassword}`;
+      result.reason = `${entry.name} needs you: the site refused the password, so the plugin has stopped trying, to keep the account from being locked. ${TryAgainPassword}`;
     }
   }
   if (entry.method === 'password' && result.hold) {

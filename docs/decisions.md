@@ -207,7 +207,7 @@ A site must not be able to tell the plugin's browser from the person on their ow
   again switched, a new password, any other edit) sets the count one short of the limit: one more
   sign-in is sent, and if the site refuses it the entry is held again at once. A sign-in the site
   takes resets the count to 0. The refusal words carry no count ("the site refused the password, so
-  the plugin has stopped signing in"), since after a change one refusal is enough.
+  the plugin has stopped trying"), since after a change one refusal is enough.
 - **The words match the control (P14).** In the row editor Try again is a switch, and either
   direction lifts the guard, so every held text says "switch its Try again setting (on or off, either
   way) and save", never "tick its box". It sits right after **Active** in the column order (it was
