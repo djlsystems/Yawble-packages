@@ -99,8 +99,8 @@ A site must not be able to tell the plugin's browser from the person on their ow
   `check` all sign in through the same function and fold its outcome through the same guard: a
   refusal counts, the second in a row holds the entry (Needs you, a status event, the board notice),
   and a held entry submits nothing again. A member's command never lifts the guard - an asked-for
-  `verify` used to, which let any member lock the account by repeating it. Only the person lifts it:
-  an edit to the row (the salted fingerprint changes) or turning it off and on. `check` and `session`
+  `verify` used to, which let any member lock the account by repeating it. Only the person lifts it,
+  by changing the row (the salted fingerprint changes; see the recheck below for Try again). `check` and `session`
   say plainly when the sign-in failed and never report the sign-in page as the page asked for.
 - **Off-host loads never leave the browser.** Each run's page has Chrome's `Fetch` domain paused on
   every document load, every hop of a redirect included; one to a host not in the row is failed
@@ -124,9 +124,57 @@ A site must not be able to tell the plugin's browser from the person on their ow
   clock (no `progress` for that long ends the run), not a limit on the whole run. The download stays
   inside the run: a run cannot start work that outlives it, and fetching at build or install time
   would put the browser back in the package. So the fetch and the unpack report progress every 15
-  seconds whatever the link's speed, the unpack no longer blocks the event loop, and `timeoutSeconds`
-  is raised from 120 to 300 (the platform's default) so a stalled connection gets five minutes
-  before the run is ended. The next run carries on: a half-done download is discarded and refetched.
+  seconds, the unpack no longer blocks the event loop, and `timeoutSeconds` is raised from 120 to
+  300 (the platform's default). The next run carries on: a half-done download is discarded and
+  refetched. (Corrected at the recheck below: progress is said only while bytes arrive.)
+
+### Recheck of 9e3b559: the board notice, the way out of the guard, late navigations, the download
+
+(Tester Ingrid's recheck of 9e3b559, P7-P12.)
+
+- **The board's Needs you item is raised on every run while an entry needs the person (P8, P12).**
+  The platform clears a member's pending notice when its NEXT run starts (Yawble `MemberRuntime.
+  RunOneAsync` at da422a2 sets `_needsDecision` to null with the blocked and failed marks: new work
+  makes the last run's marks a lie). A plugin's run is a member run, so the hourly `verify all-due`,
+  a `list` or any check cleared a notice the plugin had raised once. So every run, quiet ones included,
+  raises one `needsDecision` naming every active entry that is Expired or Needs you, and none when no
+  entry is. Its words are built only from each entry's status and reason, which hold no count or
+  time (the three-failures sentence says "its last 3 checks or more failed", not a running count), so
+  it reads the same each run and only a new condition changes it; a repeat publishes no status event.
+  The item moves to the card that ran last, which is accepted. An earlier version said it "stays on
+  the card that found it"; it did not. A platform rule "keep a plugin's notice until it withdraws it"
+  would let the plugin raise it once again; that is out of scope here.
+- **The person's way out of a held entry is a change to the row, made with a save alone (P7).** "Turn
+  it off and on" worked only when a run saw the row while it was off: two saves with no run between
+  leave the row as it was, so the plugin cannot see them, and the platform tells a plugin nothing about
+  a save. That route is gone, and the row has a person-only **Try again** box (`retry`, bool). Ticking
+  or unticking it and saving changes what the person wrote, so the salted fingerprint changes and the
+  next run may sign in once more (a second refusal holds it again). A new password does the same. A
+  member cannot write a plugin's table, so no member command can lift the guard. The Needs-you text
+  names only these two ways.
+- **A password that was sent and then led off the hosts holds the entry without counting (P10).** The
+  check page (or the sign-in's answer) leaving the entry's hosts after a submit says nothing about the
+  password, so it is not a refusal and the text names the off-host redirect. But the password is not
+  sent again into it every hour either: the entry is held until the row changes, as for a refusal. A
+  CAPTCHA shown after the submit holds it the same way.
+- **A navigation stopped after the page loaded is reported as stopped (P9).** The host limit is on
+  where the main frame goes; Chrome's `Fetch` pause tells a main-frame load from a frame's by its
+  `frameId`. `check` looks again after the page settles (`networkidle`): a meta refresh or a later
+  script that tried to leave is reported as "loaded, then tried to go to <host> ... the browser stopped
+  it", never as the page (which by then is Chrome's error page). An off-host frame inside a page is
+  blocked and named on its own line; the page is reported. The interactive check page is looked at
+  again the same way.
+- **The host limit is on navigation, not a network allow-list.** Images, scripts, styles, `fetch` and
+  beacons from other hosts still load, as in the person's own browser; a page on the entry's hosts can
+  read its own non-HttpOnly cookies and local storage and send them anywhere, as it could there. The
+  README and both skills say so.
+- **The first-run download: no overall cap, a no-byte limit (P11).** The 15-second heartbeat used to
+  run whatever the download did, so a stalled connection never tripped the idle clock and was ended
+  only by a 15-minute cap on the whole download - which a link under about 160 KB/s could never beat.
+  Now progress is said only when bytes have arrived (at most every 15 s), the whole-download cap is
+  gone, and a download that receives no byte for 60 seconds is ended there, its partial file discarded
+  (no resume: a slow but moving link simply finishes, so a Range resume buys little). The unpack,
+  local work of a minute or so, keeps a plain heartbeat. `timeoutSeconds` stays 300.
 
 ### Session handoff: the asking member's own workspace
 

@@ -38,17 +38,21 @@ or wrong, ask the person to fix it in Member settings; never ask for the secret 
   text was there, and a screenshot in the team's documents.
 
 Every command refuses an unknown or inactive entry, and a path or redirect off the entry's hosts.
+"Other hosts" limits where the browser goes (pages and frames: a redirect, script or meta refresh is
+stopped and named); images, scripts and fetches from other hosts still load, as in the person's own
+browser.
 
 ## Statuses and the board
 
 - **Verified** - signed in. **Expired** - the session or token no longer works. **Needs you** - a
   password change, CAPTCHA, device approval, terms page or locked account (an interactive entry says
   to use its Sign in link). **Failed** - a network or site error, retried next run.
-- When an entry turns Expired or Needs you it shows once on the board under **Needs you** with what
-  to do. Report that to the person in the plugin's own words.
+- While an entry is Expired or Needs you, every run of the plugin member raises the board's **Needs
+  you** item again, in the same words, so it stays while the person is needed; it sits on the card
+  that ran last. Report it to the person in the plugin's own words.
 - A password entry that is refused twice in a row - by `check`, `session` or `verify` - is held
-  (Needs you). Re-sending a command does not lift it; the person edits the row (such as a new
-  password) or turns it off and on.
+  (Needs you). Re-sending a command does not lift it; the person sets a new password or ticks (or
+  unticks) the row's **Try again** box, and saves.
 
 ## For a tester checking a deploy
 

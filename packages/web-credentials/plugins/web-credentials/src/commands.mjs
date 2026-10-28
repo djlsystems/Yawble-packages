@@ -36,11 +36,14 @@ function statusCells(s) {
 
 // THE LOCKOUT GUARD. Every command that may submit a password - a scheduled or asked-for verify, a
 // session, a check - goes through it: a password the site did not take counts, the second in a row
-// holds the entry (Needs you) and nothing submits its password again until the person edits the row
-// or turns it off and on. A command from a member never lifts it, so no member can lock the person's
-// account by repeating one.
+// holds the entry (Needs you) and nothing submits its password again until the person changes the row:
+// a new password, or a flip of its Try again box (any edit and save counts; a run need not see the row
+// in between). A command from a member never lifts it, so no member can lock the person's account by
+// repeating one. A password that was sent and then led somewhere the plugin may not follow (off the
+// entry's hosts) holds the entry the same way without counting as a refusal: it is not known to be
+// wrong, and it is not sent again into that page every hour.
 
-// Notices an edit to the row (password, selectors, anything the person wrote): it lifts a held guard.
+// Notices an edit to the row (password, Try again, anything the person wrote): it lifts a held guard.
 // Answers the entry's state.
 function guardState(entry, state) {
   const s = entryState(state, entry);
@@ -54,6 +57,8 @@ function guardState(entry, state) {
   }
   return s;
 }
+
+const TryAgain = 'Set a new password if it changed, or tick (or untick) its Try again box, and save, to let it try once more.';
 
 // Folds one sign-in or verify outcome into the entry's state with the failure rules, the lockout guard
 // and the status event, and writes the row's status. Answers { changed, result }.
@@ -70,7 +75,9 @@ function fold(entry, state, result, ctx) {
     s.failedRuns = (s.failedRuns || 0) + 1;
     if (s.failedRuns >= MaxFailedRuns) {
       result.status = Status.needsYou;
-      result.reason = `${entry.name} needs you: it has failed ${s.failedRuns} checks in a row. Last: ${result.reason}`;
+      // No count in the words: they are the board notice's and the Detail's, and read the same each run
+      // while the site stays down.
+      result.reason = `${entry.name} needs you: its last ${MaxFailedRuns} checks or more failed. Last: ${result.reason}`;
     }
   } else {
     s.failedRuns = 0;
@@ -81,8 +88,12 @@ function fold(entry, state, result, ctx) {
     if (s.passwordFailures >= MaxPasswordFailures) {
       s.held = true;
       result.status = Status.needsYou;
-      result.reason = `${entry.name} needs you: sign-in was refused ${s.passwordFailures} times in a row, so the plugin has stopped trying, to keep the account from being locked. Edit the row (such as a new password), or turn it off and on, to try again.`;
+      result.reason = `${entry.name} needs you: sign-in was refused ${MaxPasswordFailures} times in a row, so the plugin has stopped trying, to keep the account from being locked. ${TryAgain}`;
     }
+  }
+  if (entry.method === 'password' && result.hold) {
+    s.held = true;
+    result.reason = `${result.reason} The plugin will not sign in again until the row changes. ${TryAgain}`;
   }
 
   s.status = result.status;
@@ -229,11 +240,16 @@ export async function cmdCheck(args, entries, state, ctx) {
       return { signedIn, refusal: `${entry.name}: ${path} could not be opened (${String(e.message).split('\n')[0]}).` };
     }
     const landed = new URL(page.url());
-    if (!hostAllowed(entry, landed) || guard.blocked.length) {
-      return { signedIn, refusal: `${entry.name}: ${path} redirected to ${guard.blocked[0] || landed.hostname}, off the entry's hosts; the browser did not go there.` };
+    if (!hostAllowed(entry, landed)) {
+      return { signedIn, refusal: `${entry.name}: ${path} redirected to ${landed.hostname}, off the entry's hosts; the browser did not go there.` };
     }
     // Let the page finish what it loads, as a person waits for it, before reading it.
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    // A page that tried to leave after it loaded (a meta refresh, a script) was stopped in the browser;
+    // what is on screen now is Chrome's own error page, not the site's.
+    if (guard.blocked.length || !hostAllowed(entry, new URL(page.url()))) {
+      return { signedIn, refusal: `${entry.name}: ${path} loaded, then tried to go to ${guard.blocked[0] || new URL(page.url()).hostname}, off the entry's hosts; the browser stopped it, so there is no page to report.` };
+    }
     const title = await page.title().catch(() => '');
     const heading = await page.$eval('h1', (el) => el.textContent.trim()).catch(() => '');
     const body = expect ? await page.content().catch(() => '') : '';
@@ -246,6 +262,7 @@ export async function cmdCheck(args, entries, state, ctx) {
       title,
       heading,
       found: expect ? body.includes(expect) : null,
+      frames: [...guard.framesBlocked],
       shot: shot.rel,
     };
   }).catch((e) => ({ refusal: `${entry.name}: ${String(e.message).split('\n')[0]}` }));
@@ -264,6 +281,7 @@ export async function cmdCheck(args, entries, state, ctx) {
     `  heading: ${run.heading || '(none)'}`,
   ];
   if (expect !== null) lines.push(`  expected text ${run.found ? 'found' : 'NOT found'}: "${expect}"`);
+  for (const host of run.frames || []) lines.push(`  a frame from ${host} was blocked: off the entry's hosts`);
   if (run.shot) lines.push(`  screenshot: ${run.shot}`);
   return { text: lines.join('\n'), changed, shot: run.shot };
 }

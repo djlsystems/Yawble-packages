@@ -99,28 +99,50 @@ async function install(root, stable, progress) {
   }
   const work = join(root, `.download-${process.pid}`);
   mkdirSync(join(work, 'x'), { recursive: true });
-  // The platform's clock for a run is an idle one (timeoutSeconds with no progress), so a slow link or
-  // a stall still says something every 15 seconds while Chrome is fetched and unpacked.
+  // The platform's clock for a run is an idle one (timeoutSeconds with no progress). The download says
+  // something only while bytes arrive, at most every heartbeat, so a slow link that keeps moving keeps
+  // the run alive for as long as it takes (there is no overall cap), and a link that stops sending is
+  // ended here after stallSeconds with no byte, long before the idle clock.
+  const stallMs = Number(process.env.WEB_CREDENTIALS_CHROME_STALL_SECONDS || 60) * 1000;
+  const beatMs = Number(process.env.WEB_CREDENTIALS_CHROME_HEARTBEAT_MS || 15000);
   let got = 0;
-  let stage = 'Fetching';
-  const heartbeat = setInterval(() => {
-    progress(`${stage} Google Chrome ${stable.version} (once; later runs reuse it): ${Math.round(got / 1048576)} MB so far…`);
-  }, 15000);
+  let said = 0;
+  const stalled = new AbortController();
+  let stall = null;
+  const fed = () => {
+    clearTimeout(stall);
+    stall = setTimeout(() => stalled.abort(new Error(`the download stalled: no data for ${stallMs / 1000} seconds`)), stallMs);
+  };
+  let unpacking = null;
   try {
     progress(`Fetching Google Chrome ${stable.version} (once; later runs reuse it)…`);
-    const response = await fetch(`${poolUrl()}/${stable.file}`, { signal: AbortSignal.timeout(900000) });
+    fed();
+    const response = await fetch(`${poolUrl()}/${stable.file}`, { signal: stalled.signal });
     if (!response.ok || !response.body) throw new Error(`the download answered ${response.status}`);
     const hash = createHash('sha256');
     const deb = join(work, 'chrome.deb');
     const file = createWriteStream(deb);
-    for await (const chunk of response.body) {
-      hash.update(chunk);
-      got += chunk.length;
-      if (!file.write(chunk)) await new Promise((r) => file.once('drain', r));
+    try {
+      for await (const chunk of response.body) {
+        fed();
+        hash.update(chunk);
+        got += chunk.length;
+        if (Date.now() - said >= beatMs) {
+          said = Date.now();
+          progress(`Fetching Google Chrome ${stable.version} (once; later runs reuse it): ${Math.round(got / 1048576)} MB so far…`);
+        }
+        if (!file.write(chunk)) await new Promise((r) => file.once('drain', r));
+      }
+    } catch (e) {
+      throw stalled.signal.aborted ? stalled.signal.reason : e;
+    } finally {
+      clearTimeout(stall);
+      file.end();
     }
-    await new Promise((resolve, reject) => file.end((e) => (e ? reject(e) : resolve())));
+    await new Promise((resolve, reject) => (file.closed ? resolve() : file.once('close', resolve).once('error', reject)));
     if (hash.digest('hex') !== stable.sha256) throw new Error('the download did not match the checksum in Google’s index');
-    stage = 'Unpacking';
+    // Unpacking is local work of a minute or so, with no bytes to count: a plain heartbeat.
+    unpacking = setInterval(() => progress(`Unpacking Google Chrome ${stable.version}…`), beatMs);
     const status = await new Promise((resolve) => {
       const child = spawn('dpkg-deb', ['-x', deb, join(work, 'x')], { stdio: 'ignore' });
       child.on('error', () => resolve(-1));
@@ -133,8 +155,11 @@ async function install(root, stable, progress) {
     rmSync(join(root, stable.version), { recursive: true, force: true });
     renameSync(chrome, join(root, stable.version));
     chmodSync(join(root, stable.version), 0o755);
+  } catch (e) {
+    throw stalled.signal.aborted ? stalled.signal.reason : e;
   } finally {
-    clearInterval(heartbeat);
+    clearTimeout(stall);
+    clearInterval(unpacking);
     rmSync(work, { recursive: true, force: true });
   }
   // The newest two are kept, so a copy a saved session still names is not pulled at once.

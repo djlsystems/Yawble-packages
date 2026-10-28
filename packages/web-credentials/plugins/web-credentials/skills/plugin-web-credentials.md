@@ -32,7 +32,9 @@ One command per instruction. The first word is the command; an entry is named by
   there, and a screenshot saved to the team's documents. Nothing credential-like leaves the plugin.
 
 Every command refuses an unknown or inactive entry, and a path or redirect to a host outside the
-entry's own hosts, saying why.
+entry's own hosts, saying why. "Other hosts" limits where the browser goes - pages and frames, so a
+redirect, a script or a meta refresh to another host is stopped and named - not every request: images,
+scripts and fetches from other hosts still load, as in the person's own browser.
 
 ## Methods
 
@@ -60,12 +62,14 @@ elapsed. A run where nothing changed finishes quietly and wakes nobody.
 
 - **Verified** - signed in, with the time.
 - **Expired** - the session or token no longer works.
-- **Needs you** - a password change, CAPTCHA, device approval, terms page or locked account; the
-  entry shows once on the board under **Needs you** with what to do (an interactive entry says to use
-  its Sign in link). After **2** password sign-in failures in a row - whichever command signed in:
-  `check`, `session` or `verify` - the plugin stops trying that entry and marks it Needs you. No
-  command lifts that, so repeating one never locks the account: the person edits the row (such as a
-  new password) or turns it off and on.
+- **Needs you** - a password change, CAPTCHA, device approval, terms page or locked account; while
+  it lasts, every run raises the board's **Needs you** item again in the same words, with what to do
+  (an interactive entry says to use its Sign in link), on the card that ran last. After **2**
+  password sign-in failures in a row - whichever command signed in: `check`, `session` or `verify` -
+  the plugin stops trying that entry and marks it Needs you. No command lifts that, so repeating one
+  never locks the account: the person sets a new password, or ticks (or unticks) the row's **Try
+  again** box, and saves. A password that was sent and then led off the entry's hosts holds it the
+  same way without counting as a refusal.
 - **Failed** - a network or site error; retried next run, and only after **3** in a row does it
   become Needs you.
 

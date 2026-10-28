@@ -49,6 +49,7 @@
         { "name": "totpSelector", "type": "string", "label": "Code field selector", "description": "Optional, for password: a CSS selector for the two-step code field." },
         { "name": "verifyEvery", "type": "number", "integer": true, "min": 0, "max": 8760, "default": 24, "label": "Verify every (hours)", "description": "How often the hourly check verifies this entry, in hours. 0 turns scheduled checks off for it." },
         { "name": "active", "type": "bool", "default": true, "label": "Active", "description": "Off: the entry is never used and never checked." },
+        { "name": "retry", "type": "bool", "default": false, "label": "Try again", "description": "For password: when the plugin has stopped signing in to keep the account from being locked, tick it (or untick it) and save to let it try once more. A new password does the same." },
         { "name": "session", "type": "secret", "readOnly": true, "label": "Saved session", "description": "For interactive: the session Sign in saves. Never shown." },
         { "name": "status", "type": "string", "readOnly": true, "label": "Status", "description": "Verified, Expired, Needs you, Failed or Never checked." },
         { "name": "lastCheck", "type": "string", "readOnly": true, "label": "Last check", "description": "When the plugin last checked this entry (UTC)." },

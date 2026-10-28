@@ -72,10 +72,16 @@ async function browserVersion(context, page) {
 // browser, so the other host never sees a request, a cookie or a Referer from it. Playwright's own
 // route() is not enough: it sees only the first URL of a redirect. Chrome's Fetch domain pauses every
 // hop. A page's images, scripts and styles from other hosts (a CDN) still load: a sign-in page needs
-// them, and they are not where a redirect takes the browser. `blocked` names each host refused.
+// them, and they are not where a redirect takes the browser - the limit is on where the browser goes
+// (pages and frames), not a network allow-list. `blocked` names each host the PAGE was stopped from
+// going to (the main frame: a redirect, a script or a meta refresh); `framesBlocked` each host a frame
+// inside it was stopped from loading, which leaves the page itself where it is.
 async function guardHosts(context, page, entry) {
   const blocked = [];
+  const framesBlocked = [];
   const cdp = await context.newCDPSession(page);
+  const { frameTree } = await cdp.send('Page.getFrameTree');
+  const main = frameTree.frame.id;
   cdp.on('Fetch.requestPaused', (e) => {
     let off = null;
     if (e.resourceType === 'Document') {
@@ -87,14 +93,15 @@ async function guardHosts(context, page, entry) {
       }
     }
     if (off) {
-      if (!blocked.includes(off)) blocked.push(off);
+      const list = e.frameId && e.frameId !== main ? framesBlocked : blocked;
+      if (!list.includes(off)) list.push(off);
       cdp.send('Fetch.failRequest', { requestId: e.requestId, errorReason: 'BlockedByClient' }).catch(() => {});
     } else {
       cdp.send('Fetch.continueRequest', { requestId: e.requestId }).catch(() => {});
     }
   });
   await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', resourceType: 'Document', requestStage: 'Request' }] });
-  return { blocked };
+  return { blocked, framesBlocked };
 }
 
 // Opens the row's browser and hands `fn` its page and context; always closes them. `run` is the run's

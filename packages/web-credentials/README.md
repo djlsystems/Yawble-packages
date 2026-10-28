@@ -75,8 +75,20 @@ device approval, terms page or locked account - the plugin never tries to get ar
 **Failed** (retried next run). Every command that signs in with a password - `check` and `session` as
 well as `verify` - confirms the sign-in took and counts a refusal against the lockout guard. A password
 entry refused twice in a row is held (Needs you): no command, from anyone, submits its password again
-until the person edits the row (such as a new password) or turns it off and on. A redirect to a host
-that is not one of the entry's is stopped inside the browser, before the other host is asked anything.
+until the person changes the row - a new password, or a tick (or untick) of its **Try again** box - and
+saves; no run has to happen in between. A password that was sent and then led off the entry's hosts
+holds the entry the same way without counting as a refusal.
+
+**Other hosts limits where the browser goes, not every request.** A page or frame load (a link, a
+redirect, a script or a meta refresh) to a host that is not one of the entry's is stopped inside the
+browser, before the other host is asked anything, and the answer says so. Images, scripts, styles and
+fetches a page on the entry's hosts asks for from other hosts (a CDN) still load, as in the person's own
+browser; a page's own scripts can read its non-HttpOnly cookies and local storage, as they can there.
+
+**The board's Needs you item** is raised on every run of the plugin member while any entry needs the
+person, in the same words until something changes: the platform clears a member's notice when its next
+run starts, so a notice raised once would be gone at the next hourly check. The item sits on whichever
+card ran last.
 
 ## Gaps
 

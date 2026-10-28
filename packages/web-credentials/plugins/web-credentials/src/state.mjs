@@ -1,6 +1,6 @@
 // What the plugin keeps between runs, in its own workspace (.web-credentials/state.json, 0600):
 // per entry its last status and check, the failure counts behind the lockout guard and the
-// three-failures rule, whether its notice was raised, and a fingerprint of what the person wrote in
+// three-failures rule, and a fingerprint of what the person wrote in
 // the row; and every session handed off, so it is deleted once it expires. Never a secret: the
 // fingerprint is a salted scrypt digest, and the handoffs are paths.
 import { mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, existsSync, chmodSync } from 'node:fs';
@@ -45,7 +45,6 @@ export function entryState(state, entry) {
     failedRuns: 0,
     passwordFailures: 0,
     held: false,
-    notified: false,
     fingerprint: null,
   });
   return s;

@@ -4,6 +4,8 @@
 //   reason      one sentence, shown in the row's Detail and in the status event
 //   captcha     true when a CAPTCHA or device approval stopped a password sign-in (Needs you)
 //   badPassword true when the site rejected the password (feeds the lockout guard)
+//   hold        true when a password was sent and then led off the entry's hosts: not counted as a
+//               refusal, but nothing is sent again until the person changes the row
 //   state       the storage state after a password sign-in, for a session handoff in the same run
 import { Status, resolveOnSite, hostAllowed } from './entries.mjs';
 import { withEntryBrowser } from './browser.mjs';
@@ -142,6 +144,8 @@ export async function verifyInteractive(entry, run) {
       return { status: Status.needsYou, reason: offHostReason(entry, 'the check page', guard.blocked[0] || landed.hostname) };
     }
     const result = await confirm(page, entry, response);
+    // A page that tried to leave after it loaded (a meta refresh, a script) was stopped: not a check.
+    if (guard.blocked.length) return { status: Status.needsYou, reason: offHostReason(entry, 'the check page', guard.blocked[0]) };
     if (!result.ok) {
       return { status: Status.expired, reason: `${entry.name} is expired: ${result.why}. Open its Sign in link to sign in again.` };
     }
@@ -208,14 +212,14 @@ export async function signInOnPage(page, entry, guard) {
   }
 
   if (guard?.blocked.length) {
-    return { status: Status.needsYou, reason: offHostReason(entry, 'the sign-in', guard.blocked[0]) };
+    return { status: Status.needsYou, hold: true, reason: offHostReason(entry, 'the sign-in', guard.blocked[0]) };
   }
   if (await looksLikeCaptcha(page)) {
-    return { status: Status.needsYou, captcha: true, reason: `${entry.name} needs you: a CAPTCHA or device approval was shown during sign-in. ${CaptchaAdvice(entry)}` };
+    return { status: Status.needsYou, captcha: true, hold: true, reason: `${entry.name} needs you: a CAPTCHA or device approval was shown during sign-in. ${CaptchaAdvice(entry)}` };
   }
   const now = new URL(page.url());
   if (!hostAllowed(entry, now)) {
-    return { status: Status.needsYou, reason: offHostReason(entry, 'the sign-in', now.hostname) };
+    return { status: Status.needsYou, hold: true, reason: offHostReason(entry, 'the sign-in', now.hostname) };
   }
 
   // Did it take? The check page decides, as for a returning browser.
@@ -225,14 +229,19 @@ export async function signInOnPage(page, entry, guard) {
     response = await page.goto(check.url.toString(), nav);
   } catch (e) {
     const f = loadFailure(e, guard);
-    if (f.offHost) return { status: Status.expired, badPassword: true, reason: `${entry.name}: the sign-in did not take: the check page redirected to ${f.offHost}. Check the username and password.` };
+    // The password was sent and the site may well have taken it: the check page leaving the hosts
+    // says nothing about the password, so it is not counted, but it is not sent again either (hold).
+    if (f.offHost) return { status: Status.needsYou, hold: true, reason: offHostReason(entry, 'the check page', f.offHost) };
     return { status: Status.failed, reason: `${entry.name}: the check page could not be opened after sign-in (${f.why}).` };
   }
   const after = new URL(page.url());
-  if (!hostAllowed(entry, after)) {
-    return { status: Status.expired, badPassword: true, reason: `${entry.name}: the sign-in did not take: the check page redirected to ${after.hostname}. Check the username and password.` };
+  if (!hostAllowed(entry, after) || guard?.blocked.length) {
+    return { status: Status.needsYou, hold: true, reason: offHostReason(entry, 'the check page', guard?.blocked[0] || after.hostname) };
   }
   const result = await confirm(page, entry, response);
+  if (guard?.blocked.length) {
+    return { status: Status.needsYou, hold: true, reason: offHostReason(entry, 'the check page', guard.blocked[0]) };
+  }
   if (!result.ok) {
     const onSignIn = after.pathname === signIn.url.pathname;
     return {
@@ -259,7 +268,12 @@ async function submitAndWait(page, button) {
 async function stillSignedIn(page, entry, check, guard) {
   const signInPath = resolveOnSite(entry, entry.signInUrl || entry.siteUrl, 'the sign-in URL').url?.pathname;
   const response = await page.goto(check.url.toString(), nav).catch(() => null);
-  // A redirect off the hosts here (blocked) is not a signed-in page; the sign-in that follows decides.
+  // A redirect off the hosts here (blocked) is not a signed-in page; the sign-in that follows decides,
+  // once Chrome has shown its own error page for the stopped load (else that interrupts the next one).
+  if (guard?.blocked.length) {
+    await page.waitForURL(/^chrome-error:/, { timeout: 5000 }).catch(() => {});
+    await page.waitForLoadState('load', { timeout: 5000 }).catch(() => {});
+  }
   guard?.blocked.splice(0);
   const landed = new URL(page.url());
   if (!hostAllowed(entry, landed) || landed.pathname === signInPath) return false;

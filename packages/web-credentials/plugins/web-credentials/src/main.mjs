@@ -22,12 +22,6 @@ export function teamDocuments(request, workspace) {
   return null;
 }
 
-// The board's notice names a condition: the entries that need the person and why. It is raised when
-// that changes, not on every run.
-function noticeKey(entry, s) {
-  return `${s.status}|${s.reason}`;
-}
-
 const Usage = 'Commands: list; verify <name>|all-due; session <name> [for <minutes>]; check <name> <path> [expect "<text>"].';
 
 export async function run(request, out) {
@@ -43,13 +37,6 @@ export async function run(request, out) {
 
   const myWorkspace = request.workingDirectory || process.cwd();
   const documents = teamDocuments(request, myWorkspace);
-  // Turning an entry off and on lifts the lockout guard, as an edit to it does.
-  for (const e of entries) {
-    if (e.active) continue;
-    const s = entryState(state, e);
-    s.held = false;
-    s.passwordFailures = 0;
-  }
   const ctx = {
     workingDirectory: myWorkspace,
     documentsDir: documents ? join(documents, 'Web Credentials') : null,
@@ -122,19 +109,15 @@ export async function run(request, out) {
   }
   if (work.length === 0) outputs.push(Usage);
 
-  // Row.status for every entry whose status the schedule refreshed is written as each check runs.
-  // The board notice: while any active entry needs the person, one needsDecision names them all - raised
-  // once for each new condition (an entry newly needing the person, or for a new reason), not again on
-  // every run, so the Needs-you item stays on the card that found it.
+  // THE BOARD NOTICE, ON EVERY RUN while any active entry needs the person. The platform clears a
+  // member's notice when its next run starts (MemberRuntime.RunOneAsync), so a notice raised once would
+  // be gone at the next hourly check while the entry still needs the person. Its words come only from
+  // each entry's status and reason, which hold no count or time, so it reads the same each run until
+  // the condition changes; the item moves to the card that ran last.
   const needy = entries.filter((e) => e.active && (entryState(state, e).status === Status.needsYou || entryState(state, e).status === Status.expired));
-  for (const e of entries) {
-    if (!needy.includes(e)) entryState(state, e).notified = false;
-  }
-  const fresh = needy.filter((e) => entryState(state, e).notified !== noticeKey(e, entryState(state, e)));
-  if (fresh.length > 0) {
+  if (needy.length > 0) {
     const lines = needy.map((e) => {
       const s = entryState(state, e);
-      s.notified = noticeKey(e, s);
       const how = e.method === 'interactive' && !/Sign in link/.test(s.reason) ? ' Open its Sign in link.' : '';
       return `• ${e.name}: ${s.status}. ${s.reason}${how}`;
     });

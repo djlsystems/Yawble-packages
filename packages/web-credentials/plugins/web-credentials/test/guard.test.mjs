@@ -70,24 +70,7 @@ test('P1: repeated check against a changed password makes at most the guard’s 
   }
 });
 
-test('P1: turning a held entry off and on lifts the guard', async () => {
-  const s = await startFakeSite();
-  const ws = workspace();
-  try {
-    const bad = { entries: [entryRow({ siteUrl: s.origin })], secrets: { entries: { prod: { password: 'wrong' } } }, workingDirectory: ws };
-    await runPlugin({ ...bad, work: ask('verify prod') });
-    const r2 = await runPlugin({ ...bad, work: ask('verify prod') });
-    assert.equal(r2.rowStatus.at(-1).values.status, 'Needs you');
-    const posts = s.signInPosts();
-    await runPlugin({ ...bad, entries: [entryRow({ siteUrl: s.origin, active: false })], work: ask('list') });
-    const r3 = await runPlugin({ ...bad, work: ask('verify prod') });
-    assert.equal(s.signInPosts(), posts + 1, 'one new try after off and on');
-    assert.equal(r3.rowStatus.at(-1).values.status, 'Expired');
-  } finally {
-    cleanup(ws);
-    await s.close();
-  }
-});
+// The person's way out of a held entry (a new password, or Try again) is P7's, in recheck.test.mjs.
 
 // P2: a request to a host outside the row never leaves the browser.
 test('P2: an off-host redirect on check, sign-in and an interactive check page is blocked before the other host is asked', async () => {
@@ -178,8 +161,9 @@ test('P5: a CAPTCHA on a password entry tells the person to switch it to interac
   }
 });
 
-// P6: the notice once per new condition, and the wording.
-test('P6: Needs you is raised once per new condition, in plain words', async () => {
+// P6: the notice's wording. (Once per condition was P6's first fix; the platform clears a notice at
+// the member's next run, so it is now raised on every run in the same words: P8, recheck.test.mjs.)
+test('P6: Needs you is in plain words, the same each run, and says Sign in link once', async () => {
   const ws = workspace();
   try {
     const base = { entries: [entryRow({ siteUrl: site.origin, method: 'interactive', signInUrl: '' })], secrets: {}, workingDirectory: ws };
@@ -189,14 +173,15 @@ test('P6: Needs you is raised once per new condition, in plain words', async () 
     assert.equal((r1.decisions[0].question.match(/Sign in link/g) || []).length, 1, 'said once');
 
     const r2 = await runPlugin({ ...base, work: ask('list') });
-    assert.equal(r2.decisions.length, 0, 'list does not raise it again');
+    assert.equal(r2.decisions[0].question, r1.decisions[0].question, 'list raises it in the same words');
     const r3 = await runPlugin({ ...base, work: ask('verify prod') });
-    assert.equal(r3.decisions.length, 0, 'the same condition is not raised again');
+    assert.equal(r3.decisions[0].question, r1.decisions[0].question, 'the same condition reads the same');
 
-    // Expired is a new condition: raised again, the Sign in link named once.
+    // Expired is a new condition: new words, the Sign in link named once.
     const dead = JSON.stringify(site.deadSession('127.0.0.1'));
     const r4 = await runPlugin({ ...base, secrets: { entries: { prod: { session: dead } } }, work: ask('verify prod') });
     assert.equal(r4.decisions.length, 1);
+    assert.notEqual(r4.decisions[0].question, r1.decisions[0].question);
     assert.equal((r4.decisions[0].question.match(/Sign in link/g) || []).length, 1, 'said once');
   } finally {
     cleanup(ws);

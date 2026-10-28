@@ -127,6 +127,16 @@ export function startFakeSite(opts = {}) {
       return send(302, '', { location: (opts.offsiteOrigin || `http://127.0.0.2:${url.port}`) + '/landing' });
     }
 
+    // Signed-in pages that leave for the other host after they load: a meta refresh, and an iframe.
+    if (url.pathname === '/meta-off') {
+      const to = (opts.offsiteOrigin || `http://127.0.0.2:${url.port}`) + '/landing';
+      return send(200, `<!doctype html><html><head><title>Leaving</title><meta http-equiv="refresh" content="0; url=${to}"></head><body><h1>Leaving</h1></body></html>`);
+    }
+    if (url.pathname === '/frame-off') {
+      const to = (opts.offsiteOrigin || `http://127.0.0.2:${url.port}`) + '/framed';
+      return send(200, page(`<h1>Framed</h1><iframe src="${to}"></iframe>`));
+    }
+
     // A page that prints its own session: the cookie in its title and heading, and a JSON value it
     // keeps in local storage in its paragraph.
     if (url.pathname === '/leaky') {
