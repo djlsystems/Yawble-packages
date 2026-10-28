@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "web-credentials",
   "name": "Web Credentials",
-  "description": "Keeps a team's website sign-ins in one table a person fills in - password (with an optional two-step code), token or interactive sign-in - checks each active entry on its own schedule, and tells the team when one needs the person. A team member asks it for a short-lived browser session for one entry, or has it open a page signed in and report what it shows with a screenshot; no password, token or session ever leaves it in any output. Chromium and Playwright ship inside the plugin; it never gets around a CAPTCHA or a device approval.",
+  "description": "Keeps a team's website sign-ins in one table a person fills in - password (with an optional two-step code), token or interactive sign-in - checks each active entry on its own schedule, and tells the team when one needs the person. A team member asks it for a short-lived browser session for one entry, or has it open a page signed in and report what it shows with a screenshot; no password, token or session ever leaves it in any output. It signs in with Google Chrome, run headed in one lasting browser profile per entry with the person's languages and time zone, typing at a person's pace; Playwright ships inside the plugin and Chrome is fetched from Google into its own folder, nothing added to the image. It never gets around a CAPTCHA or a device approval.",
   "version": "1.0.0",
   "protocol": "harness.member/1",
   "executable": { "path": "bin/web-credentials", "args": [] },
@@ -12,6 +12,18 @@
   "requires": ["node"],
   "timeoutSeconds": 120,
   "config": {
+    "languages": {
+      "type": "list",
+      "setBy": "person",
+      "label": "Languages",
+      "description": "The languages the plugin's browser says it reads, most preferred first, such as en-GB then en. Use your own browser's, so a site sees the same. An entry signed in with its Sign in link uses the languages of the browser that signed in. Default: en-US, en."
+    },
+    "timeZone": {
+      "type": "string",
+      "setBy": "person",
+      "label": "Time zone",
+      "description": "Your time zone, such as Europe/London, for the plugin's browser. An entry signed in with its Sign in link uses the time zone of the browser that signed in. Default: the machine's."
+    },
     "entries": {
       "type": "table",
       "label": "Entries",

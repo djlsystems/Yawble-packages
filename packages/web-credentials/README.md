@@ -42,6 +42,8 @@ it cannot, on its own, hire a plugin into a pre-existing team or add a trigger t
    if it hands back or fails**. (This is the same trigger the solution's team gets automatically.)
 4. **Add your sign-ins.** Open the member's **Settings** and add one entry per site login. For an
    `interactive` entry, use its **Sign in** link and sign in once in the browser the platform opens.
+   Set **Languages** and **Time zone** to your own browser's, so the plugin's browser presents the
+   same to a site (an entry you signed in to with **Sign in** takes them from that browser instead).
 
 ## Or install the whole solution
 
@@ -79,11 +81,12 @@ edits the row or runs `verify`.
   only updates a team the package itself created. There is no package action that adds this plugin
   as a member of a team you already have or adds its trigger there, so that is the four manual steps
   above. This is a limit of the package format, recorded rather than worked around.
-- **The zip is large (~100 MB).** It carries the Chromium headless shell. Installing from a local
-  folder or an uploaded `.zip` works. Publishing through the yawble.ai Marketplace may be refused if
-  the zip is over the Marketplace's 100 MB download limit; if so, install from a folder.
-- **linux-x64 only.** The bundled browser is the linux64 shell, so the plugin declares only
-  `linux-x64`. Running on `linux-arm64` is a follow-up (bundle and declare the arm64 shell).
+- **The first run downloads Google Chrome (~145 MB).** The browser is not in the zip: the plugin
+  fetches Google's own stable Chrome into its folder on first use (checksum-checked) and keeps it
+  current, unless the platform's copy (`/data/google-chrome`) is already current. A machine that
+  cannot reach `dl.google.com` cannot run a sign-in until one copy is there. See `docs/decisions.md`.
+- **linux-x64 only.** Google publishes Chrome for Linux on x86-64 only, so the plugin declares only
+  `linux-x64`.
 
 ## Build and check
 
@@ -97,9 +100,16 @@ The plugin's own unit and integration tests (Node) run from the plugin folder:
 ```sh
 cd packages/web-credentials/plugins/web-credentials
 npm ci
-PLAYWRIGHT_BROWSERS_PATH=/path/to/playwright-cache npm test
+npm test     # fetches Google Chrome once into $TMPDIR/web-credentials-chrome (WEB_CREDENTIALS_CHROME_ROOT)
 ```
 
 The tests run against a local fake site (a password form, a two-step step, a token API, an expiring
-session, a CAPTCHA page, a redirect to another host, and a password it keeps rejecting); no real
-account is used.
+session, a CAPTCHA page, a redirect to another host, a password it keeps rejecting, and a probe page
+that reports what a site sees of the browser: user agent, client hints and their headers,
+`navigator.webdriver`, plugins, languages, WebGL, screen, viewport, time zone and the per-key timing
+of the typing); no real account is used.
+
+**How the browser looks to a site.** Google Chrome stable, headed on its own virtual screen, with
+Chrome's own sandbox on, none of Playwright's automation switches, one lasting profile per entry, the
+person's languages and time zone (from the sign-in page's saved session, else the plugin's
+**Languages** and **Time zone** settings), and typing and clicking at a person's pace.

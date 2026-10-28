@@ -36,8 +36,9 @@ entry's own hosts, saying why.
 
 ## Methods
 
-- **password** - fills the sign-in form and submits, adding the two-step code when a TOTP secret is
-  set, then confirms with the signed-in check URL. The fields are found automatically; a row may set
+- **password** - types into the sign-in form at a person's pace and submits, adding the two-step code
+  when a TOTP secret is set, then confirms with the signed-in check URL. Each entry keeps its own
+  browser profile, so when the site still remembers it the plugin is signed in without typing. The fields are found automatically; a row may set
   selector overrides when a site needs them.
 - **token** - one request to the check URL with the header. 2xx (with the expected text, when set)
   is verified.
@@ -47,6 +48,10 @@ entry's own hosts, saying why.
 
 If a provider shows a CAPTCHA or asks for a device approval, the entry becomes **Needs you**; the
 plugin never tries to get around it.
+
+The browser is Google Chrome, run as a person's would be: headed, one lasting profile per entry, the
+person's languages and time zone, no automation switches. The first run of a new plugin member
+fetches Chrome (about 145 MB) and is slower; later runs reuse it.
 
 ## Scheduled checks and statuses
 
