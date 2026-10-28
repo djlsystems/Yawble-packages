@@ -11,7 +11,7 @@ here=$(cd "$(dirname "$0")/.." && pwd)
 dest=${1:?usage: tools/browser.sh <dest>}
 mkdir -p "$dest"
 dest=$(cd "$dest" && pwd)
-core=$here/node_modules/playwright-core
+core=${PW_CORE:-$here/node_modules/playwright-core}
 if [ ! -f "$core/browsers.json" ]; then
   echo "tools/browser.sh: $core is missing; run npm ci in $here first" >&2
   exit 1
