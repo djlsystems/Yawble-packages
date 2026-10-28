@@ -14,6 +14,10 @@ out=$(cd "$out" && pwd)
 # The runtime dependency, into <out>/node_modules, from the lock so the bytes are fixed.
 cp "$here/package.json" "$here/package-lock.json" "$out/"
 ( cd "$out" && npm ci --omit=dev --no-audit --no-fund --loglevel=error )
+# The plugin imports playwright-core as a library; its CLI launcher is a symlink, and a package
+# holds no links, so drop node_modules/.bin. Any other stray symlink is removed too.
+rm -rf "$out/node_modules/.bin"
+find "$out/node_modules" -type l -delete 2>/dev/null || true
 
 # The Chromium headless shell, laid out as Playwright lays it out, under <out>.
 PW_CORE="$out/node_modules/playwright-core" sh "$here/tools/browser.sh" "$out"
