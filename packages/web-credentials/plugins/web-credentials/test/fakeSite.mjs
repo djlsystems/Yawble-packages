@@ -32,9 +32,13 @@ export function startFakeSite(opts = {}) {
   let counter = 0;
   const probes = []; // what each visit to /probe saw: { headers, report }
   const keyTimes = []; // per sign-in POST: the page-observed key times of each field
+  const requests = []; // every request the site received: { method, path }
+  let password = PASSWORD; // the site's password now; a test can change it
+  let lastSession = null; // the newest session cookie value the site gave out
 
   const handler = (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
+    requests.push({ method: req.method, path: url.pathname });
     const send = (status, body, headers = {}) => {
       res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', ...headers });
       res.end(body);
@@ -118,6 +122,22 @@ export function startFakeSite(opts = {}) {
       return send(302, '', { location: (opts.offsiteOrigin || `http://127.0.0.2:${url.port}`) + '/elsewhere' });
     }
 
+    // A signed-in page that redirects off the site's host.
+    if (url.pathname === '/redir') {
+      return send(302, '', { location: (opts.offsiteOrigin || `http://127.0.0.2:${url.port}`) + '/landing' });
+    }
+
+    // A page that prints its own session: the cookie in its title and heading, and a JSON value it
+    // keeps in local storage in its paragraph.
+    if (url.pathname === '/leaky') {
+      const sess = cookies(req).sess || '';
+      return send(200, `<!doctype html><html><head><title>Session ${sess}</title></head><body><h1>Cookie ${sess}</h1><p id="ls"></p><script>
+        localStorage.setItem('auth', JSON.stringify({ accessToken: 'ls-access-${sess}-token', n: 1 }));
+        document.getElementById('ls').textContent = JSON.parse(localStorage.getItem('auth')).accessToken;
+        document.title = document.title + ' ' + JSON.parse(localStorage.getItem('auth')).accessToken;
+      </script></body></html>`);
+    }
+
     if (url.pathname === '/elsewhere') {
       return send(200, page('<h1>Another host</h1>'));
     }
@@ -134,7 +154,7 @@ export function startFakeSite(opts = {}) {
       }
       return readBody(req, (form) => {
         if (form.keys) keyTimes.push(JSON.parse(form.keys));
-        if (opts.rejectPassword || form.password !== PASSWORD || form.email !== USERNAME) {
+        if (opts.rejectPassword || form.password !== password || form.email !== USERNAME) {
           return send(200, page('<h1>Sign in</h1><p class="error">Wrong username or password</p><form method="post" action="/login"><input type="email" name="email"/><input type="password" name="password"/><button type="submit">Log in</button></form>'));
         }
         if (opts.totp) {
@@ -142,8 +162,9 @@ export function startFakeSite(opts = {}) {
           sessions.add('half:' + pending);
           return send(302, '', { location: '/totp', 'set-cookie': `half=${pending}; Path=/` });
         }
-        const token = 'sess' + ++counter;
+        const token = 'sess-' + Math.random().toString(36).slice(2, 12) + ++counter;
         sessions.add(token);
+        lastSession = token;
         return send(302, '', { location: '/dashboard', 'set-cookie': `sess=${token}; Path=/` });
       });
     }
@@ -186,6 +207,15 @@ export function startFakeSite(opts = {}) {
         },
         probes,
         keyTimes,
+        requests,
+        // Sign-in POSTs the site has received so far.
+        signInPosts: () => requests.filter((r) => r.method === 'POST' && r.path === '/login').length,
+        lastSession: () => lastSession,
+        // The person changes the password on the site, and the site ends every session.
+        changePassword(next) {
+          password = next;
+          sessions.clear();
+        },
         close: () => new Promise((r) => server.close(r)),
       });
     });

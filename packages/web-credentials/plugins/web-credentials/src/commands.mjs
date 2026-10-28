@@ -8,7 +8,8 @@ import { join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { Status, findEntry, resolveOnSite, hostAllowed } from './entries.mjs';
 import { entryState, fingerprint, sweepHandoffs } from './state.mjs';
-import { verify, ensureSignedIn } from './verify.mjs';
+export { guardState };
+import { verify, ensureSignedIn, sessionExpiry } from './verify.mjs';
 import { withEntryBrowser, pruneState } from './browser.mjs';
 
 const MaxPasswordFailures = 2; // lockout guard
@@ -33,13 +34,16 @@ function statusCells(s) {
   };
 }
 
-// Runs one verify and folds the outcome into the entry's state with the failure rules, the lockout
-// guard and the status event. Answers { changed, event }.
-async function checkEntry(entry, state, ctx) {
-  const s = entryState(state, entry);
-  const from = s.status;
+// THE LOCKOUT GUARD. Every command that may submit a password - a scheduled or asked-for verify, a
+// session, a check - goes through it: a password the site did not take counts, the second in a row
+// holds the entry (Needs you) and nothing submits its password again until the person edits the row
+// or turns it off and on. A command from a member never lifts it, so no member can lock the person's
+// account by repeating one.
 
-  // A changed row (password, selectors, anything the person wrote) clears the lockout guard.
+// Notices an edit to the row (password, selectors, anything the person wrote): it lifts a held guard.
+// Answers the entry's state.
+function guardState(entry, state) {
+  const s = entryState(state, entry);
   const print = fingerprint(state, entry);
   if (s.fingerprint !== print) {
     s.fingerprint = print;
@@ -48,12 +52,14 @@ async function checkEntry(entry, state, ctx) {
       s.passwordFailures = 0;
     }
   }
-  if (s.held) {
-    return { changed: false };
-  }
+  return s;
+}
 
-  ctx.progress(`Checking ${entry.name}…`);
-  const result = await verify(entry, ctx.browserRun);
+// Folds one sign-in or verify outcome into the entry's state with the failure rules, the lockout guard
+// and the status event, and writes the row's status. Answers { changed, result }.
+function fold(entry, state, result, ctx) {
+  const s = entryState(state, entry);
+  const from = s.status;
   s.lastCheckAt = new Date().toISOString();
   s.sessionExpires = result.sessionExpires || '';
 
@@ -75,20 +81,25 @@ async function checkEntry(entry, state, ctx) {
     if (s.passwordFailures >= MaxPasswordFailures) {
       s.held = true;
       result.status = Status.needsYou;
-      result.reason = `${entry.name} needs you: sign-in was refused ${s.passwordFailures} times, so checks are paused. Edit the row or run verify ${entry.name} to try again.`;
+      result.reason = `${entry.name} needs you: sign-in was refused ${s.passwordFailures} times in a row, so the plugin has stopped trying, to keep the account from being locked. Edit the row (such as a new password), or turn it off and on, to try again.`;
     }
-  } else if (result.status === Status.verified) {
-    s.passwordFailures = 0;
   }
 
   s.status = result.status;
   s.reason = result.reason;
   const changed = from !== s.status;
-  if (changed) {
-    if (s.status === Status.verified) s.notified = false;
-    return { changed: true, event: { entry: entry.name, from, to: s.status, reason: result.reason }, result };
-  }
-  return { changed: false, result };
+  if (changed) ctx.publish('status.changed', { entry: entry.name, from, to: s.status, reason: result.reason });
+  ctx.statusOf(entry);
+  return { changed, result };
+}
+
+// Runs one verify through the guard. Answers { changed, result }; a held entry is not tried.
+async function checkEntry(entry, state, ctx) {
+  const s = guardState(entry, state);
+  if (s.held) return { changed: false, held: true, result: { status: s.status, reason: s.reason } };
+  ctx.progress(`Checking ${entry.name}…`);
+  const result = await verify(entry, ctx.browserRun);
+  return fold(entry, state, result, ctx);
 }
 
 export async function cmdList(entries, state) {
@@ -103,15 +114,16 @@ export async function cmdList(entries, state) {
   return lines.join('\n');
 }
 
-// A guard every session/check command runs first: the entry must be active and Verified. Answers
-// null when it is usable, else the sentence to report.
+// A guard every session/check command runs first. Answers null when the entry is usable, else the
+// sentence to report: it must be active, not held by the lockout guard, and Verified - except that a
+// password entry may always sign in again, through the guard (a CAPTCHA or an off-host page stops it
+// before anything is submitted).
 function usableRefusal(entry, state) {
   if (!entry.active) return `${entry.name} is inactive; turn it on in this member’s settings to use it.`;
-  const s = entryState(state, entry);
-  if (s.status !== Status.verified) {
-    return s.reason || `${entry.name} is ${s.status.toLowerCase()}.`;
-  }
-  return null;
+  const s = guardState(entry, state);
+  if (s.held) return s.reason;
+  if (s.status === Status.verified || entry.method === 'password') return null;
+  return s.reason || `${entry.name} is ${s.status.toLowerCase()}.`;
 }
 
 export async function cmdVerify(arg, entries, state, ctx) {
@@ -127,8 +139,6 @@ export async function cmdVerify(arg, entries, state, ctx) {
     let changed = false;
     for (const e of due) {
       const out = await checkEntry(e, state, ctx);
-      if (out.event) ctx.publish('status.changed', out.event);
-      ctx.statusOf(e);
       changed = changed || out.changed;
     }
     return { text: `Checked ${due.length} due ${due.length === 1 ? 'entry' : 'entries'}.`, changed, scheduled: true };
@@ -136,14 +146,9 @@ export async function cmdVerify(arg, entries, state, ctx) {
   const entry = findEntry(entries, arg);
   if (!entry) return { text: `No entry named ${arg}.`, refusal: true };
   if (!entry.active) return { text: `${entry.name} is inactive; turn it on in this member’s settings.`, refusal: true };
-  // A person's explicit verify clears a held guard and tries again.
-  const s = entryState(state, entry);
-  s.held = false;
-  s.passwordFailures = 0;
+  // An asked-for verify goes through the guard too: a held entry is not tried again.
   const out = await checkEntry(entry, state, ctx);
-  if (out.event) ctx.publish('status.changed', out.event);
-  ctx.statusOf(entry);
-  return { text: out.result ? out.result.reason : `${entry.name}: ${s.status}.`, changed: out.changed };
+  return { text: out.result.reason, changed: out.changed, refusal: !!out.held };
 }
 
 export async function cmdSession(args, entries, state, ctx) {
@@ -177,10 +182,8 @@ export async function cmdSession(args, entries, state, ctx) {
     state0 = pruneState(entry.session.storageState, entry.hosts);
   } else {
     const out = await checkEntry(entry, state, ctx);
-    if (out.event) ctx.publish('status.changed', out.event);
-    ctx.statusOf(entry);
-    if (!out.result || out.result.status !== Status.verified || !out.result.state) {
-      return { text: out.result ? out.result.reason : `${entry.name} could not be signed in.`, refusal: true };
+    if (out.result.status !== Status.verified || !out.result.state) {
+      return { text: `${entry.name}: no session was handed off: the sign-in failed. ${out.result.reason}`, refusal: true };
     }
     state0 = pruneState(out.result.state, entry.hosts);
   }
@@ -203,17 +206,31 @@ export async function cmdCheck(args, entries, state, ctx) {
   const target = resolveOnSite(entry, path, 'the path');
   if (target.refusal) return { text: target.refusal, refusal: true };
 
-  const run = await withEntryBrowser(entry, ctx.browserRun, async (page) => {
+  const s = entryState(state, entry);
+  const run = await withEntryBrowser(entry, ctx.browserRun, async (page, context, guard) => {
+    let signedIn = null;
     if (entry.method === 'password') {
       // Sign in on this very page (unless the row's browser still is), so the path below is opened
-      // by the signed-in browser.
-      const signedIn = await ensureSignedIn(page, entry);
-      if (!signedIn.ok) return { refusal: signedIn.reason };
+      // by the signed-in browser. A sign-in here is confirmed and counted like any verify.
+      ctx.progress(`Opening ${entry.name}…`);
+      const outcome = await ensureSignedIn(page, entry, guard, !s.held);
+      if (outcome.held) return { refusal: s.reason };
+      if (!outcome.ok) return { signInFailed: outcome };
+      if (!outcome.already) {
+        const held = await context.storageState();
+        signedIn = { status: Status.verified, reason: `${entry.name} is verified.`, sessionExpires: sessionExpiry(held) };
+      }
     }
-    const response = await page.goto(target.url.toString(), { waitUntil: 'domcontentloaded', timeout: 20000 });
+    let response;
+    try {
+      response = await page.goto(target.url.toString(), { waitUntil: 'domcontentloaded', timeout: 20000 });
+    } catch (e) {
+      if (guard.blocked.length) return { signedIn, refusal: `${entry.name}: ${path} redirected to ${guard.blocked[0]}, off the entry's hosts; the browser did not go there.` };
+      return { signedIn, refusal: `${entry.name}: ${path} could not be opened (${String(e.message).split('\n')[0]}).` };
+    }
     const landed = new URL(page.url());
-    if (!hostAllowed(entry, landed)) {
-      return { refusal: `${entry.name}: the page redirected to ${landed.hostname}, off the entry's hosts.` };
+    if (!hostAllowed(entry, landed) || guard.blocked.length) {
+      return { signedIn, refusal: `${entry.name}: ${path} redirected to ${guard.blocked[0] || landed.hostname}, off the entry's hosts; the browser did not go there.` };
     }
     // Let the page finish what it loads, as a person waits for it, before reading it.
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
@@ -223,6 +240,7 @@ export async function cmdCheck(args, entries, state, ctx) {
     const shot = shotPath(ctx, entry);
     await page.screenshot({ path: shot.file, fullPage: false }).catch(() => {});
     return {
+      signedIn,
       status: response ? response.status() : 0,
       url: landed.toString(),
       title,
@@ -232,7 +250,13 @@ export async function cmdCheck(args, entries, state, ctx) {
     };
   }).catch((e) => ({ refusal: `${entry.name}: ${String(e.message).split('\n')[0]}` }));
 
-  if (run.refusal) return { text: run.refusal, refusal: true };
+  if (run.signInFailed) {
+    const out = fold(entry, state, run.signInFailed, ctx);
+    return { text: `${entry.name}: the sign-in FAILED, so ${path} was not opened. ${out.result.reason}`, refusal: true, changed: out.changed };
+  }
+  let changed = false;
+  if (run.signedIn) changed = fold(entry, state, run.signedIn, ctx).changed;
+  if (run.refusal) return { text: run.refusal, refusal: true, changed };
   const lines = [
     `${entry.name} ${path}:`,
     `  HTTP ${run.status}, ${run.url}`,
@@ -241,7 +265,7 @@ export async function cmdCheck(args, entries, state, ctx) {
   ];
   if (expect !== null) lines.push(`  expected text ${run.found ? 'found' : 'NOT found'}: "${expect}"`);
   if (run.shot) lines.push(`  screenshot: ${run.shot}`);
-  return { text: lines.join('\n'), changed: false, shot: run.shot };
+  return { text: lines.join('\n'), changed, shot: run.shot };
 }
 
 // A handoff goes into the REQUESTING member's own workspace, readable by it and by no other member,

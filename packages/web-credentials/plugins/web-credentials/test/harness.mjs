@@ -1,6 +1,6 @@
 // Shared test helpers: run the plugin like the Host does (one request in, the JSON-Lines records
 // out) and read them back. The real out.mjs is used, so the plugin's own redaction is exercised.
-import { mkdtempSync, rmSync, readdirSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readdirSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeOut } from '../src/out.mjs';
@@ -12,8 +12,21 @@ import { run } from '../src/main.mjs';
 process.env.WEB_CREDENTIALS_CHROME_ROOT ||= join(tmpdir(), 'web-credentials-chrome');
 process.env.WEB_CREDENTIALS_PACE ||= '0.3';
 
+// A plugin workspace laid out as the platform lays one out, in a temporary data root of its own:
+// <root>/teams/T/workspaces/Creds. So a check's screenshot goes to <root>/documents/T/... and a
+// handoff for T/Manager to <root>/teams/T/workspaces/Manager - never the instance's real folders.
+const roots = new Map();
 export function workspace() {
-  return mkdtempSync(join(tmpdir(), 'wc-'));
+  const root = mkdtempSync(join(tmpdir(), 'wc-'));
+  const ws = join(root, 'teams', 'T', 'workspaces', 'Creds');
+  mkdirSync(ws, { recursive: true });
+  roots.set(ws, root);
+  return ws;
+}
+
+// The team documents folder of a workspace() run.
+export function documentsOf(ws) {
+  return join(roots.get(ws), 'documents', 'T');
 }
 
 // Runs the plugin and answers every record it wrote, plus the raw lines (for a no-leak scan).
@@ -61,5 +74,6 @@ export function readText(path) {
 }
 
 export function cleanup(dir) {
-  rmSync(dir, { recursive: true, force: true });
+  rmSync(roots.get(dir) ?? dir, { recursive: true, force: true });
+  roots.delete(dir);
 }

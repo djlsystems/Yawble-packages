@@ -161,14 +161,38 @@ export function secretValues(request, entries) {
   };
   walk(request?.secrets);
   for (const e of entries) {
-    if (e.session) {
-      // A session's cookie and storage values are credentials of their own.
-      const state = e.session.storageState;
-      for (const c of state.cookies) if (typeof c.value === 'string' && c.value.length >= 4) values.add(c.value);
-      for (const o of state.origins) for (const s of o.localStorage ?? []) if (typeof s.value === 'string' && s.value.length >= 4) values.add(s.value);
-    }
+    // A session's cookie and storage values are credentials of their own.
+    if (e.session) for (const v of stateSecretValues(e.session.storageState)) values.add(v);
   }
   return [...values].sort((a, b) => b.length - a.length);
+}
+
+// The values of a storage state that are credentials, part by part, as the platform redacts a saved
+// session: each cookie value, each local-storage value, and each string of 8 characters or more
+// inside a local-storage value that is JSON. Whatever the row's method, so a page that prints its own
+// cookie does not put it in an answer.
+export function stateSecretValues(state) {
+  const out = new Set();
+  const add = (v, min = 4) => {
+    if (typeof v === 'string' && v.length >= min) out.add(v);
+  };
+  const inside = (v) => {
+    if (typeof v === 'string') add(v, 8);
+    else if (Array.isArray(v)) v.forEach(inside);
+    else if (v && typeof v === 'object') Object.values(v).forEach(inside);
+  };
+  for (const c of state?.cookies ?? []) add(c.value);
+  for (const o of state?.origins ?? []) {
+    for (const s of o.localStorage ?? []) {
+      add(s.value);
+      try {
+        inside(JSON.parse(s.value));
+      } catch {
+        // not JSON: the whole value is enough
+      }
+    }
+  }
+  return [...out];
 }
 
 // A saved session as the platform's sign-in page keeps it: the v2 envelope

@@ -13,7 +13,7 @@
 import { existsSync, readdirSync, mkdirSync, rmSync, renameSync, createWriteStream, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 
 // Google's (a test points them at a local fake).
 const indexUrl = () => process.env.WEB_CREDENTIALS_CHROME_INDEX || 'https://dl.google.com/linux/chrome/deb/dists/stable/main/binary-amd64/Packages';
@@ -96,6 +96,13 @@ async function install(root, stable, progress) {
   const work = join(root, `.download-${process.pid}`);
   rmSync(work, { recursive: true, force: true });
   mkdirSync(join(work, 'x'), { recursive: true });
+  // The platform's clock for a run is an idle one (timeoutSeconds with no progress), so a slow link or
+  // a stall still says something every 15 seconds while Chrome is fetched and unpacked.
+  let got = 0;
+  let stage = 'Fetching';
+  const heartbeat = setInterval(() => {
+    progress(`${stage} Google Chrome ${stable.version} (once; later runs reuse it): ${Math.round(got / 1048576)} MB so far…`);
+  }, 15000);
   try {
     progress(`Fetching Google Chrome ${stable.version} (once; later runs reuse it)…`);
     const response = await fetch(`${poolUrl()}/${stable.file}`, { signal: AbortSignal.timeout(900000) });
@@ -103,28 +110,28 @@ async function install(root, stable, progress) {
     const hash = createHash('sha256');
     const deb = join(work, 'chrome.deb');
     const file = createWriteStream(deb);
-    let got = 0;
-    let told = Date.now();
     for await (const chunk of response.body) {
       hash.update(chunk);
       got += chunk.length;
       if (!file.write(chunk)) await new Promise((r) => file.once('drain', r));
-      if (Date.now() - told > 10000) {
-        told = Date.now();
-        progress(`Fetching Google Chrome ${stable.version}: ${Math.round(got / 1048576)} MB…`);
-      }
     }
     await new Promise((resolve, reject) => file.end((e) => (e ? reject(e) : resolve())));
     if (hash.digest('hex') !== stable.sha256) throw new Error('the download did not match the checksum in Google’s index');
-    const unpack = spawnSync('dpkg-deb', ['-x', deb, join(work, 'x')], { stdio: 'ignore' });
+    stage = 'Unpacking';
+    const status = await new Promise((resolve) => {
+      const child = spawn('dpkg-deb', ['-x', deb, join(work, 'x')], { stdio: 'ignore' });
+      child.on('error', () => resolve(-1));
+      child.on('close', resolve);
+    });
     const chrome = join(work, 'x', 'opt', 'google', 'chrome');
-    if (unpack.status !== 0 || !existsSync(join(chrome, 'chrome'))) throw new Error('the package could not be unpacked');
+    if (status !== 0 || !existsSync(join(chrome, 'chrome'))) throw new Error('the package could not be unpacked');
     // No setuid helper: Chrome runs with its user-namespace sandbox, never the setuid one.
     rmSync(join(chrome, 'chrome-sandbox'), { force: true });
     rmSync(join(root, stable.version), { recursive: true, force: true });
     renameSync(chrome, join(root, stable.version));
     chmodSync(join(root, stable.version), 0o755);
   } finally {
+    clearInterval(heartbeat);
     rmSync(work, { recursive: true, force: true });
   }
   // The newest two are kept, so a copy a saved session still names is not pulled at once.

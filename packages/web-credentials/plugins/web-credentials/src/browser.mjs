@@ -9,6 +9,7 @@
 import { chromium } from 'playwright-core';
 import { chromeFor } from './chrome.mjs';
 import { startDisplay } from './display.mjs';
+import { hostAllowed } from './entries.mjs';
 import { profileKey, profileDir, loadMeta, saveMeta, identityFor, preparePreferences, profileBusy, sessionDigest } from './profile.mjs';
 
 // Chrome's arguments: only what makes it an ordinary browser on this machine.
@@ -64,6 +65,36 @@ async function browserVersion(context, page) {
   } finally {
     await cdp.detach().catch(() => {});
   }
+}
+
+// THE HOST LIMIT, ENFORCED BEFORE A REQUEST LEAVES THE BROWSER. Every page or frame load (a
+// navigation, and each hop of a redirect) to a host that is not one of the entry's is failed in the
+// browser, so the other host never sees a request, a cookie or a Referer from it. Playwright's own
+// route() is not enough: it sees only the first URL of a redirect. Chrome's Fetch domain pauses every
+// hop. A page's images, scripts and styles from other hosts (a CDN) still load: a sign-in page needs
+// them, and they are not where a redirect takes the browser. `blocked` names each host refused.
+async function guardHosts(context, page, entry) {
+  const blocked = [];
+  const cdp = await context.newCDPSession(page);
+  cdp.on('Fetch.requestPaused', (e) => {
+    let off = null;
+    if (e.resourceType === 'Document') {
+      try {
+        const u = new URL(e.request.url);
+        if ((u.protocol === 'http:' || u.protocol === 'https:') && !hostAllowed(entry, u)) off = u.hostname;
+      } catch {
+        // not a URL Chrome would fetch over the network
+      }
+    }
+    if (off) {
+      if (!blocked.includes(off)) blocked.push(off);
+      cdp.send('Fetch.failRequest', { requestId: e.requestId, errorReason: 'BlockedByClient' }).catch(() => {});
+    } else {
+      cdp.send('Fetch.continueRequest', { requestId: e.requestId }).catch(() => {});
+    }
+  });
+  await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', resourceType: 'Document', requestStage: 'Request' }] });
+  return { blocked };
 }
 
 // Opens the row's browser and hands `fn` its page and context; always closes them. `run` is the run's
@@ -123,8 +154,15 @@ export async function withEntryBrowser(entry, run, fn) {
     const seen = await browserVersion(context, page);
     meta.identity = { ...identity, browser: 'chrome', version: seen.version, userAgent: seen.userAgent };
     meta.row = entry.key;
-    return await fn(page, context);
+    const guard = await guardHosts(context, page, entry);
+    return await fn(page, context, guard);
   } finally {
+    // Whatever session the browser holds now - a password sign-in's cookies too - is redacted from
+    // every record the run still writes, value by value.
+    if (context && run.sessionSeen) {
+      const held = await context.storageState().catch(() => null);
+      if (held) run.sessionSeen(held);
+    }
     if (context) await context.close().catch(() => {});
     await display.close();
     saveMeta(run.stateDir, key, meta);

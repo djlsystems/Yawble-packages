@@ -25,10 +25,13 @@ export function makeOut(write = (line) => process.stdout.write(line + '\n')) {
     return v;
   };
   const emit = (record) => write(JSON.stringify(deep(record)));
+  const setSecrets = (list) => {
+    values = [...new Set(list.filter((v) => typeof v === 'string' && v.length >= 4))].sort((a, b) => b.length - a.length);
+  };
   return {
-    setSecrets(list) {
-      values = [...new Set(list.filter((v) => typeof v === 'string' && v.length >= 4))].sort((a, b) => b.length - a.length);
-    },
+    setSecrets,
+    // More values to redact, learned during the run (the session a sign-in obtains).
+    addSecrets: (list) => setSecrets([...values, ...list]),
     redact,
     progress: (status) => emit({ t: 'progress', status }),
     needsDecision: (question) => emit({ t: 'needsDecision', question }),

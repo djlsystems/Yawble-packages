@@ -10,7 +10,7 @@
     "linux-x64": "bin/web-credentials"
   },
   "requires": ["node"],
-  "timeoutSeconds": 120,
+  "timeoutSeconds": 300,
   "config": {
     "languages": {
       "type": "list",

@@ -2,10 +2,31 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { makeOut } from './out.mjs';
-import { readEntries, secretValues, Status } from './entries.mjs';
+import { readEntries, secretValues, stateSecretValues, Status } from './entries.mjs';
 import { stateDir, loadState, saveState, entryState, sweepHandoffs } from './state.mjs';
 import { profileKey, sweepProfiles } from './profile.mjs';
 import { words, cmdList, cmdVerify, cmdSession, cmdCheck, statusCells } from './commands.mjs';
+
+// The team's documents folder, where a check's screenshot goes, from where the platform keeps things
+// (never a fixed path): a site's files folder is <documents>/<team>/sites/<site>/files, and a member's
+// workspace is <data>/teams/<team>/workspaces/<name> beside <data>/documents/<team>. Answers null when
+// neither says, and the screenshot stays in the plugin's own workspace.
+export function teamDocuments(request, workspace) {
+  const files = Array.isArray(request.siteFiles) ? request.siteFiles.find((f) => typeof f?.folder === 'string') : null;
+  if (files && basename(dirname(dirname(files.folder))) === 'sites') return dirname(dirname(dirname(files.folder)));
+  const workspaces = dirname(workspace);
+  const team = dirname(workspaces);
+  if (basename(workspaces) === 'workspaces' && basename(dirname(team)) === 'teams') {
+    return join(dirname(dirname(team)), 'documents', basename(team));
+  }
+  return null;
+}
+
+// The board's notice names a condition: the entries that need the person and why. It is raised when
+// that changes, not on every run.
+function noticeKey(entry, s) {
+  return `${s.status}|${s.reason}`;
+}
 
 const Usage = 'Commands: list; verify <name>|all-due; session <name> [for <minutes>]; check <name> <path> [expect "<text>"].';
 
@@ -21,11 +42,18 @@ export async function run(request, out) {
   sweepProfiles(dir, entries.map((e) => profileKey(member, e.key)));
 
   const myWorkspace = request.workingDirectory || process.cwd();
-  const team = request.member?.team || basename(dirname(dirname(myWorkspace)));
+  const documents = teamDocuments(request, myWorkspace);
+  // Turning an entry off and on lifts the lockout guard, as an edit to it does.
+  for (const e of entries) {
+    if (e.active) continue;
+    const s = entryState(state, e);
+    s.held = false;
+    s.passwordFailures = 0;
+  }
   const ctx = {
     workingDirectory: myWorkspace,
-    documentsDir: join('/data/documents', team, 'Web Credentials'),
-    documentsRel: null,
+    documentsDir: documents ? join(documents, 'Web Credentials') : null,
+    documentsRel: documents ? 'Web Credentials' : null,
     requester: null,
     requesterWorkspace: myWorkspace,
     browserRun: {
@@ -34,6 +62,8 @@ export async function run(request, out) {
       member,
       settings: { languages: request.config?.languages, timeZone: request.config?.timeZone },
       progress: out.progress,
+      // The session a browser holds when it closes is redacted from all the run writes after.
+      sessionSeen: (held) => out.addSecrets(stateSecretValues(held)),
     },
     progress: out.progress,
     publish: out.publish,
@@ -93,16 +123,22 @@ export async function run(request, out) {
   if (work.length === 0) outputs.push(Usage);
 
   // Row.status for every entry whose status the schedule refreshed is written as each check runs.
-  // The board notice: while any active entry needs the person, one needsDecision names them, once.
+  // The board notice: while any active entry needs the person, one needsDecision names them all - raised
+  // once for each new condition (an entry newly needing the person, or for a new reason), not again on
+  // every run, so the Needs-you item stays on the card that found it.
   const needy = entries.filter((e) => e.active && (entryState(state, e).status === Status.needsYou || entryState(state, e).status === Status.expired));
-  if (needy.length > 0) {
-    for (const e of needy) entryState(state, e).notified = true;
+  for (const e of entries) {
+    if (!needy.includes(e)) entryState(state, e).notified = false;
+  }
+  const fresh = needy.filter((e) => entryState(state, e).notified !== noticeKey(e, entryState(state, e)));
+  if (fresh.length > 0) {
     const lines = needy.map((e) => {
       const s = entryState(state, e);
-      const how = e.method === 'interactive' ? ' Open its Sign in link.' : '';
+      s.notified = noticeKey(e, s);
+      const how = e.method === 'interactive' && !/Sign in link/.test(s.reason) ? ' Open its Sign in link.' : '';
       return `• ${e.name}: ${s.status}. ${s.reason}${how}`;
     });
-    out.needsDecision(`${needy.length} website sign-in${needy.length === 1 ? '' : 's'} need you:\n${lines.join('\n')}`);
+    out.needsDecision(`${needy.length} website sign-in${needy.length === 1 ? ' needs' : 's need'} you:\n${lines.join('\n')}`);
   }
 
   saveState(dir, state);

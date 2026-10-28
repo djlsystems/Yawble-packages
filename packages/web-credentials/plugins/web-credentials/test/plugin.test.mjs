@@ -68,7 +68,7 @@ test('a wrong password is Expired, and the second in a row trips the lockout gua
   }
 });
 
-test('an explicit verify clears the lockout guard and tries again', async () => {
+test('an edit to a held row (the new password) lifts the lockout guard and tries again', async () => {
   const ws = workspace();
   try {
     const bad = req({}, { password: 'wrong-password' }, [{ source: 'schedule:s', instruction: 'verify all-due' }], ws);
@@ -286,7 +286,7 @@ test('while an entry needs you, the board shows it once with what to do', async 
   try {
     const r = await runPlugin(req({ method: 'interactive', signInUrl: '' }, {}, [{ source: 'schedule:s', instruction: 'verify all-due' }], ws));
     assert.equal(r.decisions.length, 1);
-    assert.match(r.decisions[0].question, /need you/);
+    assert.match(r.decisions[0].question, /needs you/);
     assert.match(r.decisions[0].question, /Sign in/);
   } finally {
     cleanup(ws);
