@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { totp } from '../src/totp.mjs';
-import { entryHosts, hostAllowed, resolveOnSite, readEntries, secretValues, readSession } from '../src/entries.mjs';
+import { entryHosts, hostAllowed, resolveOnSite, readEntries, secretValues, readSession, stateSecretValues } from '../src/entries.mjs';
 import { identityFor } from '../src/profile.mjs';
 import { choose, compareVersions } from '../src/chrome.mjs';
 import { pruneState, chromeArgs } from '../src/browser.mjs';
@@ -61,6 +61,15 @@ test('out redacts every secret value it was given, longest first and any case', 
   const r = JSON.parse(lines[0]);
   assert.ok(!r.output.toLowerCase().includes('s3cr3t'));
   assert.match(r.output, /\[redacted\].*\[redacted\]/);
+});
+
+test('stateSecretValues: whole values of 4+ characters, strings inside JSON at 8+, 1-3 characters never', () => {
+  const vals = stateSecretValues({
+    cookies: [{ value: 'code123' }, { value: 'abcd' }, { value: 'xq7' }],
+    origins: [{ localStorage: [{ value: 'ls12' }, { value: 'q' }, { value: JSON.stringify({ a: 'short77', b: 'eightch8' }) }] }],
+  });
+  for (const v of ['code123', 'abcd', 'ls12', 'eightch8']) assert.ok(vals.includes(v), v);
+  for (const v of ['xq7', 'q', 'short77']) assert.ok(!vals.includes(v), v);
 });
 
 test('secretValues pulls cookie and local-storage values out of a saved session', () => {

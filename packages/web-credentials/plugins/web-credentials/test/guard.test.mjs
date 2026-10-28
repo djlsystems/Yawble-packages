@@ -126,6 +126,8 @@ test('P3: check on a page that prints its own cookie and local-storage token sho
     assert.ok(!blob.includes(cookie), 'the cookie value is in a record');
     assert.ok(!blob.includes(`ls-access-${cookie}-token`), 'the local-storage token is in a record');
     assert.match(r.result.output, /\[redacted\]/);
+    // A whole cookie value of 4+ characters is redacted on its own, so a 7-character one is too.
+    assert.ok(!blob.includes('code123'), 'the 7-character cookie is in a record');
   } finally {
     cleanup(ws);
   }

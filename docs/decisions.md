@@ -109,9 +109,12 @@ A site must not be able to tell the plugin's browser from the person on their ow
   images, scripts and styles from a CDN still load, since real sign-in pages need them and they are
   not where a redirect takes the browser.
 - **The session a run holds is redacted, whatever the method.** When the browser closes, its storage
-  state joins the run's redaction set part by part, as the platform does for a saved session: each
-  cookie value, each local-storage value, and each string of 8+ characters inside a JSON
-  local-storage value.
+  state joins the run's redaction set part by part, as the platform does for a saved session (the
+  same rule as Yawble's sign-in page after D11): each WHOLE cookie value and each WHOLE
+  local-storage value is redacted on its own when it is 4 or more characters; strings inside a JSON
+  local-storage value are redacted at 8 or more; values of 1-3 characters are never redacted (they
+  would blank ordinary text). This applies to every session the plugin holds - one it signed in
+  for with a password, one from a token entry's page, and an interactive row's saved session.
 - **The documents folder is the platform's.** A check's screenshot goes to `<team documents>/Web
   Credentials/`, the team documents taken from the request's `siteFiles` (`<documents>/<team>/sites/
   <site>/files`) or the workspace's place (`<data>/teams/<team>/workspaces/<name>` beside

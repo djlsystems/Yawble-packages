@@ -131,7 +131,13 @@ export function startFakeSite(opts = {}) {
     // keeps in local storage in its paragraph.
     if (url.pathname === '/leaky') {
       const sess = cookies(req).sess || '';
-      return send(200, `<!doctype html><html><head><title>Session ${sess}</title></head><body><h1>Cookie ${sess}</h1><p id="ls"></p><script>
+      // Two more cookies the page sets and prints: a 7-character one (redacted at 4+) and a
+      // 3-character one (too short to redact).
+      return send(200, `<!doctype html><html><head><title>Session ${sess}</title></head><body><h1>Cookie ${sess}</h1><p id="ls"></p><p id="short"></p><script>
+        document.cookie = 'code=code123; Path=/';
+        document.cookie = 'tiny=xq7; Path=/';
+        document.getElementById('short').textContent = 'Code ' + 'code123' + ' tiny ' + 'xq7';
+        document.title = document.title + ' code123';
         localStorage.setItem('auth', JSON.stringify({ accessToken: 'ls-access-${sess}-token', n: 1 }));
         document.getElementById('ls').textContent = JSON.parse(localStorage.getItem('auth')).accessToken;
         document.title = document.title + ' ' + JSON.parse(localStorage.getItem('auth')).accessToken;
