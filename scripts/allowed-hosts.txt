@@ -38,3 +38,4 @@ blob.core.windows.net         # Azure Blob Storage (<account>.blob.core.windows.
 table.core.windows.net        # Azure Table Storage (<account>.table.core.windows.net), where the azure plugin reads and writes entities
 queue.core.windows.net        # Azure Queue Storage (<account>.queue.core.windows.net), where the azure plugin sends and receives messages
 registry.npmjs.org             # the npm registry the web-credentials plugin build (npm ci, playwright-core) fetches from, recorded in its package-lock.json
+dl.google.com
