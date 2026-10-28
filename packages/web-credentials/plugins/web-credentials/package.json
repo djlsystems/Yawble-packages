@@ -10,6 +10,6 @@
     "playwright-core": "1.64.1"
   },
   "scripts": {
-    "test": "node --test --test-concurrency=1 test/"
+    "test": "node --test --test-concurrency=1 test/units.test.mjs test/plugin.test.mjs"
   }
 }
