@@ -10,13 +10,18 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 export function shellPath() {
   const browsers = JSON.parse(readFileSync(join(root, 'node_modules/playwright-core/browsers.json'), 'utf8')).browsers;
   const revision = browsers.find((b) => b.name === 'chromium-headless-shell')?.revision;
-  const named = join(root, `chromium_headless_shell-${revision}`, 'chrome-headless-shell-linux64', 'chrome-headless-shell');
-  if (existsSync(named)) return named;
-  // Fall back to whichever headless shell is laid out in the folder, so a revision bump that
-  // forgot this file still runs rather than failing to find a browser.
-  for (const name of readdirSync(root)) {
-    if (name.startsWith('chromium_headless_shell-')) {
-      const p = join(root, name, 'chrome-headless-shell-linux64', 'chrome-headless-shell');
+  // The shipped plugin carries the shell at its root (build.sh ran tools/browser.sh). Running from
+  // the source tree, tests point PLAYWRIGHT_BROWSERS_PATH at a shared cache instead of copying it.
+  const roots = [root, process.env.PLAYWRIGHT_BROWSERS_PATH].filter(Boolean);
+  for (const base of roots) {
+    const named = join(base, `chromium_headless_shell-${revision}`, 'chrome-headless-shell-linux64', 'chrome-headless-shell');
+    if (existsSync(named)) return named;
+  }
+  // Fall back to whichever headless shell is laid out, so a revision bump that forgot this file
+  // still runs rather than failing to find a browser.
+  for (const base of roots) {
+    for (const name of readdirSync(base).filter((n) => n.startsWith('chromium_headless_shell-'))) {
+      const p = join(base, name, 'chrome-headless-shell-linux64', 'chrome-headless-shell');
       if (existsSync(p)) return p;
     }
   }

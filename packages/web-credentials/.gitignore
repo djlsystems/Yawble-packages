@@ -1,0 +1,4 @@
+node_modules/
+chromium_headless_shell-*/
+.download/
+*.partial/
