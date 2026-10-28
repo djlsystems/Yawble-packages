@@ -93,8 +93,11 @@ export async function newestStable(fetchImpl = fetch) {
 // Downloads, checks and unpacks one stable build into <root>/<version>. Answers its path.
 async function install(root, stable, progress) {
   mkdirSync(root, { recursive: true, mode: 0o700 });
+  // A download a run never finished (the run was ended) is discarded, whichever run left it.
+  for (const name of readdirSync(root)) {
+    if (name.startsWith('.download-')) rmSync(join(root, name), { recursive: true, force: true });
+  }
   const work = join(root, `.download-${process.pid}`);
-  rmSync(work, { recursive: true, force: true });
   mkdirSync(join(work, 'x'), { recursive: true });
   // The platform's clock for a run is an idle one (timeoutSeconds with no progress), so a slow link or
   // a stall still says something every 15 seconds while Chrome is fetched and unpacked.

@@ -72,8 +72,11 @@ the detail):
 sends a header to the check URL; `interactive` uses the session saved with **Sign in** and never
 tries a password. Statuses are **Verified**, **Expired**, **Needs you** (a password change, CAPTCHA,
 device approval, terms page or locked account - the plugin never tries to get around it) and
-**Failed** (retried next run). A password entry refused twice in a row is paused until the person
-edits the row or runs `verify`.
+**Failed** (retried next run). Every command that signs in with a password - `check` and `session` as
+well as `verify` - confirms the sign-in took and counts a refusal against the lockout guard. A password
+entry refused twice in a row is held (Needs you): no command, from anyone, submits its password again
+until the person edits the row (such as a new password) or turns it off and on. A redirect to a host
+that is not one of the entry's is stopped inside the browser, before the other host is asked anything.
 
 ## Gaps
 

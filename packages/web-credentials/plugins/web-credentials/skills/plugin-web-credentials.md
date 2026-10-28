@@ -62,8 +62,10 @@ elapsed. A run where nothing changed finishes quietly and wakes nobody.
 - **Expired** - the session or token no longer works.
 - **Needs you** - a password change, CAPTCHA, device approval, terms page or locked account; the
   entry shows once on the board under **Needs you** with what to do (an interactive entry says to use
-  its Sign in link). After **2** password sign-in failures in a row the plugin stops trying that
-  entry and marks it Needs you until the person edits the row or runs `verify <name>`.
+  its Sign in link). After **2** password sign-in failures in a row - whichever command signed in:
+  `check`, `session` or `verify` - the plugin stops trying that entry and marks it Needs you. No
+  command lifts that, so repeating one never locks the account: the person edits the row (such as a
+  new password) or turns it off and on.
 - **Failed** - a network or site error; retried next run, and only after **3** in a row does it
   become Needs you.
 

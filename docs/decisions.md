@@ -90,6 +90,41 @@ A site must not be able to tell the plugin's browser from the person on their ow
 - CAPTCHA and device approvals still stop and go to the person (Needs you); the lockout guard and the
   host limits are unchanged.
 
+### The lockout guard covers every sign-in; host limits are enforced inside the browser
+
+(Tester Ingrid's verification of 7a50635.)
+
+- **Every password sign-in is confirmed and counted.** A sign-in is done only when the check page,
+  opened after the form (and the two-step code), shows a signed-in user. `verify`, `session` and
+  `check` all sign in through the same function and fold its outcome through the same guard: a
+  refusal counts, the second in a row holds the entry (Needs you, a status event, the board notice),
+  and a held entry submits nothing again. A member's command never lifts the guard - an asked-for
+  `verify` used to, which let any member lock the account by repeating it. Only the person lifts it:
+  an edit to the row (the salted fingerprint changes) or turning it off and on. `check` and `session`
+  say plainly when the sign-in failed and never report the sign-in page as the page asked for.
+- **Off-host loads never leave the browser.** Each run's page has Chrome's `Fetch` domain paused on
+  every document load, every hop of a redirect included; one to a host not in the row is failed
+  there (`BlockedByClient`) and named in the answer. Playwright's `route()` is not used: it sees only
+  the first URL of a redirect. Only document loads (pages and frames) are held to the row's hosts:
+  images, scripts and styles from a CDN still load, since real sign-in pages need them and they are
+  not where a redirect takes the browser.
+- **The session a run holds is redacted, whatever the method.** When the browser closes, its storage
+  state joins the run's redaction set part by part, as the platform does for a saved session: each
+  cookie value, each local-storage value, and each string of 8+ characters inside a JSON
+  local-storage value.
+- **The documents folder is the platform's.** A check's screenshot goes to `<team documents>/Web
+  Credentials/`, the team documents taken from the request's `siteFiles` (`<documents>/<team>/sites/
+  <site>/files`) or the workspace's place (`<data>/teams/<team>/workspaces/<name>` beside
+  `<data>/documents/<team>`), never a fixed `/data/documents`. With neither, it stays in the plugin's
+  workspace. The tests run in a temporary data root laid out the same way.
+- **The first-run Chrome download and the run's clock.** `timeoutSeconds` is the platform's idle
+  clock (no `progress` for that long ends the run), not a limit on the whole run. The download stays
+  inside the run: a run cannot start work that outlives it, and fetching at build or install time
+  would put the browser back in the package. So the fetch and the unpack report progress every 15
+  seconds whatever the link's speed, the unpack no longer blocks the event loop, and `timeoutSeconds`
+  is raised from 120 to 300 (the platform's default) so a stalled connection gets five minutes
+  before the run is ended. The next run carries on: a half-done download is discarded and refetched.
+
 ### Session handoff: the asking member's own workspace
 
 `session <name>` must hand a short-lived signed-in storage-state to the member that asked, readable

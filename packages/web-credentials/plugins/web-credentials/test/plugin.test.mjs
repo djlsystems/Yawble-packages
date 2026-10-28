@@ -57,7 +57,7 @@ test('a wrong password is Expired, and the second in a row trips the lockout gua
     markDue(ws, 'prod');
     const r2 = await runPlugin(bad);
     assert.equal(r2.rowStatus.at(-1).values.status, 'Needs you');
-    assert.match(r2.rowStatus.at(-1).values.detail, /paused/);
+    assert.match(r2.rowStatus.at(-1).values.detail, /stopped trying/);
 
     // A third scheduled run does not try again while it is held, even once due.
     markDue(ws, 'prod');

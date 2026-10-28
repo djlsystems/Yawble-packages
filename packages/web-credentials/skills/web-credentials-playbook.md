@@ -46,8 +46,9 @@ Every command refuses an unknown or inactive entry, and a path or redirect off t
   to use its Sign in link). **Failed** - a network or site error, retried next run.
 - When an entry turns Expired or Needs you it shows once on the board under **Needs you** with what
   to do. Report that to the person in the plugin's own words.
-- A password entry that is refused twice in a row is paused (Needs you) until the person edits the
-  row or runs `verify <name>`.
+- A password entry that is refused twice in a row - by `check`, `session` or `verify` - is held
+  (Needs you). Re-sending a command does not lift it; the person edits the row (such as a new
+  password) or turns it off and on.
 
 ## For a tester checking a deploy
 
