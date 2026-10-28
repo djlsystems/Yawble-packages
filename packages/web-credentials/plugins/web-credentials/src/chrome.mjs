@@ -15,8 +15,9 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
-const IndexUrl = process.env.WEB_CREDENTIALS_CHROME_INDEX || 'https://dl.google.com/linux/chrome/deb/dists/stable/main/binary-amd64/Packages';
-const PoolUrl = process.env.WEB_CREDENTIALS_CHROME_POOL || 'https://dl.google.com/linux/chrome/deb';
+// Google's (a test points them at a local fake).
+const indexUrl = () => process.env.WEB_CREDENTIALS_CHROME_INDEX || 'https://dl.google.com/linux/chrome/deb/dists/stable/main/binary-amd64/Packages';
+const poolUrl = () => process.env.WEB_CREDENTIALS_CHROME_POOL || 'https://dl.google.com/linux/chrome/deb';
 const DayMs = 24 * 3600 * 1000;
 
 export function platformRoot() {
@@ -75,7 +76,7 @@ export function choose(copies, wanted) {
 export async function newestStable(fetchImpl = fetch) {
   let text;
   try {
-    const response = await fetchImpl(IndexUrl, { signal: AbortSignal.timeout(60000) });
+    const response = await fetchImpl(indexUrl(), { signal: AbortSignal.timeout(60000) });
     if (!response.ok) return null;
     text = await response.text();
   } catch {
@@ -97,7 +98,7 @@ async function install(root, stable, progress) {
   mkdirSync(join(work, 'x'), { recursive: true });
   try {
     progress(`Fetching Google Chrome ${stable.version} (once; later runs reuse it)…`);
-    const response = await fetch(`${PoolUrl}/${stable.file}`, { signal: AbortSignal.timeout(900000) });
+    const response = await fetch(`${poolUrl()}/${stable.file}`, { signal: AbortSignal.timeout(900000) });
     if (!response.ok || !response.body) throw new Error(`the download answered ${response.status}`);
     const hash = createHash('sha256');
     const deb = join(work, 'chrome.deb');
