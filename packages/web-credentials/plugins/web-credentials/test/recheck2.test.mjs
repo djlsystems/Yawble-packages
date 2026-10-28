@@ -12,7 +12,7 @@ function entryRow(over = {}) {
 }
 const ask = (instruction) => [{ source: 'T/Manager', instruction }];
 const stateOf = (ws) => JSON.parse(readFileSync(join(ws, '.web-credentials', 'state.json'), 'utf8'));
-const SwitchWords = /switch its Try again setting \(on or off, either way\) and save/;
+const SwitchWords = /[Ss]witch its Try again setting \(on or off, either way\) and save/;
 
 let other;
 let site;
