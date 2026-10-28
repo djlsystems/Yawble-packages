@@ -4,6 +4,7 @@ import { join, dirname, basename } from 'node:path';
 import { makeOut } from './out.mjs';
 import { readEntries, secretValues, Status } from './entries.mjs';
 import { stateDir, loadState, saveState, entryState, sweepHandoffs } from './state.mjs';
+import { profileKey, sweepProfiles } from './profile.mjs';
 import { words, cmdList, cmdVerify, cmdSession, cmdCheck, statusCells } from './commands.mjs';
 
 const Usage = 'Commands: list; verify <name>|all-due; session <name> [for <minutes>]; check <name> <path> [expect "<text>"].';
@@ -15,6 +16,9 @@ export async function run(request, out) {
   const dir = stateDir(request.workingDirectory || process.cwd());
   const state = loadState(dir);
   const sweptNow = sweepHandoffs(state);
+  // One browser profile per member and row; a row that is gone takes its profile with it.
+  const member = request.member?.id || request.member?.name || 'web-credentials';
+  sweepProfiles(dir, entries.map((e) => profileKey(member, e.key)));
 
   const myWorkspace = request.workingDirectory || process.cwd();
   const team = request.member?.team || basename(dirname(dirname(myWorkspace)));
@@ -24,6 +28,13 @@ export async function run(request, out) {
     documentsRel: null,
     requester: null,
     requesterWorkspace: myWorkspace,
+    browserRun: {
+      stateDir: dir,
+      state,
+      member,
+      settings: { languages: request.config?.languages, timeZone: request.config?.timeZone },
+      progress: out.progress,
+    },
     progress: out.progress,
     publish: out.publish,
     statusOf: (entry) => {

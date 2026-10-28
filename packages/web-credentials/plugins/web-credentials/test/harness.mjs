@@ -6,15 +6,18 @@ import { join } from 'node:path';
 import { makeOut } from '../src/out.mjs';
 import { run } from '../src/main.mjs';
 
-// Tests drive the headless shell from a shared cache rather than copying it into the tree.
-process.env.PLAYWRIGHT_BROWSERS_PATH ||= '/data/ms-playwright';
+// Tests share one Google Chrome folder rather than fetching it into every test workspace: the first
+// run fetches it there (chrome.mjs), every later one reuses it. Typing is paced faster than a
+// person's, still one key at a time.
+process.env.WEB_CREDENTIALS_CHROME_ROOT ||= join(tmpdir(), 'web-credentials-chrome');
+process.env.WEB_CREDENTIALS_PACE ||= '0.3';
 
 export function workspace() {
   return mkdtempSync(join(tmpdir(), 'wc-'));
 }
 
 // Runs the plugin and answers every record it wrote, plus the raw lines (for a no-leak scan).
-export async function runPlugin({ entries, secrets = {}, work, workingDirectory }) {
+export async function runPlugin({ entries, secrets = {}, work, workingDirectory, settings = {} }) {
   const lines = [];
   const out = makeOut((line) => lines.push(line));
   const request = {
@@ -22,7 +25,7 @@ export async function runPlugin({ entries, secrets = {}, work, workingDirectory 
     plugin: { id: 'web-credentials', version: '1.0.0' },
     member: { id: 'T/Creds', team: 'T', name: 'Creds' },
     workingDirectory,
-    config: { entries },
+    config: { entries, ...settings },
     secrets,
     work,
   };

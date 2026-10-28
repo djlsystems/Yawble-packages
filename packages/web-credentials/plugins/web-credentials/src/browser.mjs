@@ -1,47 +1,133 @@
-// Drives the Chromium headless shell that ships in this plugin's folder (tools/browser.sh put it
-// there) through playwright-core. Nothing is fetched at run time and nothing in the image is used.
+// THE BROWSER A SIGN-IN RUNS IN: Google Chrome (chrome.mjs), headed on its own virtual screen
+// (display.mjs), in the row's own persistent profile with the row's identity (profile.mjs), driven by
+// playwright-core over its pipe. A site must not tell it from the person on their own Chrome, so:
+//   - none of Playwright's default switches (ignoreDefaultArgs: true): no --enable-automation, no
+//     --headless, no --no-sandbox, no fixed viewport; only the arguments below, none a site can see;
+//   - Chrome's OWN SANDBOX ON (chromiumSandbox: true, never --no-sandbox): it will not start without it;
+//   - the identity's languages (Chrome's preference and --lang), time zone (TZ) and screen are the
+//     browser's own, not an emulation laid over it, so headers and scripts agree.
 import { chromium } from 'playwright-core';
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { chromeFor } from './chrome.mjs';
+import { startDisplay } from './display.mjs';
+import { profileKey, profileDir, loadMeta, saveMeta, identityFor, preparePreferences, profileBusy, sessionDigest } from './profile.mjs';
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)));
-
-export function shellPath() {
-  const browsers = JSON.parse(readFileSync(join(root, 'node_modules/playwright-core/browsers.json'), 'utf8')).browsers;
-  const revision = browsers.find((b) => b.name === 'chromium-headless-shell')?.revision;
-  // The shipped plugin carries the shell at its root (build.sh ran tools/browser.sh). Running from
-  // the source tree, tests point PLAYWRIGHT_BROWSERS_PATH at a shared cache instead of copying it.
-  const roots = [root, process.env.PLAYWRIGHT_BROWSERS_PATH].filter(Boolean);
-  for (const base of roots) {
-    const named = join(base, `chromium_headless_shell-${revision}`, 'chrome-headless-shell-linux64', 'chrome-headless-shell');
-    if (existsSync(named)) return named;
-  }
-  // Fall back to whichever headless shell is laid out, so a revision bump that forgot this file
-  // still runs rather than failing to find a browser.
-  for (const base of roots) {
-    for (const name of readdirSync(base).filter((n) => n.startsWith('chromium_headless_shell-'))) {
-      const p = join(base, name, 'chrome-headless-shell-linux64', 'chrome-headless-shell');
-      if (existsSync(p)) return p;
-    }
-  }
-  throw new Error('The Chromium headless shell is not in the plugin folder; its build did not run tools/browser.sh.');
+// Chrome's arguments: only what makes it an ordinary browser on this machine.
+//   --disable-blink-features=AutomationControlled  a browser with a DevTools pipe says
+//       navigator.webdriver = true; a person's Chrome says false.
+//   --test-type  no warning bar about that switch, which would take height from the page.
+//   --use-angle=gl --ignore-gpu-blocklist  WebGL through the machine's own OpenGL, as a desktop's.
+export function chromeArgs({ dir, identity, window }) {
+  const args = [
+    '--remote-debugging-pipe',
+    `--user-data-dir=${dir}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-blink-features=AutomationControlled',
+    '--test-type',
+    '--use-angle=gl',
+    '--ignore-gpu-blocklist',
+    '--disable-breakpad',
+    '--password-store=basic',
+    '--disable-dev-shm-usage',
+    `--lang=${identity.locale}`,
+    `--window-size=${window.width},${window.height}`,
+    '--window-position=0,0',
+  ];
+  if (identity.deviceScaleFactor !== 1) args.push(`--force-device-scale-factor=${identity.deviceScaleFactor}`);
+  args.push('about:blank');
+  return args;
 }
 
-// Opens a browser, hands `fn` a fresh context (with the saved storage state when one is given) and
-// a page, and always closes them. `storageState` is Playwright's storageState object or string.
-export async function withPage(fn, { storageState } = {}) {
-  const browser = await chromium.launch({ executablePath: shellPath(), headless: true, chromiumSandbox: true });
+// Sizes the window so the page's viewport is the identity's; the window keeps its tabs and address
+// bar, as a person's does.
+async function fit(context, page, viewport) {
+  const cdp = await context.newCDPSession(page);
   try {
-    const context = await browser.newContext(storageState ? { storageState } : {});
-    const page = await context.newPage();
-    try {
-      return await fn(page, context);
-    } finally {
-      await context.close();
-    }
+    const { windowId, bounds } = await cdp.send('Browser.getWindowForTarget');
+    const metrics = await cdp.send('Page.getLayoutMetrics');
+    const v = metrics.cssLayoutViewport;
+    await cdp.send('Browser.setWindowBounds', {
+      windowId,
+      bounds: { width: bounds.width + viewport.width - v.clientWidth, height: bounds.height + viewport.height - v.clientHeight },
+    });
   } finally {
-    await browser.close();
+    await cdp.detach().catch(() => {});
+  }
+}
+
+// What the browser says it is, for the row's kept identity.
+async function browserVersion(context, page) {
+  const cdp = await context.newCDPSession(page);
+  try {
+    const v = await cdp.send('Browser.getVersion');
+    return { version: v.product.split('/')[1], userAgent: v.userAgent };
+  } finally {
+    await cdp.detach().catch(() => {});
+  }
+}
+
+// Opens the row's browser and hands `fn` its page and context; always closes them. `run` is the run's
+// { stateDir, state, member, settings, progress }. A saved session (entry.session, parsed) is applied
+// to the profile when it is new - the person signed in again - and otherwise the profile's own cookies
+// carry on from the last run. For a password or token row, an edit to what the person wrote clears
+// the profile's cookies, so the next sign-in tries the new values.
+export async function withEntryBrowser(entry, run, fn) {
+  const key = profileKey(run.member, entry.key);
+  const dir = profileDir(run.stateDir, key);
+  const meta = loadMeta(run.stateDir, key);
+  if (profileBusy(dir)) throw new Error('its browser is already open in another run; try again shortly');
+  const session = entry.session;
+  const identity = identityFor({ session, settings: run.settings, kept: meta.identity });
+  const chrome = await chromeFor({ stateDir: run.stateDir, meta: run.state, wanted: session?.identity?.version, progress: run.progress });
+
+  const screen = identity.screen;
+  const display = await startDisplay(run.stateDir, screen.width, screen.height);
+  let context;
+  try {
+    preparePreferences(dir, identity.languages);
+    const window = identity.viewport ? { width: Math.min(screen.width, identity.viewport.width + 16), height: Math.min(screen.height, identity.viewport.height + 120) } : screen;
+    context = await chromium.launchPersistentContext(dir, {
+      executablePath: chrome.path,
+      headless: false,
+      chromiumSandbox: true,
+      ignoreDefaultArgs: true,
+      args: chromeArgs({ dir, identity, window }),
+      viewport: null,
+      env: {
+        ...process.env,
+        DISPLAY: display.display,
+        XAUTHORITY: display.authority,
+        TZ: identity.timezoneId,
+        LANG: 'en_US.UTF-8',
+        LANGUAGE: identity.locale.replace('-', '_'),
+      },
+      timeout: 60000,
+    });
+    context.setDefaultTimeout(20000);
+    const page = context.pages()[0] ?? (await context.newPage());
+    for (const extra of context.pages().slice(1)) await extra.close().catch(() => {});
+    if (identity.viewport) await fit(context, page, identity.viewport);
+
+    if (session) {
+      const digest = sessionDigest(run.state.salt, session.text);
+      if (meta.appliedSession !== digest) {
+        await context.setStorageState(session.storageState);
+        meta.appliedSession = digest;
+      }
+    } else if (entry.method !== 'interactive') {
+      const written = sessionDigest(run.state.salt, JSON.stringify({ written: entry.written, secrets: entry.secrets }));
+      if (meta.written && meta.written !== written) await context.clearCookies();
+      meta.written = written;
+    }
+
+    const seen = await browserVersion(context, page);
+    meta.identity = { ...identity, browser: 'chrome', version: seen.version, userAgent: seen.userAgent };
+    meta.row = entry.key;
+    return await fn(page, context);
+  } finally {
+    if (context) await context.close().catch(() => {});
+    await display.close();
+    saveMeta(run.stateDir, key, meta);
   }
 }
 

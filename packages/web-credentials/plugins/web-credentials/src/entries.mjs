@@ -101,6 +101,7 @@ export function readEntries(request) {
       if (typeof v === 'string' && v !== '') secrets[column] = v;
     }
     const verifyEvery = Number.isFinite(row.verifyEvery) ? row.verifyEvery : 24;
+    const session = readSession(secrets.session);
     const siteUrl = text(row.siteUrl);
     out.push({
       name,
@@ -123,6 +124,9 @@ export function readEntries(request) {
       active: row.active !== false,
       status: text(row.status) || Status.never,
       secrets,
+      // The saved session, parsed: { storageState, identity, text }, or null when there is none or it
+      // could not be read (secrets.session is then set but this is null).
+      session,
       // What a person writes in the row, for noticing an edit: every cell but the plugin's own.
       written: writtenCells(row),
     });
@@ -157,16 +161,34 @@ export function secretValues(request, entries) {
   };
   walk(request?.secrets);
   for (const e of entries) {
-    if (e.secrets.session) {
+    if (e.session) {
       // A session's cookie and storage values are credentials of their own.
-      try {
-        const state = JSON.parse(e.secrets.session);
-        for (const c of state.cookies ?? []) if (typeof c.value === 'string' && c.value.length >= 4) values.add(c.value);
-        for (const o of state.origins ?? []) for (const s of o.localStorage ?? []) if (typeof s.value === 'string' && s.value.length >= 4) values.add(s.value);
-      } catch {
-        // not JSON: the whole value is already in the set
-      }
+      const state = e.session.storageState;
+      for (const c of state.cookies) if (typeof c.value === 'string' && c.value.length >= 4) values.add(c.value);
+      for (const o of state.origins) for (const s of o.localStorage ?? []) if (typeof s.value === 'string' && s.value.length >= 4) values.add(s.value);
     }
   }
   return [...values].sort((a, b) => b.length - a.length);
+}
+
+// A saved session as the platform's sign-in page keeps it: the v2 envelope
+// { "v": 2, "storageState": {...}, "identity": {...} }, or a bare storage state saved before the
+// envelope (v1). Answers { storageState, identity (null for v1), text } or null when it is unreadable.
+export function readSession(text) {
+  if (typeof text !== 'string' || text === '') return null;
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!value || typeof value !== 'object') return null;
+  const isState = (s) => s && typeof s === 'object' && (Array.isArray(s.cookies) || Array.isArray(s.origins));
+  const tidy = (s) => ({ cookies: Array.isArray(s.cookies) ? s.cookies : [], origins: Array.isArray(s.origins) ? s.origins : [] });
+  if (value.v === 2 && isState(value.storageState)) {
+    const identity = value.identity && typeof value.identity === 'object' ? value.identity : null;
+    return { storageState: tidy(value.storageState), identity, text };
+  }
+  if (isState(value)) return { storageState: tidy(value), identity: null, text };
+  return null;
 }

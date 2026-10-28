@@ -1,0 +1,156 @@
+// ONE BROWSER PER MEMBER AND ROW, AND THE IDENTITY IT SHOWS. Each entry row has its own persistent
+// Chrome profile, reused on every run, so a site sees the same browser coming back:
+//   <plugin workspace>/.web-credentials/profiles/<key>/       Chrome's user data (0700)
+//   <plugin workspace>/.web-credentials/profiles/<key>.json   the row's identity, and a salted digest of
+//                                                            the saved session last applied (never a value)
+// <key> is 32 hex digits of SHA-256 over the member and the row's key, so a profile is never shared
+// between members or rows. A profile whose row is gone is removed at the next run.
+//
+// The identity is the saved session's (a v2 envelope from the platform's sign-in page) when there is
+// one, so the plugin's browser is the browser the person signed in with; otherwise the person's
+// languages and time zone from the plugin's settings (or en-US and the machine's zone), on an ordinary
+// 1920x1080 desktop screen. Once chosen it is kept for the row.
+import { mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, readdirSync, readlinkSync, existsSync, chmodSync } from 'node:fs';
+import { join } from 'node:path';
+import { createHash, scryptSync } from 'node:crypto';
+
+export const DefaultScreen = { width: 1920, height: 1080 };
+
+export function profileKey(member, rowKey) {
+  return createHash('sha256').update(`${member}\n${rowKey}`).digest('hex').slice(0, 32);
+}
+
+function profilesRoot(stateDir) {
+  const root = join(stateDir, 'profiles');
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  return root;
+}
+
+export function profileDir(stateDir, key) {
+  const dir = join(profilesRoot(stateDir), key);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o700);
+  return dir;
+}
+
+export function loadMeta(stateDir, key) {
+  try {
+    return JSON.parse(readFileSync(join(profilesRoot(stateDir), `${key}.json`), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+export function saveMeta(stateDir, key, meta) {
+  const file = join(profilesRoot(stateDir), `${key}.json`);
+  writeFileSync(file + '.tmp', JSON.stringify(meta, null, 2), { mode: 0o600 });
+  renameSync(file + '.tmp', file);
+}
+
+// Removes every profile whose key is not in `keep`.
+export function sweepProfiles(stateDir, keep) {
+  const root = profilesRoot(stateDir);
+  const wanted = new Set(keep);
+  for (const name of readdirSync(root)) {
+    const key = name.replace(/\.json$/, '');
+    if (/^[0-9a-f]{32}$/.test(key) && !wanted.has(key)) rmSync(join(root, name), { recursive: true, force: true });
+  }
+}
+
+// A salted digest of a session's text: notices that the person signed in again without keeping it.
+export function sessionDigest(salt, text) {
+  return scryptSync(String(text), Buffer.from(salt, 'hex'), 32, { N: 1 << 14 }).toString('hex');
+}
+
+const LanguageTag = /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/;
+
+export function languagesFrom(value) {
+  const list = Array.isArray(value) ? value : String(value || '').split(/[\s,;]+/);
+  const kept = [];
+  for (const l of list) {
+    const tag = String(l).trim();
+    if (tag.length <= 35 && LanguageTag.test(tag) && !kept.some((k) => k.toLowerCase() === tag.toLowerCase())) kept.push(tag);
+  }
+  return kept.slice(0, 10);
+}
+
+export function timeZoneFrom(value) {
+  const zone = String(value || '').trim();
+  if (!zone || zone.length > 64) return null;
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: zone }).resolvedOptions().timeZone;
+  } catch {
+    return null;
+  }
+}
+
+const size = (v, min, max) => (Number.isInteger(v) && v >= min && v <= max ? v : null);
+
+// The identity a row's browser launches with. `session` is the parsed saved session (or null),
+// `settings` the plugin's own { languages, timeZone }, `kept` the row's identity from an earlier run.
+export function identityFor({ session, settings = {}, kept }) {
+  const from = session?.identity ?? kept ?? {};
+  const languages = languagesFrom(from.languages).length ? languagesFrom(from.languages) : languagesFrom(settings.languages).length ? languagesFrom(settings.languages) : ['en-US', 'en'];
+  const timezoneId = timeZoneFrom(from.timezoneId) || timeZoneFrom(settings.timeZone) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const screen = {
+    width: size(from.screen?.width, 800, 7680) ?? DefaultScreen.width,
+    height: size(from.screen?.height, 600, 4320) ?? DefaultScreen.height,
+  };
+  // No fixed viewport when none was handed over: the window fills the screen, as a maximised one does.
+  const viewport =
+    size(from.viewport?.width, 320, screen.width) && size(from.viewport?.height, 240, screen.height)
+      ? { width: from.viewport.width, height: from.viewport.height }
+      : null;
+  const scale = typeof from.deviceScaleFactor === 'number' && from.deviceScaleFactor >= 1 && from.deviceScaleFactor <= 3 ? from.deviceScaleFactor : 1;
+  return {
+    browser: 'chrome',
+    version: typeof from.version === 'string' && /^\d+(\.\d+){1,3}$/.test(from.version) ? from.version : null,
+    locale: languages[0],
+    languages,
+    timezoneId,
+    screen,
+    viewport,
+    deviceScaleFactor: scale,
+  };
+}
+
+// Chrome's own preferences for the row: the languages (navigator.languages and Accept-Language) and a
+// clean last exit, so no "restore pages?" bubble follows a run that was stopped.
+export function preparePreferences(dir, languages) {
+  const folder = join(dir, 'Default');
+  mkdirSync(folder, { recursive: true, mode: 0o700 });
+  const file = join(folder, 'Preferences');
+  let prefs = {};
+  if (existsSync(file)) {
+    try {
+      prefs = JSON.parse(readFileSync(file, 'utf8')) || {};
+    } catch {
+      prefs = {};
+    }
+  }
+  prefs.intl = { ...(prefs.intl || {}), accept_languages: languages.join(','), selected_languages: languages.join(',') };
+  prefs.profile = { ...(prefs.profile || {}), exit_type: 'Normal', exited_cleanly: true };
+  writeFileSync(file, JSON.stringify(prefs), { mode: 0o600 });
+}
+
+// Chrome's single-instance lock (a link to "<host>-<pid>"): a live browser on the profile means the row
+// is in use, so the run says so rather than share it; a lock left by a browser that is gone is removed.
+export function profileBusy(dir) {
+  let target;
+  try {
+    target = readlinkSync(join(dir, 'SingletonLock'));
+  } catch {
+    return false;
+  }
+  const pid = Number(target.split('-').pop());
+  if (Number.isInteger(pid) && pid > 0) {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      // gone
+    }
+  }
+  for (const lock of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) rmSync(join(dir, lock), { force: true });
+  return false;
+}

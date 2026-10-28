@@ -6,8 +6,9 @@
 //   badPassword true when the site rejected the password (feeds the lockout guard)
 //   state       the storage state after a password sign-in, for a session handoff in the same run
 import { Status, resolveOnSite, hostAllowed } from './entries.mjs';
-import { withPage } from './browser.mjs';
+import { withEntryBrowser } from './browser.mjs';
 import { totp } from './totp.mjs';
+import { type, click, pressEnter, pause } from './human.mjs';
 
 const nav = { waitUntil: 'domcontentloaded', timeout: 20000 };
 
@@ -84,19 +85,16 @@ export async function verifyToken(entry) {
   return { status: Status.verified, reason: `${entry.name} is verified.` };
 }
 
-export async function verifyInteractive(entry) {
+export async function verifyInteractive(entry, run) {
   if (!entry.secrets.session) {
     return { status: Status.needsYou, reason: `${entry.name} needs you: open its Sign in link to sign in once.` };
   }
-  let storageState;
-  try {
-    storageState = JSON.parse(entry.secrets.session);
-  } catch {
+  if (!entry.session) {
     return { status: Status.needsYou, reason: `${entry.name} needs you: its saved session could not be read. Open its Sign in link.` };
   }
   const target = resolveOnSite(entry, entry.checkUrl, 'the signed-in check URL');
   if (target.refusal) return { status: Status.needsYou, reason: target.refusal };
-  return withPage(async (page) => {
+  return withEntryBrowser(entry, run, async (page, context) => {
     const response = await page.goto(target.url.toString(), nav).catch((e) => {
       throw new Error(`the check page could not be opened (${e.message.split('\n')[0]})`);
     });
@@ -108,8 +106,8 @@ export async function verifyInteractive(entry) {
     if (!result.ok) {
       return { status: Status.expired, reason: `${entry.name} is expired: ${result.why}. Open its Sign in link to sign in again.` };
     }
-    return { status: Status.verified, reason: `${entry.name} is verified.`, sessionExpires: sessionExpiry(storageState) };
-  }, { storageState }).catch((e) => ({ status: Status.failed, reason: `${entry.name}: ${e.message}` }));
+    return { status: Status.verified, reason: `${entry.name} is verified.`, sessionExpires: sessionExpiry(await context.storageState()) };
+  }).catch((e) => ({ status: Status.failed, reason: `${entry.name}: ${e.message}` }));
 }
 
 // Signs in with the password form on the given page (so a `check` can reuse the same context).
@@ -134,17 +132,19 @@ export async function signInOnPage(page, entry) {
   if (!userField || !passField) {
     return { status: Status.needsYou, reason: `${entry.name} needs you: the username or password field was not found on the sign-in page. Set the field selectors on the row, or use its Sign in link.` };
   }
-  await userField.fill(entry.username);
-  await passField.fill(password);
+  await pause();
+  await type(page, userField, entry.username);
+  await type(page, passField, password);
   const submit = await findField(page, entry.selectors.submit, ['button[type="submit"]', 'input[type="submit"]', 'button']);
-  await Promise.all([page.waitForLoadState('domcontentloaded', { timeout: 20000 }).catch(() => {}), submit ? submit.click() : passField.press('Enter')]);
+  await submitAndWait(page, submit);
 
   if (entry.secrets.totpSecret) {
     const codeField = await findField(page, entry.selectors.totp, ['input[autocomplete="one-time-code"]', 'input[name*="otp" i]', 'input[name*="code" i]', 'input[name*="totp" i]']);
     if (codeField) {
-      await codeField.fill(totp(entry.secrets.totpSecret));
+      await pause(600, 1400);
+      await type(page, codeField, totp(entry.secrets.totpSecret));
       const go = await findField(page, entry.selectors.submit, ['button[type="submit"]', 'input[type="submit"]', 'button']);
-      await Promise.all([page.waitForLoadState('domcontentloaded', { timeout: 20000 }).catch(() => {}), go ? go.click() : codeField.press('Enter')]);
+      await submitAndWait(page, go);
     }
   }
 
@@ -158,14 +158,45 @@ export async function signInOnPage(page, entry) {
   return { ok: true, signInPath: signIn.url.pathname };
 }
 
-export async function verifyPassword(entry) {
+// Clicks the submit button (or presses Enter) and waits for the page that follows.
+async function submitAndWait(page, button) {
+  const navigated = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+  if (button) await click(page, button);
+  else await pressEnter(page);
+  await navigated;
+}
+
+// A returning browser may still be signed in: the check page decides. Answers true when it shows a
+// signed-in user, without typing anything.
+async function stillSignedIn(page, entry, check) {
+  const signInPath = resolveOnSite(entry, entry.signInUrl || entry.siteUrl, 'the sign-in URL').url?.pathname;
+  const response = await page.goto(check.url.toString(), nav).catch(() => null);
+  const landed = new URL(page.url());
+  if (!hostAllowed(entry, landed) || landed.pathname === signInPath) return false;
+  return (await confirm(page, entry, response)).ok;
+}
+
+// Signs the page in unless the profile already is: answers { ok } or a sign-in's refusal.
+export async function ensureSignedIn(page, entry) {
+  const check = resolveOnSite(entry, entry.checkUrl, 'the signed-in check URL');
+  if (check.refusal) return { status: Status.needsYou, reason: check.refusal };
+  if (await stillSignedIn(page, entry, check)) return { ok: true, already: true };
+  return signInOnPage(page, entry);
+}
+
+export async function verifyPassword(entry, run) {
   const check = resolveOnSite(entry, entry.checkUrl, 'the signed-in check URL');
   if (check.refusal) return { status: Status.needsYou, reason: check.refusal };
 
-  return withPage(async (page, context) => {
-    const signedIn = await signInOnPage(page, entry);
+  return withEntryBrowser(entry, run, async (page, context) => {
+    const signedIn = await ensureSignedIn(page, entry);
     if (!signedIn.ok) return signedIn;
+    if (signedIn.already) {
+      const state = await context.storageState();
+      return { status: Status.verified, reason: `${entry.name} is verified.`, sessionExpires: sessionExpiry(state), state };
+    }
 
+    await pause();
     const response = await page.goto(check.url.toString(), nav).catch(() => null);
     const after = new URL(page.url());
     if (!hostAllowed(entry, after)) {
@@ -201,8 +232,8 @@ async function findField(page, override, fallbacks) {
   return null;
 }
 
-export function verify(entry) {
+export function verify(entry, run) {
   if (entry.method === 'token') return verifyToken(entry);
-  if (entry.method === 'interactive') return verifyInteractive(entry);
-  return verifyPassword(entry);
+  if (entry.method === 'interactive') return verifyInteractive(entry, run);
+  return verifyPassword(entry, run);
 }

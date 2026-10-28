@@ -8,8 +8,8 @@ import { join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { Status, findEntry, resolveOnSite, hostAllowed } from './entries.mjs';
 import { entryState, fingerprint, sweepHandoffs } from './state.mjs';
-import { verify, signInOnPage } from './verify.mjs';
-import { withPage, pruneState } from './browser.mjs';
+import { verify, ensureSignedIn } from './verify.mjs';
+import { withEntryBrowser, pruneState } from './browser.mjs';
 
 const MaxPasswordFailures = 2; // lockout guard
 const MaxFailedRuns = 3; // Failed -> Needs you
@@ -53,7 +53,7 @@ async function checkEntry(entry, state, ctx) {
   }
 
   ctx.progress(`Checking ${entry.name}…`);
-  const result = await verify(entry);
+  const result = await verify(entry, ctx.browserRun);
   s.lastCheckAt = new Date().toISOString();
   s.sessionExpires = result.sessionExpires || '';
 
@@ -174,7 +174,7 @@ export async function cmdSession(args, entries, state, ctx) {
   // password or interactive: sign in (or reuse a still-valid interactive session), prune, hand off.
   let state0;
   if (entry.method === 'interactive') {
-    state0 = pruneState(JSON.parse(entry.secrets.session), entry.hosts);
+    state0 = pruneState(entry.session.storageState, entry.hosts);
   } else {
     const out = await checkEntry(entry, state, ctx);
     if (out.event) ctx.publish('status.changed', out.event);
@@ -203,11 +203,11 @@ export async function cmdCheck(args, entries, state, ctx) {
   const target = resolveOnSite(entry, path, 'the path');
   if (target.refusal) return { text: target.refusal, refusal: true };
 
-  const storageState = entry.method === 'interactive' ? JSON.parse(entry.secrets.session) : undefined;
-  const run = await withPage(async (page) => {
+  const run = await withEntryBrowser(entry, ctx.browserRun, async (page) => {
     if (entry.method === 'password') {
-      // Sign in on this very page, so the path below is opened by the signed-in context.
-      const signedIn = await signInOnPage(page, entry);
+      // Sign in on this very page (unless the row's browser still is), so the path below is opened
+      // by the signed-in browser.
+      const signedIn = await ensureSignedIn(page, entry);
       if (!signedIn.ok) return { refusal: signedIn.reason };
     }
     const response = await page.goto(target.url.toString(), { waitUntil: 'domcontentloaded', timeout: 20000 });
@@ -228,7 +228,7 @@ export async function cmdCheck(args, entries, state, ctx) {
       found: expect ? body.includes(expect) : null,
       shot: shot.rel,
     };
-  }, storageState ? { storageState } : {}).catch((e) => ({ refusal: `${entry.name}: ${String(e.message).split('\n')[0]}` }));
+  }).catch((e) => ({ refusal: `${entry.name}: ${String(e.message).split('\n')[0]}` }));
 
   if (run.refusal) return { text: run.refusal, refusal: true };
   const lines = [
