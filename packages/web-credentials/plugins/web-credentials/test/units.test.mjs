@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { totp } from '../src/totp.mjs';
-import { entryHosts, hostAllowed, resolveOnSite, readEntries, secretValues } from '../src/entries.mjs';
-import { pruneState } from '../src/browser.mjs';
+import { entryHosts, hostAllowed, resolveOnSite, readEntries, secretValues, readSession } from '../src/entries.mjs';
+import { identityFor } from '../src/profile.mjs';
+import { choose, compareVersions } from '../src/chrome.mjs';
+import { pruneState, chromeArgs } from '../src/browser.mjs';
 import { makeOut } from '../src/out.mjs';
 
 test('totp matches a known RFC 6238 vector', () => {
@@ -63,7 +65,56 @@ test('out redacts every secret value it was given, longest first and any case', 
 
 test('secretValues pulls cookie and local-storage values out of a saved session', () => {
   const session = JSON.stringify({ cookies: [{ value: 'cookievalue1234' }], origins: [{ localStorage: [{ value: 'lsvalue5678' }] }] });
-  const vals = secretValues({ secrets: { entries: { e: { session } } } }, [{ secrets: { session } }]);
+  const vals = secretValues({ secrets: { entries: { e: { session } } } }, [{ secrets: { session }, session: readSession(session) }]);
   assert.ok(vals.includes('cookievalue1234'));
   assert.ok(vals.includes('lsvalue5678'));
+  // The same from a v2 envelope.
+  const v2 = JSON.stringify({ v: 2, storageState: { cookies: [{ value: 'cookievalue9999' }], origins: [] }, identity: { version: '156.0.1.2' } });
+  const vals2 = secretValues({ secrets: { entries: { e: { session: v2 } } } }, [{ secrets: { session: v2 }, session: readSession(v2) }]);
+  assert.ok(vals2.includes('cookievalue9999'));
+});
+
+test('readSession reads a v2 envelope and a bare (v1) storage state, and refuses anything else', () => {
+  const state = { cookies: [{ name: 'a', value: 'b' }], origins: [] };
+  const identity = { browser: 'chrome', version: '156.0.8078.73', languages: ['de-DE', 'de'], timezoneId: 'Europe/Berlin' };
+  const v2 = readSession(JSON.stringify({ v: 2, storageState: state, identity }));
+  assert.deepEqual(v2.storageState, state);
+  assert.equal(v2.identity.timezoneId, 'Europe/Berlin');
+  const v1 = readSession(JSON.stringify(state));
+  assert.deepEqual(v1.storageState, state);
+  assert.equal(v1.identity, null);
+  assert.equal(readSession('not json'), null);
+  assert.equal(readSession(JSON.stringify({ v: 3 })), null);
+  assert.equal(readSession(''), null);
+});
+
+test('identityFor takes the session identity, else the settings, else en-US; sizes and zones are checked', () => {
+  const session = { identity: { version: '156.0.8078.73', languages: ['fr-FR', 'fr'], timezoneId: 'Europe/Paris', screen: { width: 2560, height: 1440 }, viewport: { width: 1400, height: 900 }, deviceScaleFactor: 1 } };
+  const a = identityFor({ session, settings: { languages: 'de-DE', timeZone: 'Europe/Berlin' } });
+  assert.deepEqual([a.locale, a.timezoneId, a.screen.width, a.viewport.height, a.version], ['fr-FR', 'Europe/Paris', 2560, 900, '156.0.8078.73']);
+  const b = identityFor({ session: null, settings: { languages: 'de-DE, de', timeZone: 'Europe/Berlin' } });
+  assert.deepEqual([b.languages, b.timezoneId, b.viewport], [['de-DE', 'de'], 'Europe/Berlin', null]);
+  const c = identityFor({ session: { identity: { timezoneId: 'Not/AZone', screen: { width: 5, height: 5 }, languages: ['<script>'] } } });
+  assert.deepEqual([c.languages, c.screen], [['en-US', 'en'], { width: 1920, height: 1080 }]);
+  assert.notEqual(c.timezoneId, 'Not/AZone');
+});
+
+test('chrome: choose takes the session version, else its major, else the newest', () => {
+  const copies = [{ version: '157.0.1.0' }, { version: '156.0.8078.73' }, { version: '156.0.8078.4' }];
+  assert.equal(choose(copies, '156.0.8078.4').version, '156.0.8078.4');
+  assert.equal(choose(copies, '156.0.9999.1').version, '156.0.8078.73');
+  assert.equal(choose(copies, '150.0.1.1').version, '157.0.1.0');
+  assert.equal(choose(copies, null).version, '157.0.1.0');
+  assert.equal(choose([], null), null);
+  assert.ok(compareVersions('156.0.10.0', '156.0.9.0') > 0);
+});
+
+test('chromeArgs never carries a headless, automation or no-sandbox switch', () => {
+  const identity = identityFor({ session: null });
+  const args = chromeArgs({ dir: '/tmp/p', identity, window: { width: 1920, height: 1080 } });
+  for (const bad of ['--headless', '--enable-automation', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--mute-audio']) {
+    assert.ok(!args.some((a) => a.startsWith(bad)), bad);
+  }
+  assert.ok(args.includes('--disable-blink-features=AutomationControlled'));
+  assert.ok(args.includes('--lang=en-US'));
 });

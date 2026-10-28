@@ -215,6 +215,8 @@ export async function cmdCheck(args, entries, state, ctx) {
     if (!hostAllowed(entry, landed)) {
       return { refusal: `${entry.name}: the page redirected to ${landed.hostname}, off the entry's hosts.` };
     }
+    // Let the page finish what it loads, as a person waits for it, before reading it.
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
     const title = await page.title().catch(() => '');
     const heading = await page.$eval('h1', (el) => el.textContent.trim()).catch(() => '');
     const body = expect ? await page.content().catch(() => '') : '';

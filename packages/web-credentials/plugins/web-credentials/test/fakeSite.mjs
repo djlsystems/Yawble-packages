@@ -2,7 +2,8 @@
 // the primary (127.0.0.1) and an "other" host (127.0.0.2) a sign-in or check can wrongly land on.
 // It has: a password form, a two-step (TOTP) step, a token API, a session that can be made to
 // expire, a CAPTCHA page, a page that redirects off-host, and a password it keeps rejecting
-// (for the lockout guard).
+// (for the lockout guard). And a probe page that reports what a site can see of the browser, and
+// the per-key timing of a sign-in's typing.
 import { createServer } from 'node:http';
 import { totp } from '../src/totp.mjs';
 
@@ -29,6 +30,8 @@ export function startFakeSite(opts = {}) {
   const bindHost = opts.host || '127.0.0.1';
   const sessions = new Set(); // live session tokens
   let counter = 0;
+  const probes = []; // what each visit to /probe saw: { headers, report }
+  const keyTimes = []; // per sign-in POST: the page-observed key times of each field
 
   const handler = (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -42,6 +45,62 @@ export function startFakeSite(opts = {}) {
       const auth = req.headers.authorization || '';
       if (auth === `Bearer ${API_TOKEN}`) return send(200, page('<h1>Me</h1>ok signed in'));
       return send(401, page('<h1>Unauthorized</h1>'));
+    }
+
+    // THE PROBE: what a site can see. The page's script reports the browser's own view (navigator,
+    // client hints with their high-entropy values, WebGL, screen, viewport, time zone, and a mark left
+    // in local storage by an earlier visit); the server keeps the headers the page was asked with and
+    // the ones the report came with (after Accept-CH, the high-entropy Sec-CH-UA-* headers).
+    if (url.pathname === '/probe') {
+      const visit = { headers: { ...req.headers }, cookieMark: cookies(req).mark || null, report: null, reportHeaders: null };
+      probes.push(visit);
+      const n = probes.length;
+      return send(200, page(`<h1>Probe</h1><p id="who">Signed in</p><script>
+        (async () => {
+          const r = {};
+          r.userAgent = navigator.userAgent;
+          r.webdriver = navigator.webdriver;
+          r.pluginsLength = navigator.plugins.length;
+          r.languages = navigator.languages;
+          r.language = navigator.language;
+          r.timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          r.screen = { width: screen.width, height: screen.height, availWidth: screen.availWidth, availHeight: screen.availHeight, colorDepth: screen.colorDepth };
+          r.viewport = { width: innerWidth, height: innerHeight };
+          r.outer = { width: outerWidth, height: outerHeight };
+          r.devicePixelRatio = devicePixelRatio;
+          r.hardwareConcurrency = navigator.hardwareConcurrency;
+          r.chromeObject = typeof window.chrome === 'object';
+          try {
+            const gl = document.createElement('canvas').getContext('webgl');
+            const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+            r.webgl = gl ? { vendor: gl.getParameter(ext ? ext.UNMASKED_VENDOR_WEBGL : gl.VENDOR), renderer: gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) } : null;
+          } catch (e) { r.webgl = null; }
+          if (navigator.userAgentData) {
+            r.uaData = { brands: navigator.userAgentData.brands, mobile: navigator.userAgentData.mobile, platform: navigator.userAgentData.platform };
+            r.uaHigh = await navigator.userAgentData.getHighEntropyValues(['architecture', 'bitness', 'model', 'platformVersion', 'fullVersionList', 'uaFullVersion']);
+          }
+          r.markBefore = localStorage.getItem('probe-mark');
+          if (!r.markBefore) localStorage.setItem('probe-mark', 'visit-${n}');
+          await fetch('/probe-report?n=${n}', { method: 'POST', body: JSON.stringify(r) });
+          document.title = 'probe-done';
+        })();
+      </script>`), {
+        'accept-ch': 'Sec-CH-UA-Full-Version-List, Sec-CH-UA-Platform-Version, Sec-CH-UA-Arch, Sec-CH-UA-Model, Sec-CH-UA-Bitness',
+        'set-cookie': `mark=${cookies(req).mark || 'visit-' + n}; Path=/; Max-Age=86400`,
+      });
+    }
+    if (url.pathname === '/probe-report' && req.method === 'POST') {
+      let data = '';
+      req.on('data', (c) => (data += c));
+      req.on('end', () => {
+        const visit = probes[Number(url.searchParams.get('n')) - 1];
+        if (visit) {
+          visit.report = JSON.parse(data);
+          visit.reportHeaders = { ...req.headers };
+        }
+        send(204, '');
+      });
+      return;
     }
 
     // The signed-in check page.
@@ -70,9 +129,11 @@ export function startFakeSite(opts = {}) {
         return send(200, page(`<h1>Sign in</h1>${captcha}<form method="post" action="/login">
           <input type="email" name="email" />
           <input type="password" name="password" />
-          <button type="submit">Log in</button></form>`));
+          <input type="hidden" name="keys" />
+          <button type="submit">Log in</button></form>${keyScript}`));
       }
       return readBody(req, (form) => {
+        if (form.keys) keyTimes.push(JSON.parse(form.keys));
         if (opts.rejectPassword || form.password !== PASSWORD || form.email !== USERNAME) {
           return send(200, page('<h1>Sign in</h1><p class="error">Wrong username or password</p><form method="post" action="/login"><input type="email" name="email"/><input type="password" name="password"/><button type="submit">Log in</button></form>'));
         }
@@ -123,11 +184,25 @@ export function startFakeSite(opts = {}) {
         deadSession(host = '127.0.0.1') {
           return { cookies: [{ name: 'sess', value: 'gone', domain: host, path: '/', expires: -1, httpOnly: false, secure: false, sameSite: 'Lax' }], origins: [] };
         },
+        probes,
+        keyTimes,
         close: () => new Promise((r) => server.close(r)),
       });
     });
   });
 }
+
+// Records, per field, when each key went down (performance.now()), and how each field was filled: a
+// value that appears with no keys behind it was filled, not typed.
+const keyScript = `<script>
+  const times = {};
+  for (const el of document.querySelectorAll('input[name]')) {
+    el.addEventListener('keydown', (e) => { (times[el.name] ??= []).push(performance.now()); });
+  }
+  document.querySelector('form').addEventListener('submit', () => {
+    document.querySelector('input[name=keys]').value = JSON.stringify(times);
+  });
+</script>`;
 
 function readBody(req, cb) {
   let data = '';
