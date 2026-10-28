@@ -149,7 +149,8 @@ export function findEntry(entries, name) {
   return entries.find((e) => e.key === key);
 }
 
-// Every secret value the run was handed, for the plugin's own redaction (the platform redacts too).
+// Every secret value the run was handed, for the plugin's own redaction (the platform redacts too):
+// a string is redacted wherever it appears, a { token } only as a whole token (see stateSecretValues).
 export function secretValues(request, entries) {
   const values = new Set();
   const walk = (v) => {
@@ -164,17 +165,24 @@ export function secretValues(request, entries) {
     // A session's cookie and storage values are credentials of their own.
     if (e.session) for (const v of stateSecretValues(e.session.storageState)) values.add(v);
   }
-  return [...values].sort((a, b) => b.length - a.length);
+  return [...values];
 }
 
+// Whole values that are settings, not secrets: never redacted, compared case-insensitively.
+const NOT_SECRET = new Set(['true', 'false', 'null', 'none', 'undefined', 'yes', 'no', 'on', 'off', 'dark', 'light', 'auto', 'default']);
+
 // The values of a storage state that are credentials, part by part, as the platform redacts a saved
-// session: each cookie value, each local-storage value, and each string of 8 characters or more
-// inside a local-storage value that is JSON. Whatever the row's method, so a page that prints its own
-// cookie does not put it in an answer.
+// session: each whole cookie value and local-storage value of 4 characters or more, and each string
+// of 8 or more inside a local-storage value that is JSON. A value of 4-7 characters comes back as
+// { token } - redacted only as a whole token, not inside a longer word - and one of 8 or more as a
+// string, redacted wherever it appears. 1-3 characters and settings words (true, dark...) never.
+// Whatever the row's method, so a page that prints its own cookie does not put it in an answer.
 export function stateSecretValues(state) {
-  const out = new Set();
+  const out = new Map();
   const add = (v, min = 4) => {
-    if (typeof v === 'string' && v.length >= min) out.add(v);
+    if (typeof v !== 'string' || v.length < min || NOT_SECRET.has(v.toLowerCase())) return;
+    if (v.length >= 8) out.set(v, v);
+    else if (!out.has(v)) out.set(v, { token: v });
   };
   const inside = (v) => {
     if (typeof v === 'string') add(v, 8);
@@ -192,7 +200,7 @@ export function stateSecretValues(state) {
       }
     }
   }
-  return [...out];
+  return [...out.values()];
 }
 
 // A saved session as the platform's sign-in page keeps it: the v2 envelope

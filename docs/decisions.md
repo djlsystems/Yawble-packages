@@ -113,7 +113,14 @@ A site must not be able to tell the plugin's browser from the person on their ow
   same rule as Yawble's sign-in page after D11): each WHOLE cookie value and each WHOLE
   local-storage value is redacted on its own when it is 4 or more characters; strings inside a JSON
   local-storage value are redacted at 8 or more; values of 1-3 characters are never redacted (they
-  would blank ordinary text). This applies to every session the plugin holds - one it signed in
+  would blank ordinary text). Refined after Ingrid's D13 (consent=true turned "trueness" into
+  "[redacted]ness"), the same rule as Tobias's platform fix: a whole value of 4-7 characters is
+  redacted only as a whole token - not where a letter or digit (any script) comes right before or
+  after it - while a value of 8 or more, and a string of 8 or more inside a JSON value, is still
+  redacted wherever it appears. A whole value that is a settings word - true, false, null, none,
+  undefined, yes, no, on, off, dark, light, auto, default, in any case - is never redacted, nor is
+  such a string inside a JSON value. Secret cells the run is handed (a password, a token) are not
+  sessions: they stay redacted wherever they appear, at 4 or more characters. This applies to every session the plugin holds - one it signed in
   for with a password, one from a token entry's page, and an interactive row's saved session.
 - **The documents folder is the platform's.** A check's screenshot goes to `<team documents>/Web
   Credentials/`, the team documents taken from the request's `siteFiles` (`<documents>/<team>/sites/
@@ -197,8 +204,8 @@ hosts before it is written, so a handoff never carries a cookie or origin for an
 Secret cells (password, TOTP secret, token) arrive under `secrets.entries.<row>.<column>`; the saved
 interactive session arrives under `secrets.entries.<row>.session`. The plugin keeps every secret
 value it is handed - and every cookie and local-storage value inside a saved session - in its own
-redaction set and replaces them in every record it writes, longest-first and case-insensitively,
-under the platform's own redaction. The workspace state file holds no secret: the lockout
+redaction set and replaces them in every record it writes, longest-first and case-insensitively (a
+session value of 4-7 characters only as a whole token, as above), under the platform's own redaction. The workspace state file holds no secret: the lockout
 fingerprint that notices an edited row is a salted scrypt digest, and the handoff list holds paths
 and times only. Screenshots are page images saved to the team's documents; nothing credential-like
 is drawn into them because the page is the site's own signed-in page.

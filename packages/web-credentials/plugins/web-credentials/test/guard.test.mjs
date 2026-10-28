@@ -111,6 +111,9 @@ test('P3: check on a page that prints its own cookie and local-storage token sho
     assert.match(r.result.output, /\[redacted\]/);
     // A whole cookie value of 4+ characters is redacted on its own, so a 7-character one is too.
     assert.ok(!blob.includes('code123'), 'the 7-character cookie is in a record');
+    // D13: a 4-7 character value only as a whole token, and settings words never.
+    assert.match(blob, /consent true trueness/, 'consent=true over-redacted');
+    assert.match(blob, /word abck7q2z9/, 'a 5-character value inside a longer word was redacted');
   } finally {
     cleanup(ws);
   }

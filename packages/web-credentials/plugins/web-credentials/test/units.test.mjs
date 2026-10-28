@@ -63,13 +63,28 @@ test('out redacts every secret value it was given, longest first and any case', 
   assert.match(r.output, /\[redacted\].*\[redacted\]/);
 });
 
-test('stateSecretValues: whole values of 4+ characters, strings inside JSON at 8+, 1-3 characters never', () => {
+test('stateSecretValues: whole values of 4+ characters (4-7 as whole tokens), strings inside JSON at 8+, 1-3 characters and settings words never', () => {
   const vals = stateSecretValues({
-    cookies: [{ value: 'code123' }, { value: 'abcd' }, { value: 'xq7' }],
-    origins: [{ localStorage: [{ value: 'ls12' }, { value: 'q' }, { value: JSON.stringify({ a: 'short77', b: 'eightch8' }) }] }],
+    cookies: [{ value: 'code123' }, { value: 'abcd' }, { value: 'xq7' }, { value: 'true' }, { value: 'DARK' }, { value: 'undefined' }, { value: 'cookie-long-1' }],
+    origins: [{ localStorage: [{ value: 'ls12' }, { value: 'q' }, { value: 'default' }, { value: JSON.stringify({ a: 'short77', b: 'eightch8' }) }] }],
   });
-  for (const v of ['code123', 'abcd', 'ls12', 'eightch8']) assert.ok(vals.includes(v), v);
-  for (const v of ['xq7', 'q', 'short77']) assert.ok(!vals.includes(v), v);
+  const tokens = vals.filter((v) => typeof v !== 'string').map((v) => v.token);
+  const anywhere = vals.filter((v) => typeof v === 'string');
+  for (const v of ['code123', 'abcd', 'ls12']) assert.ok(tokens.includes(v), v);
+  for (const v of ['eightch8', 'cookie-long-1']) assert.ok(anywhere.includes(v), v);
+  for (const v of ['xq7', 'q', 'short77', 'true', 'DARK', 'undefined', 'default']) assert.ok(!tokens.includes(v) && !anywhere.includes(v), v);
+});
+
+test('out redacts a 4-7 character session value only as a whole token, an 8+ one anywhere', () => {
+  const lines = [];
+  const out = makeOut((l) => lines.push(l));
+  out.setSecrets([{ token: 'k7q2z' }, { token: 'code123' }, 'eightch8']);
+  out.result(true, 'k7q2z, (CODE123) abck7q2z9 code1234 xeightch8x é-k7q2z-é');
+  assert.equal(JSON.parse(lines[0]).output, '[redacted], ([redacted]) abck7q2z9 code1234 x[redacted]x é-[redacted]-é');
+  // A password the run was handed (a plain string) stays redacted anywhere.
+  out.setSecrets(['hunt2', { token: 'hunt2' }]);
+  out.result(true, 'xhunt2x');
+  assert.equal(JSON.parse(lines[1]).output, 'x[redacted]x');
 });
 
 test('secretValues pulls cookie and local-storage values out of a saved session', () => {

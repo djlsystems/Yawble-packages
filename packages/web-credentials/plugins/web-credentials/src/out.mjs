@@ -2,15 +2,16 @@
 // before it is written. The platform redacts too; this is the plugin's own net under it.
 
 export function makeOut(write = (line) => process.stdout.write(line + '\n')) {
+  // Each secret as { v, whole }: a whole one is redacted only where no letter or digit touches it.
   let values = [];
   const redact = (s) => {
     if (typeof s !== 'string') return s;
     let out = s;
-    for (const v of values) {
-      if (!v) continue;
+    for (const { v, whole } of values) {
       // Case-insensitive, longest first (values is sorted so).
       const escaped = v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      out = out.replace(new RegExp(escaped, 'gi'), '[redacted]');
+      const pattern = whole ? `(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])` : escaped;
+      out = out.replace(new RegExp(pattern, 'giu'), '[redacted]');
     }
     return out;
   };
@@ -25,8 +26,16 @@ export function makeOut(write = (line) => process.stdout.write(line + '\n')) {
     return v;
   };
   const emit = (record) => write(JSON.stringify(deep(record)));
+  // A string is redacted wherever it appears; { token } only as a whole token.
   const setSecrets = (list) => {
-    values = [...new Set(list.filter((v) => typeof v === 'string' && v.length >= 4))].sort((a, b) => b.length - a.length);
+    const byValue = new Map();
+    for (const x of list) {
+      const item = typeof x === 'string' ? { v: x, whole: false } : x && typeof x.token === 'string' ? { v: x.token, whole: true } : x;
+      if (!item || typeof item.v !== 'string' || item.v.length < 4) continue;
+      const seen = byValue.get(item.v);
+      byValue.set(item.v, { v: item.v, whole: (seen ? seen.whole : true) && item.whole });
+    }
+    values = [...byValue.values()].sort((a, b) => b.v.length - a.v.length);
   };
   return {
     setSecrets,
