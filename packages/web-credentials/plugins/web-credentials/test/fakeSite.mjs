@@ -132,6 +132,10 @@ export function startFakeSite(opts = {}) {
       const to = (opts.offsiteOrigin || `http://127.0.0.2:${url.port}`) + '/landing';
       return send(200, `<!doctype html><html><head><title>Leaving</title><meta http-equiv="refresh" content="0; url=${to}"></head><body><h1>Leaving</h1></body></html>`);
     }
+    if (url.pathname === '/js-off') {
+      const to = (opts.offsiteOrigin || `http://127.0.0.2:${url.port}`) + '/landing';
+      return send(200, `<!doctype html><html><head><title>Leaving</title></head><body><h1>Leaving</h1><script>location.href = ${JSON.stringify(to)};</script></body></html>`);
+    }
     if (url.pathname === '/frame-off') {
       const to = (opts.offsiteOrigin || `http://127.0.0.2:${url.port}`) + '/framed';
       return send(200, page(`<h1>Framed</h1><iframe src="${to}"></iframe>`));

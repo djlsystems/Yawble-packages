@@ -51,8 +51,9 @@ browser.
   you** item again, in the same words, so it stays while the person is needed; it sits on the card
   that ran last. Report it to the person in the plugin's own words.
 - A password entry that is refused twice in a row - by `check`, `session` or `verify` - is held
-  (Needs you). Re-sending a command does not lift it; the person sets a new password or ticks (or
-  unticks) the row's **Try again** box, and saves.
+  (Needs you). Re-sending a command does not lift it; the person sets a new password, or switches
+  the row's **Try again** setting (on or off, either way), and saves. That allows exactly one more
+  sign-in; a refusal holds it again at once.
 
 ## For a tester checking a deploy
 

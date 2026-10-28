@@ -75,9 +75,11 @@ device approval, terms page or locked account - the plugin never tries to get ar
 **Failed** (retried next run). Every command that signs in with a password - `check` and `session` as
 well as `verify` - confirms the sign-in took and counts a refusal against the lockout guard. A password
 entry refused twice in a row is held (Needs you): no command, from anyone, submits its password again
-until the person changes the row - a new password, or a tick (or untick) of its **Try again** box - and
-saves; no run has to happen in between. A password that was sent and then led off the entry's hosts
-holds the entry the same way without counting as a refusal.
+until the person changes the row - a new password, or a switch of its **Try again** setting (on or
+off, either way; it sits next to **Active**) - and saves; no run has to happen in between. Each such
+change lets the plugin send the password exactly once more: if the site refuses it, the entry is held
+again at once. A password that was sent and then led off the entry's hosts, or met a CAPTCHA, holds
+the entry the same way without counting as a refusal; switching Try again lets it try once more.
 
 **Other hosts limits where the browser goes, not every request.** A page or frame load (a link, a
 redirect, a script or a meta refresh) to a host that is not one of the entry's is stopped inside the

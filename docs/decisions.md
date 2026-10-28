@@ -97,7 +97,7 @@ A site must not be able to tell the plugin's browser from the person on their ow
 - **Every password sign-in is confirmed and counted.** A sign-in is done only when the check page,
   opened after the form (and the two-step code), shows a signed-in user. `verify`, `session` and
   `check` all sign in through the same function and fold its outcome through the same guard: a
-  refusal counts, the second in a row holds the entry (Needs you, a status event, the board notice),
+  refusal counts, the second in a row (the first after the person's change, P13) holds the entry (Needs you, a status event, the board notice),
   and a held entry submits nothing again. A member's command never lifts the guard - an asked-for
   `verify` used to, which let any member lock the account by repeating it. Only the person lifts it,
   by changing the row (the salted fingerprint changes; see the recheck below for Try again). `check` and `session`
@@ -167,9 +167,10 @@ A site must not be able to tell the plugin's browser from the person on their ow
 - **The person's way out of a held entry is a change to the row, made with a save alone (P7).** "Turn
   it off and on" worked only when a run saw the row while it was off: two saves with no run between
   leave the row as it was, so the plugin cannot see them, and the platform tells a plugin nothing about
-  a save. That route is gone, and the row has a person-only **Try again** box (`retry`, bool). Ticking
-  or unticking it and saving changes what the person wrote, so the salted fingerprint changes and the
-  next run may sign in once more (a second refusal holds it again). A new password does the same. A
+  a save. That route is gone, and the row has a person-only **Try again** setting (`retry`, bool).
+  Switching it on or off and saving changes what the person wrote, so the salted fingerprint changes
+  and the next run may sign in exactly once more (P13, below: a refusal holds it again at once). A new
+  password does the same. A
   member cannot write a plugin's table, so no member command can lift the guard. The Needs-you text
   names only these two ways.
 - **A password that was sent and then led off the hosts holds the entry without counting (P10).** The
@@ -195,6 +196,32 @@ A site must not be able to tell the plugin's browser from the person on their ow
   gone, and a download that receives no byte for 60 seconds is ended there, its partial file discarded
   (no resume: a slow but moving link simply finishes, so a Range resume buys little). The unpack,
   local work of a minute or so, keeps a plain heartbeat. `timeoutSeconds` stays 300.
+
+### Recheck of 33a5756: one more password per change, the Try again words, the blocked host's name
+
+(Tester Ingrid's recheck of 33a5756, P13-P16.)
+
+- **Any lift allows exactly one more password (P13).** A lift used to reset the refusal count to 0,
+  so each Try-again save or new password let the plugin send the password twice more - on a site that
+  locks at 3, one Try again after the first two locked the account. Now a change to a held row (Try
+  again switched, a new password, any other edit) sets the count one short of the limit: one more
+  sign-in is sent, and if the site refuses it the entry is held again at once. A sign-in the site
+  takes resets the count to 0. The refusal words carry no count ("the site refused the password, so
+  the plugin has stopped signing in"), since after a change one refusal is enough.
+- **The words match the control (P14).** In the row editor Try again is a switch, and either
+  direction lifts the guard, so every held text says "switch its Try again setting (on or off, either
+  way) and save", never "tick its box". It sits right after **Active** in the column order (it was
+  column 19 of 25, off screen at 1280 px). A hold that is not about the password - the site took it
+  and then left the entry's hosts, or showed a CAPTCHA - no longer says "Set a new password if it
+  changed". The Other hosts column's description says where the browser may go (pages and frames).
+- **The blocked host is named (P15).** A script redirect (`location.href`) to another host lands on
+  Chrome's own error page, whose host is `chromewebdata`; `check` names the host the guard stopped
+  (`guard.blocked[0]`) first, as the meta-refresh case already did.
+- **The plugin's redaction is the platform's ValueRedactor (P16).** Each session value's URL-decoded
+  form joins the set (a run of `%XX` that is not UTF-8 is left as it is), and an escape (`\uXXXX`,
+  `\n`-style, `%XX`) next to a 4-7 character value is a token boundary; see "The session a run holds
+  is redacted" above. So `enc=q7%2Fwz9` printed decoded as `q7/wz9`, and `?a=1%26mid%3Dk9x4z%26`,
+  are redacted.
 
 ### Session handoff: the asking member's own workspace
 

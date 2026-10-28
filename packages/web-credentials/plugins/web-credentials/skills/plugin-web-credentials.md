@@ -67,9 +67,10 @@ elapsed. A run where nothing changed finishes quietly and wakes nobody.
   (an interactive entry says to use its Sign in link), on the card that ran last. After **2**
   password sign-in failures in a row - whichever command signed in: `check`, `session` or `verify` -
   the plugin stops trying that entry and marks it Needs you. No command lifts that, so repeating one
-  never locks the account: the person sets a new password, or ticks (or unticks) the row's **Try
-  again** box, and saves. A password that was sent and then led off the entry's hosts holds it the
-  same way without counting as a refusal.
+  never locks the account: the person sets a new password, or switches the row's **Try again**
+  setting (on or off, either way), and saves. That allows exactly one more sign-in; a refusal holds
+  it again at once. A password that was sent and then led off the entry's hosts holds it the same
+  way without counting as a refusal.
 - **Failed** - a network or site error; retried next run, and only after **3** in a row does it
   become Needs you.
 

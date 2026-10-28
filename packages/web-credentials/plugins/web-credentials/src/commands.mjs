@@ -37,13 +37,14 @@ function statusCells(s) {
 // THE LOCKOUT GUARD. Every command that may submit a password - a scheduled or asked-for verify, a
 // session, a check - goes through it: a password the site did not take counts, the second in a row
 // holds the entry (Needs you) and nothing submits its password again until the person changes the row:
-// a new password, or a flip of its Try again box (any edit and save counts; a run need not see the row
-// in between). A command from a member never lifts it, so no member can lock the person's account by
+// a new password, or a switch of its Try again setting, on or off (any edit and save counts; a run need
+// not see the row in between). A change allows exactly one more password: refused, it holds again. A command from a member never lifts it, so no member can lock the person's account by
 // repeating one. A password that was sent and then led somewhere the plugin may not follow (off the
 // entry's hosts) holds the entry the same way without counting as a refusal: it is not known to be
 // wrong, and it is not sent again into that page every hour.
 
-// Notices an edit to the row (password, Try again, anything the person wrote): it lifts a held guard.
+// Notices an edit to the row (password, Try again, anything the person wrote): it lifts a held guard
+// for one more password only - one short of the limit, so a refusal holds it again at once (P13).
 // Answers the entry's state.
 function guardState(entry, state) {
   const s = entryState(state, entry);
@@ -52,13 +53,17 @@ function guardState(entry, state) {
     s.fingerprint = print;
     if (s.held) {
       s.held = false;
-      s.passwordFailures = 0;
+      s.passwordFailures = MaxPasswordFailures - 1;
     }
   }
   return s;
 }
 
-const TryAgain = 'Set a new password if it changed, or tick (or untick) its Try again box, and save, to let it try once more.';
+// The way out, as the control looks in the row editor: a switch, either way. A hold that is not about the
+// password (the site took it, then left the hosts or showed a CAPTCHA) does not ask for a new one.
+const SwitchTryAgain = 'switch its Try again setting (on or off, either way) and save, to let it try once more.';
+const TryAgainPassword = `Set a new password if it changed, or ${SwitchTryAgain}`;
+const TryAgain = `S${SwitchTryAgain.slice(1)}`;
 
 // Folds one sign-in or verify outcome into the entry's state with the failure rules, the lockout guard
 // and the status event, and writes the row's status. Answers { changed, result }.
@@ -88,7 +93,8 @@ function fold(entry, state, result, ctx) {
     if (s.passwordFailures >= MaxPasswordFailures) {
       s.held = true;
       result.status = Status.needsYou;
-      result.reason = `${entry.name} needs you: sign-in was refused ${MaxPasswordFailures} times in a row, so the plugin has stopped trying, to keep the account from being locked. ${TryAgain}`;
+      // No count in the words: after a change, one refusal holds it again.
+      result.reason = `${entry.name} needs you: the site refused the password, so the plugin has stopped signing in, to keep the account from being locked. ${TryAgainPassword}`;
     }
   }
   if (entry.method === 'password' && result.hold) {
@@ -241,7 +247,8 @@ export async function cmdCheck(args, entries, state, ctx) {
     }
     const landed = new URL(page.url());
     if (!hostAllowed(entry, landed)) {
-      return { signedIn, refusal: `${entry.name}: ${path} redirected to ${landed.hostname}, off the entry's hosts; the browser did not go there.` };
+      // A script's redirect that the browser stopped lands on Chrome's error page: name the host it tried.
+      return { signedIn, refusal: `${entry.name}: ${path} redirected to ${guard.blocked[0] || landed.hostname}, off the entry's hosts; the browser did not go there.` };
     }
     // Let the page finish what it loads, as a person waits for it, before reading it.
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});

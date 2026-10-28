@@ -110,6 +110,14 @@ test('stateSecretValues: "undefined" (9 characters) as a JSON string is a settin
   assert.ok(all.includes('a%2Fb%3Dcd') && all.includes('a/b=cd'), all.join(','));
 });
 
+test('P16: a session value is redacted in its URL-decoded form too, and after an escape such as %3D or %26', () => {
+  const lines = [];
+  const out = makeOut((l) => lines.push(l));
+  out.setSecrets(stateSecretValues({ cookies: [{ value: 'q7%2Fwz9' }, { value: 'k9x4z' }, { value: 'zz%E0%A4' }] }));
+  out.result(true, 'enc=q7%2Fwz9 enc-decoded=q7/wz9 pct=%3Dk9x4z url=?a=1%26mid%3Dk9x4z%26 inword=abk9x4zq');
+  assert.equal(JSON.parse(lines[0]).output, 'enc=[redacted] enc-decoded=[redacted] pct=%3D[redacted] url=?a=1%26mid%3D[redacted]%26 inword=abk9x4zq');
+});
+
 test('secretValues pulls cookie and local-storage values out of a saved session', () => {
   const session = JSON.stringify({ cookies: [{ value: 'cookievalue1234' }], origins: [{ localStorage: [{ value: 'lsvalue5678' }] }] });
   const vals = secretValues({ secrets: { entries: { e: { session } } } }, [{ secrets: { session }, session: readSession(session) }]);

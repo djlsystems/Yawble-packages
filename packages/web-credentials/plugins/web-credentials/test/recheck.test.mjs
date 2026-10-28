@@ -69,18 +69,18 @@ test('P7: a held entry is let try once more by the person flipping Try again, wi
     await runPlugin({ ...bad, work: ask('verify prod') });
     assert.equal(s.signInPosts(), posts, 'held');
 
-    // The person ticks Try again and saves; the next verify may POST once, and a second refusal holds it again.
+    // The person switches Try again on and saves; the next verify may POST once, and its refusal holds it
+    // again at once (P13).
     const retry = { ...bad, entries: [entryRow({ siteUrl: s.origin, retry: true })] };
     const r3 = await runPlugin({ ...retry, work: ask('verify prod') });
     assert.equal(s.signInPosts(), posts + 1, 'one new try after Try again');
-    assert.equal(r3.rowStatus.at(-1).values.status, 'Expired');
+    assert.equal(r3.rowStatus.at(-1).values.status, 'Needs you');
     await runPlugin({ ...retry, work: ask('verify prod') });
-    await runPlugin({ ...retry, work: ask('verify prod') });
-    assert.equal(s.signInPosts(), posts + 2, 'held again after the guard’s second refusal');
+    assert.equal(s.signInPosts(), posts + 1, 'held again after that one refusal');
 
-    // Unticking it is a change too: one more try.
+    // Switching it off again is a change too: one more try.
     await runPlugin({ ...bad, work: ask('verify prod') });
-    assert.equal(s.signInPosts(), posts + 3);
+    assert.equal(s.signInPosts(), posts + 2);
   } finally {
     cleanup(ws);
     await s.close();
