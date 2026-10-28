@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { Status, findEntry, resolveOnSite, hostAllowed } from './entries.mjs';
 import { entryState, fingerprint, sweepHandoffs } from './state.mjs';
-export { guardState };
+export { guardState, reasonOf };
 import { verify, ensureSignedIn, sessionExpiry } from './verify.mjs';
 import { withEntryBrowser, pruneState } from './browser.mjs';
 
@@ -30,7 +30,7 @@ function statusCells(s) {
     status: s.status,
     lastCheck: s.lastCheckAt || '',
     sessionExpires: s.sessionExpires || '',
-    detail: s.reason || '',
+    detail: reasonOf(s),
   };
 }
 
@@ -53,6 +53,7 @@ function guardState(entry, state) {
     s.fingerprint = print;
     if (s.held) {
       s.held = false;
+      delete s.holdKind;
       s.passwordFailures = MaxPasswordFailures - 1;
     }
   }
@@ -64,6 +65,24 @@ function guardState(entry, state) {
 const SwitchTryAgain = 'switch its Try again setting (on or off, either way) and save, to let it try once more.';
 const TryAgainPassword = `Set a new password if it changed, or ${SwitchTryAgain}`;
 const TryAgain = `S${SwitchTryAgain.slice(1)}`;
+const Locked = 'to keep the account from being locked.';
+const Unfollowed = 'The plugin will not sign in again until the row changes.';
+
+// The words a held entry is reported in, built from the hold's kind each time it is reported, so an entry
+// held by an older plugin (whose stored reason carries the way-out words of its day) reads the current
+// words too (P17). The stored reason is cut at the sentence that ends the hold's cause and the current
+// way out is added: the password refusal ends "...from being locked.", any other hold "...until the row
+// changes.". A state.json from before holdKind was kept is read by those same words. Not held: the
+// stored reason as it is.
+function reasonOf(s) {
+  const reason = s.reason || '';
+  if (!s.held) return reason;
+  const kind = s.holdKind || (reason.includes(Locked) ? 'password' : 'hold');
+  const marker = kind === 'password' ? Locked : Unfollowed;
+  const at = reason.indexOf(marker);
+  const cause = at >= 0 ? reason.slice(0, at + marker.length) : `${reason.trimEnd()} ${marker}`.trimStart();
+  return `${cause} ${kind === 'password' ? TryAgainPassword : TryAgain}`;
+}
 
 // Folds one sign-in or verify outcome into the entry's state with the failure rules, the lockout guard
 // and the status event, and writes the row's status. Answers { changed, result }.
@@ -92,6 +111,7 @@ function fold(entry, state, result, ctx) {
     s.passwordFailures = (s.passwordFailures || 0) + 1;
     if (s.passwordFailures >= MaxPasswordFailures) {
       s.held = true;
+      s.holdKind = 'password';
       result.status = Status.needsYou;
       // No count in the words: after a change, one refusal holds it again.
       result.reason = `${entry.name} needs you: the site refused the password, so the plugin has stopped trying, to keep the account from being locked. ${TryAgainPassword}`;
@@ -99,6 +119,7 @@ function fold(entry, state, result, ctx) {
   }
   if (entry.method === 'password' && result.hold) {
     s.held = true;
+    s.holdKind = 'hold';
     result.reason = `${result.reason} The plugin will not sign in again until the row changes. ${TryAgain}`;
   }
 
@@ -113,7 +134,7 @@ function fold(entry, state, result, ctx) {
 // Runs one verify through the guard. Answers { changed, result }; a held entry is not tried.
 async function checkEntry(entry, state, ctx) {
   const s = guardState(entry, state);
-  if (s.held) return { changed: false, held: true, result: { status: s.status, reason: s.reason } };
+  if (s.held) return { changed: false, held: true, result: { status: s.status, reason: reasonOf(s) } };
   ctx.progress(`Checking ${entry.name}…`);
   const result = await verify(entry, ctx.browserRun);
   return fold(entry, state, result, ctx);
@@ -138,7 +159,7 @@ export async function cmdList(entries, state) {
 function usableRefusal(entry, state) {
   if (!entry.active) return `${entry.name} is inactive; turn it on in this member’s settings to use it.`;
   const s = guardState(entry, state);
-  if (s.held) return s.reason;
+  if (s.held) return reasonOf(s);
   if (s.status === Status.verified || entry.method === 'password') return null;
   return s.reason || `${entry.name} is ${s.status.toLowerCase()}.`;
 }
@@ -231,7 +252,7 @@ export async function cmdCheck(args, entries, state, ctx) {
       // by the signed-in browser. A sign-in here is confirmed and counted like any verify.
       ctx.progress(`Opening ${entry.name}…`);
       const outcome = await ensureSignedIn(page, entry, guard, !s.held);
-      if (outcome.held) return { refusal: s.reason };
+      if (outcome.held) return { refusal: reasonOf(s) };
       if (!outcome.ok) return { signInFailed: outcome };
       if (!outcome.already) {
         const held = await context.storageState();

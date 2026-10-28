@@ -223,6 +223,22 @@ A site must not be able to tell the plugin's browser from the person on their ow
   is redacted" above. So `enc=q7%2Fwz9` printed decoded as `q7/wz9`, and `?a=1%26mid%3Dk9x4z%26`,
   are redacted.
 
+### Recheck of 76996e3: a held entry's words are built when reported
+
+(Tester Ingrid's recheck of 76996e3, P17.)
+
+- **The way out is not stored (P17).** A held entry's reason used to be stored in `state.json` with
+  its way-out sentence and repeated as it was while held, so an entry held before an upgrade kept the
+  old words ("tick (or untick) its Try again box") in Needs you and Detail until the row changed. Now
+  the state keeps the hold's kind (`password`, or `hold` for an off-host page or a CAPTCHA after the
+  password), and the reported words are built from it each time: the stored reason is cut after the
+  sentence that ends the hold's cause ("…from being locked." or "…until the row changes.") and the
+  current way out is added - with "Set a new password if it changed" only for a password hold. A state
+  from before the kind was kept is read by those same sentences. On the first run after an upgrade a
+  held entry whose stored words differ has its Detail written once more; no event is published, since
+  the hold itself has not changed, and the board notice reads the same on every run after (P8). The
+  words still go through the run's redaction like any other output.
+
 ### Session handoff: the asking member's own workspace
 
 `session <name>` must hand a short-lived signed-in storage-state to the member that asked, readable

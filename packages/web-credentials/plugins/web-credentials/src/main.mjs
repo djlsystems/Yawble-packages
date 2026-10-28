@@ -5,7 +5,7 @@ import { makeOut } from './out.mjs';
 import { readEntries, secretValues, stateSecretValues, Status } from './entries.mjs';
 import { stateDir, loadState, saveState, entryState, sweepHandoffs } from './state.mjs';
 import { profileKey, sweepProfiles } from './profile.mjs';
-import { words, cmdList, cmdVerify, cmdSession, cmdCheck, statusCells } from './commands.mjs';
+import { words, cmdList, cmdVerify, cmdSession, cmdCheck, statusCells, reasonOf } from './commands.mjs';
 
 // The team's documents folder, where a check's screenshot goes, from where the platform keeps things
 // (never a fixed path): a site's files folder is <documents>/<team>/sites/<site>/files, and a member's
@@ -59,6 +59,16 @@ export async function run(request, out) {
       out.rowStatus(entry.name, statusCells(s));
     },
   };
+
+  // An entry held by an older plugin keeps its stored words until a run reports them: its Detail is
+  // written once more in the current way-out words (P17). No event - the hold has not changed.
+  for (const e of entries) {
+    const s = state.entries[e.key];
+    if (s?.held && s.reason !== reasonOf(s)) {
+      s.reason = reasonOf(s);
+      out.rowStatus(e.name, statusCells(s));
+    }
+  }
 
   const work = Array.isArray(request.work) ? request.work : [];
   const outputs = [];
@@ -118,8 +128,9 @@ export async function run(request, out) {
   if (needy.length > 0) {
     const lines = needy.map((e) => {
       const s = entryState(state, e);
-      const how = e.method === 'interactive' && !/Sign in link/.test(s.reason) ? ' Open its Sign in link.' : '';
-      return `• ${e.name}: ${s.status}. ${s.reason}${how}`;
+      const reason = reasonOf(s);
+      const how = e.method === 'interactive' && !/Sign in link/.test(reason) ? ' Open its Sign in link.' : '';
+      return `• ${e.name}: ${s.status}. ${reason}${how}`;
     });
     out.needsDecision(`${needy.length} website sign-in${needy.length === 1 ? ' needs' : 's need'} you:\n${lines.join('\n')}`);
   }
