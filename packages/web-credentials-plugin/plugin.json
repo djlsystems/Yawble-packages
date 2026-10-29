@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "web-credentials",
+  "id": "web-credentials-plugin",
   "name": "Web Credentials",
   "description": "Keeps a team's website sign-ins in one table a person fills in - password (with an optional two-step code), token or interactive sign-in - checks each active entry on its own schedule, and tells the team when one needs the person. A team member asks it for a short-lived browser session for one entry, or has it open a page signed in and report what it shows with a screenshot; no password, token or session ever leaves it in any output. It signs in with Google Chrome, run headed in one lasting browser profile per entry with the person's languages and time zone, typing at a person's pace; Playwright ships inside the plugin and Chrome is fetched from Google into its own folder, nothing added to the image. It never gets around a CAPTCHA or a device approval.",
   "version": "1.0.0",
@@ -76,5 +76,5 @@
       }
     ]
   },
-  "skills": ["skills/plugin-web-credentials.md"]
+  "skills": ["skills/plugin-web-credentials-plugin.md"]
 }

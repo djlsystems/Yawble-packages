@@ -10,7 +10,7 @@ This team keeps one team's website sign-ins in the plugin member **Credentials**
 a schedule. A person fills in the entries; the team reads their status, verifies them, gets a
 signed-in browser session for one, or has the plugin open a page signed in.
 
-Load `plugin-web-credentials` before you tell Credentials anything. Send it one command per
+Load `plugin-web-credentials-plugin` before you tell Credentials anything. Send it one command per
 instruction.
 
 ## What the person sets up (not the team)

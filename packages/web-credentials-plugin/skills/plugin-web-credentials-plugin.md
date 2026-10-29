@@ -1,5 +1,5 @@
 ---
-name: plugin-web-credentials
+name: plugin-web-credentials-plugin
 description: Use when you need a team's website sign-in through the Web Credentials plugin member - to list its entries and their status, verify one now, get a short-lived signed-in browser session for an entry, or have it open a page signed in and report what it shows. Covers its commands, its scheduled checks, its statuses and what its refusals mean.
 roles: manager member
 ---

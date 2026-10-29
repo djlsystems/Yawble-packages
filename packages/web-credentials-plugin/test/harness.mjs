@@ -35,7 +35,7 @@ export async function runPlugin({ entries, secrets = {}, work, workingDirectory,
   const out = makeOut((line) => lines.push(line));
   const request = {
     protocol: 'harness.member/1',
-    plugin: { id: 'web-credentials', version: '1.0.0' },
+    plugin: { id: 'web-credentials-plugin', version: '1.0.0' },
     member: { id: 'T/Creds', team: 'T', name: 'Creds' },
     workingDirectory,
     config: { entries, ...settings },

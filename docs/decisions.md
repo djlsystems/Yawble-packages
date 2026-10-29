@@ -266,14 +266,12 @@ fingerprint that notices an edited row is a salted scrypt digest, and the handof
 and times only. Screenshots are page images saved to the team's documents; nothing credential-like
 is drawn into them because the page is the site's own signed-in page.
 
-### Packaged as one solution that embeds the plugin
+### A plugin package of its own, shipped by the solution
 
-The plugin's id is `web-credentials` (fixed by the spec and by the platform's interactive sign-in
-page, which reads this table's columns). The repository's usual shape - a plugin in its own
-`packages/<id>-plugin/` package, shipped by a separate solution - would give the plugin and the
-solution different ids. Here there is exactly one solution that ships this plugin, and the spec's
-deliverable is a single `web-credentials-1.0.0` package folder. So the plugin's source lives
-directly under the solution at `packages/web-credentials/plugins/web-credentials/` (its own
-`plugin.json` and `build.sh`), and the solution's id is `web-credentials`. Neither `pkgtool` nor the
-Host enforces the `-plugin` suffix; it is a repository convention, set aside here for this one
-package with the reason recorded.
+The plugin is `web-credentials-plugin`, in its own package `packages/web-credentials-plugin/`, and
+the solution `web-credentials` ships it through `plugins/web-credentials-plugin/build.sh`, as the
+other solutions ship theirs. The main use is hiring the plugin onto a team a person already has, and
+the Marketplace keys packages by id, so a plugin that shared the solution's id could be listed only
+inside the solution. The platform's interactive sign-in page reads the member's table, never the
+plugin's id. The solution moved to 1.1.0 with the plugin's new id; an update of a team installed
+from 1.0.0 moves its member onto the renamed plugin and keeps its entries and secrets.

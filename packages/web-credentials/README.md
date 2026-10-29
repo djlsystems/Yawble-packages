@@ -16,10 +16,11 @@ on; Web Credentials is for signing in to ordinary websites to check your own wor
 
 - `solution.json` - a small team (a Manager and the plugin member **Credentials**) with an hourly
   check. Installing it makes a ready-to-use team.
-- `plugins/web-credentials/` - the plugin itself (built into the zip). This is what you install into
-  a team you already have.
+- `plugins/web-credentials-plugin/` - the plugin, built into the zip from its own package
+  `packages/web-credentials-plugin`, which the Marketplace also lists on its own as
+  `web-credentials-plugin`. That plugin package is what you install for a team you already have.
 - `skills/web-credentials-playbook.md` - the team playbook for Managers and testers.
-- The plugin's own skill, `plugin-web-credentials`, ships inside the plugin.
+- The plugin's own skill, `plugin-web-credentials-plugin`, ships inside the plugin.
 
 The package ships **no entries, URLs or values**. A person adds entries in Member settings after the
 plugin is hired.
@@ -27,14 +28,11 @@ plugin is hired.
 ## Add it to a team you already have (the main use)
 
 The person's goal is usually to put this plugin on a team they already run (for example an
-engineering team whose tester signs in to production). The package format installs a **new** team;
-it cannot, on its own, hire a plugin into a pre-existing team or add a trigger there (see
-[Gaps](#gaps)). So for an existing team, install the plugin and hire it, in these steps:
+engineering team whose tester signs in to production). Use the plugin package, not this solution:
 
-1. **Install the plugin for the instance.** Build the package (`scripts/build.sh`), or get it from
-   the Marketplace, so you have the folder `web-credentials-1.0.0/`. Open **Admin → Plugins →
-   Install from a folder** and choose `web-credentials-1.0.0/plugins/web-credentials` (the folder
-   holding `plugin.json`). This installs the plugin once for the instance; it hires nothing yet.
+1. **Install the plugin for the instance.** In **Marketplace → Browse**, find **Web Credentials**
+   of kind plugin (`web-credentials-plugin`) and choose **Get**, then install it. This installs the
+   plugin once for the instance; it hires nothing yet.
 2. **Hire it onto your team.** On that team, **Add member → Web Credentials**. The member appears
    with an empty **Entries** table. No settings are required at hire.
 3. **Add the hourly check.** On the team's **Triggers** dialog, add a **schedule** trigger on the
@@ -47,7 +45,8 @@ it cannot, on its own, hire a plugin into a pre-existing team or add a trigger t
 
 ## Or install the whole solution
 
-Put `web-credentials-1.0.0/` in your Documents and install it from **Marketplace → Advanced →
+Choose **Get** on the **Web Credentials** solution in **Marketplace → Browse**, or put
+`web-credentials-1.1.0/` in your Documents and install it from **Marketplace → Advanced →
 Install from a folder** (or **Upload a package (.zip)**). It makes a **Web Credentials** team with
 the plugin member and the hourly check already set up. Then add your entries in Member settings as
 in step 4 above. Nothing is asked for at install.
@@ -94,10 +93,10 @@ card ran last.
 
 ## Gaps
 
-- **Hiring into an existing team is manual.** The solution install makes a new team, and an update
-  only updates a team the package itself created. There is no package action that adds this plugin
-  as a member of a team you already have or adds its trigger there, so that is the four manual steps
-  above. This is a limit of the package format, recorded rather than worked around.
+- **Adding it to an existing team takes the plugin package and a few clicks.** The solution install
+  makes a new team, and an update only updates a team the package itself created. For a team you
+  already have, install the plugin package `web-credentials-plugin` and hire it, as above; its
+  hourly check is a trigger you add on the team.
 - **The first run downloads Google Chrome (~145 MB).** The browser is not in the zip: the plugin
   fetches Google's own stable Chrome into its folder on first use (checksum-checked) and keeps it
   current, unless the platform's copy (`/data/google-chrome`) is already current. A machine that
@@ -115,7 +114,7 @@ scripts/check.sh                 # build, tests, catalog and the real-person sca
 The plugin's own unit and integration tests (Node) run from the plugin folder:
 
 ```sh
-cd packages/web-credentials/plugins/web-credentials
+cd packages/web-credentials-plugin
 npm ci
 npm test     # fetches Google Chrome once into $TMPDIR/web-credentials-chrome (WEB_CREDENTIALS_CHROME_ROOT)
 ```

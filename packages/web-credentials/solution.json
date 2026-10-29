@@ -2,7 +2,7 @@
   "format": 1,
   "id": "web-credentials",
   "name": "Web Credentials",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A place to keep a team's website sign-ins and know when one needs you. The Web Credentials plugin member holds a table of site logins a person fills in - password (with an optional two-step code), token, or an interactive sign-in the person does once in a browser the platform runs - checks each active one on its own schedule, and shows an entry on the board under Needs you when its sign-in stops working.\n\nA team member asks the plugin for a short-lived browser session for one entry, so its own browser starts already signed in, or has the plugin open a page signed in and report what it shows with a screenshot. No password, token or saved session is ever shown, returned, logged or written to a document. It signs in with Google Chrome run as the person's own would be - headed, one lasting profile per entry, the person's languages and time zone, typing at a person's pace. Playwright ships inside the plugin and Chrome is fetched from Google into the plugin's own folder on first use; nothing is added to the image, and the plugin never tries to get around a CAPTCHA or a device approval.\n\nInstall makes a small team with the plugin member and an hourly check. To use it on a team you already have, hire the plugin into that team instead - see the package's README.",
 
   "team": {
@@ -14,11 +14,11 @@
     {
       "name": "Manager",
       "role": "manager",
-      "instructions": "You run the person's website sign-ins through the plugin member Credentials. Before you tell it anything, load the team skill `web-credentials-playbook` and the plugin skill `plugin-web-credentials` with skills_get and follow them. Tell Credentials exactly one command per instruction. When its hourly check hands back or fails, report its words to the person exactly as written - which entry needs them and what to do - and never suggest a way around a refusal. Never ask anyone to add an entry, change a secret cell or turn an entry on; those are the person's to set in Member settings. Never ask the person for a password, token or session, and never print or store one."
+      "instructions": "You run the person's website sign-ins through the plugin member Credentials. Before you tell it anything, load the team skill `web-credentials-playbook` and the plugin skill `plugin-web-credentials-plugin` with skills_get and follow them. Tell Credentials exactly one command per instruction. When its hourly check hands back or fails, report its words to the person exactly as written - which entry needs them and what to do - and never suggest a way around a refusal. Never ask anyone to add an entry, change a secret cell or turn an entry on; those are the person's to set in Member settings. Never ask the person for a password, token or session, and never print or store one."
     },
     {
       "name": "Credentials",
-      "pluginId": "web-credentials"
+      "pluginId": "web-credentials-plugin"
     }
   ],
 
