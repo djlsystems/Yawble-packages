@@ -167,6 +167,36 @@ test('identityFor: Language and Time zone empty, missing or unusable (an older i
   assert.deepEqual([gb.locale, gb.languages, gb.timezoneId], ['en-GB', ['en-GB', 'en'], 'Europe/London']);
 });
 
+test('identityFor: an older time zone name or a language tag in another case (an older install) is that zone or language, not the default', () => {
+  // The same place under each of its names: Node answers ICU's (CLDR) name, Chrome takes either.
+  for (const [given, place] of [
+    ['Asia/Calcutta', ['Asia/Kolkata', 'Asia/Calcutta']],
+    ['Asia/Kolkata', ['Asia/Kolkata', 'Asia/Calcutta']],
+    ['Europe/Kiev', ['Europe/Kyiv', 'Europe/Kiev']],
+    ['Asia/Saigon', ['Asia/Ho_Chi_Minh', 'Asia/Saigon']],
+    ['America/Buenos_Aires', ['America/Argentina/Buenos_Aires', 'America/Buenos_Aires']],
+    ['Asia/Katmandu', ['Asia/Kathmandu', 'Asia/Katmandu']],
+    ['US/Eastern', ['America/New_York']],
+    ['asia/calcutta', ['Asia/Kolkata', 'Asia/Calcutta']],
+    ['Etc/UTC', ['UTC']],
+    ['GMT', ['UTC']],
+  ]) {
+    const id = identityFor({ session: null, settings: { timeZone: given } });
+    assert.ok(place.includes(id.timezoneId), `${given} ran as ${id.timezoneId}`);
+  }
+  for (const zone of ['Asia/Calcutta', 'Europe/Kiev', 'US/Eastern']) {
+    const id = identityFor({ session: null, settings: { timeZone: zone } });
+    assert.notEqual(id.timezoneId, 'UTC', zone);
+    assert.equal(new Date(Date.UTC(2026, 0, 1)).toLocaleString('en-US', { timeZone: id.timezoneId }),
+      new Date(Date.UTC(2026, 0, 1)).toLocaleString('en-US', { timeZone: zone }), zone);
+  }
+
+  const gb = identityFor({ session: null, settings: { languages: ['en-gb', 'FR-fr', 'EN-GB'] } });
+  assert.deepEqual([gb.locale, gb.languages], ['en-GB', ['en-GB', 'en', 'fr-FR', 'fr']]);
+  const bad = identityFor({ session: null, settings: { languages: ['xx-INVALID!'], timeZone: 'Mars/Olympus' } });
+  assert.deepEqual([bad.locale, bad.languages, bad.timezoneId], ['en-US', ['en-US', 'en'], 'UTC']);
+});
+
 test('withBaseLanguages adds a regional language its base after the last of that base, unless listed', () => {
   assert.deepEqual(withBaseLanguages(['en-US']), ['en-US', 'en']);
   assert.deepEqual(withBaseLanguages(['en-US', 'en-GB', 'de-DE']), ['en-US', 'en-GB', 'en', 'de-DE', 'de']);

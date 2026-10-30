@@ -65,20 +65,26 @@ export function sessionDigest(salt, text) {
 
 const LanguageTag = /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/;
 
-function wellFormed(tag) {
+// A well-formed tag in its canonical case (en-gb -> en-GB), or null.
+function canonicalTag(tag) {
   try {
-    return Intl.getCanonicalLocales(tag).length === 1;
+    const canonical = Intl.getCanonicalLocales(tag);
+    return canonical.length === 1 ? canonical[0] : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
+// The settings' (or a session's) languages: each well-formed tag once, in its canonical case, so an
+// older install's en-gb is en-GB and not dropped. Time zones need no such step: Intl takes an older
+// name (Asia/Calcutta, US/Eastern) or another case as the zone it stands for (timeZoneFrom).
 export function languagesFrom(value) {
   const list = Array.isArray(value) ? value : String(value || '').split(/[\s,;]+/);
   const kept = [];
   for (const l of list) {
-    const tag = String(l).trim();
-    if (tag.length <= 35 && LanguageTag.test(tag) && wellFormed(tag) && !kept.some((k) => k.toLowerCase() === tag.toLowerCase())) kept.push(tag);
+    const given = String(l).trim();
+    const tag = given.length <= 35 && LanguageTag.test(given) ? canonicalTag(given) : null;
+    if (tag && !kept.some((k) => k.toLowerCase() === tag.toLowerCase())) kept.push(tag);
   }
   return kept.slice(0, 10);
 }
