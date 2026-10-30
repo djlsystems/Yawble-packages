@@ -26,6 +26,20 @@ function text(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+const bareHost =
+  /^(?:(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?\.)+(?:\p{L}{2,63}|xn--[A-Za-z0-9-]{1,59})|localhost|(?:[0-9]{1,3}\.){3}[0-9]{1,3})\.?(?::[0-9]{1,5})?$/iu;
+
+// A Site URL, Sign-in URL or check URL written as a bare address (mysite.com, www.mysite.com/login)
+// with https:// before it; anything else exactly as written - any scheme (http stays http,
+// javascript: stays and is refused as before), a path (/login, dashboard) and text that is not an
+// address. Yawble's "format": "url" does the same on a save; this covers a row written before it.
+export function withScheme(value) {
+  const raw = text(value);
+  if (!raw) return raw;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw) && !/^[^:/?#]+:[0-9]+(?:[/?#]|$)/.test(raw)) return raw;
+  return bareHost.test(raw.split(/[/?#]/)[0]) ? `https://${raw}` : raw;
+}
+
 // The hosts an entry may use: its Site URL's, then each in `hosts` (names or URLs, separated by
 // commas or spaces), lower case, without port. Answers [] for a Site URL that is not http(s).
 export function entryHosts(siteUrl, hosts) {
@@ -102,15 +116,15 @@ export function readEntries(request) {
     }
     const verifyEvery = Number.isFinite(row.verifyEvery) ? row.verifyEvery : 24;
     const session = readSession(secrets.session);
-    const siteUrl = text(row.siteUrl);
+    const siteUrl = withScheme(row.siteUrl);
     out.push({
       name,
       key: name.toLowerCase(),
       siteUrl,
       hosts: entryHosts(siteUrl, row.hosts),
       method: Methods.includes(row.method) ? row.method : '',
-      signInUrl: text(row.signInUrl),
-      checkUrl: text(row.checkUrl),
+      signInUrl: withScheme(row.signInUrl),
+      checkUrl: withScheme(row.checkUrl),
       checkText: text(row.checkText),
       username: text(row.username),
       tokenHeader: text(row.tokenHeader) || 'Authorization',
