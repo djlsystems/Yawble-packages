@@ -14,15 +14,21 @@
   "config": {
     "languages": {
       "type": "list",
+      "options": "locale",
+      "default": ["en-US"],
+      "advanced": true,
       "setBy": "person",
-      "label": "Languages",
-      "description": "The languages the plugin's browser says it reads, most preferred first, such as en-GB then en. Use your own browser's, so a site sees the same. An entry signed in with its Sign in link uses the languages of the browser that signed in. Default: en-US, en."
+      "label": "Language",
+      "description": "The language the plugin's browser says it reads, such as English (United Kingdom); add more, most preferred first. Use your own browser's, so a site sees the same. An entry signed in with its Sign in link uses the languages of the browser that signed in. Default: English (United States), en-US."
     },
     "timeZone": {
       "type": "string",
+      "options": "timeZone",
+      "default": "UTC",
+      "advanced": true,
       "setBy": "person",
       "label": "Time zone",
-      "description": "Your time zone, such as Europe/London, for the plugin's browser. An entry signed in with its Sign in link uses the time zone of the browser that signed in. Default: the machine's."
+      "description": "Your time zone, such as Europe/London, for the plugin's browser. An entry signed in with its Sign in link uses the time zone of the browser that signed in. Default: UTC."
     },
     "entries": {
       "type": "table",

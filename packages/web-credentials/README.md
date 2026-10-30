@@ -42,8 +42,10 @@ it cannot, on its own, hire a plugin into a pre-existing team or add a trigger t
    if it hands back or fails**. (This is the same trigger the solution's team gets automatically.)
 4. **Add your sign-ins.** Open the member's **Settings** and add one entry per site login. For an
    `interactive` entry, use its **Sign in** link and sign in once in the browser the platform opens.
-   Set **Languages** and **Time zone** to your own browser's, so the plugin's browser presents the
-   same to a site (an entry you signed in to with **Sign in** takes them from that browser instead).
+   Under **Advanced**, set **Language** and **Time zone** to your own browser's (both are lists to
+   choose from; left alone they are English (United States) and UTC), so the plugin's browser
+   presents the same to a site (an entry you signed in to with **Sign in** takes them from that
+   browser instead).
 
 ## Or install the whole solution
 
@@ -129,4 +131,5 @@ of the typing); no real account is used.
 **How the browser looks to a site.** Google Chrome stable, headed on its own virtual screen, with
 Chrome's own sandbox on, none of Playwright's automation switches, one lasting profile per entry, the
 person's languages and time zone (from the sign-in page's saved session, else the plugin's
-**Languages** and **Time zone** settings), and typing and clicking at a person's pace.
+**Language** and **Time zone** settings, en-US and UTC when they are not set), and typing and
+clicking at a person's pace.

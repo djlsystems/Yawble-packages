@@ -8,7 +8,8 @@
 //
 // The identity is the saved session's (a v2 envelope from the platform's sign-in page) when there is
 // one, so the plugin's browser is the browser the person signed in with; otherwise the person's
-// languages and time zone from the plugin's settings (or en-US and the machine's zone), on an ordinary
+// languages and time zone from the plugin's settings (en-US and UTC when they are empty, missing or
+// unusable), on an ordinary
 // 1920x1080 desktop screen. Once chosen it is kept for the row.
 import { mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, readdirSync, readlinkSync, existsSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
@@ -64,15 +65,41 @@ export function sessionDigest(salt, text) {
 
 const LanguageTag = /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/;
 
+function wellFormed(tag) {
+  try {
+    return Intl.getCanonicalLocales(tag).length === 1;
+  } catch {
+    return false;
+  }
+}
+
 export function languagesFrom(value) {
   const list = Array.isArray(value) ? value : String(value || '').split(/[\s,;]+/);
   const kept = [];
   for (const l of list) {
     const tag = String(l).trim();
-    if (tag.length <= 35 && LanguageTag.test(tag) && !kept.some((k) => k.toLowerCase() === tag.toLowerCase())) kept.push(tag);
+    if (tag.length <= 35 && LanguageTag.test(tag) && wellFormed(tag) && !kept.some((k) => k.toLowerCase() === tag.toLowerCase())) kept.push(tag);
   }
   return kept.slice(0, 10);
 }
+
+// The settings' languages as Chrome's own preference holds them for a person who chose them: each
+// language with a region followed by its base language when the list lacks it (en-US -> en-US, en),
+// as Chrome's default for its own language is.
+export function withBaseLanguages(languages) {
+  const baseOf = (tag) => tag.split('-')[0].toLowerCase();
+  const has = (tag) => languages.some((l) => l.toLowerCase() === tag);
+  const out = [];
+  languages.forEach((tag, i) => {
+    out.push(tag);
+    const base = baseOf(tag);
+    if (!has(base) && !languages.slice(i + 1).some((l) => baseOf(l) === base)) out.push(base);
+  });
+  return out.slice(0, 10);
+}
+
+export const DefaultLanguages = ['en-US', 'en'];
+export const DefaultTimeZone = 'UTC';
 
 export function timeZoneFrom(value) {
   const zone = String(value || '').trim();
@@ -90,8 +117,9 @@ const size = (v, min, max) => (Number.isInteger(v) && v >= min && v <= max ? v :
 // `settings` the plugin's own { languages, timeZone }, `kept` the row's identity from an earlier run.
 export function identityFor({ session, settings = {}, kept }) {
   const from = session?.identity ?? kept ?? {};
-  const languages = languagesFrom(from.languages).length ? languagesFrom(from.languages) : languagesFrom(settings.languages).length ? languagesFrom(settings.languages) : ['en-US', 'en'];
-  const timezoneId = timeZoneFrom(from.timezoneId) || timeZoneFrom(settings.timeZone) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const chosen = languagesFrom(settings.languages);
+  const languages = languagesFrom(from.languages).length ? languagesFrom(from.languages) : chosen.length ? withBaseLanguages(chosen) : DefaultLanguages;
+  const timezoneId = timeZoneFrom(from.timezoneId) || timeZoneFrom(settings.timeZone) || DefaultTimeZone;
   const screen = {
     width: size(from.screen?.width, 800, 7680) ?? DefaultScreen.width,
     height: size(from.screen?.height, 600, 4320) ?? DefaultScreen.height,

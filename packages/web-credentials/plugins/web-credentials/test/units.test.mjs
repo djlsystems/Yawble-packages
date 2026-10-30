@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { totp } from '../src/totp.mjs';
 import { entryHosts, hostAllowed, resolveOnSite, readEntries, secretValues, readSession, stateSecretValues } from '../src/entries.mjs';
-import { identityFor } from '../src/profile.mjs';
+import { identityFor, withBaseLanguages } from '../src/profile.mjs';
+import { readFileSync } from 'node:fs';
 import { choose, compareVersions } from '../src/chrome.mjs';
 import { pruneState, chromeArgs } from '../src/browser.mjs';
 import { makeOut } from '../src/out.mjs';
@@ -151,7 +152,54 @@ test('identityFor takes the session identity, else the settings, else en-US; siz
   assert.deepEqual([b.languages, b.timezoneId, b.viewport], [['de-DE', 'de'], 'Europe/Berlin', null]);
   const c = identityFor({ session: { identity: { timezoneId: 'Not/AZone', screen: { width: 5, height: 5 }, languages: ['<script>'] } } });
   assert.deepEqual([c.languages, c.screen], [['en-US', 'en'], { width: 1920, height: 1080 }]);
-  assert.notEqual(c.timezoneId, 'Not/AZone');
+  assert.equal(c.timezoneId, 'UTC');
+});
+
+test('identityFor: Language and Time zone empty, missing or unusable (an older install) are en-US and UTC, never the machine zone', () => {
+  for (const settings of [undefined, {}, { languages: [], timeZone: '' }, { languages: null, timeZone: null }, { languages: ['<x>', 'en_US!'], timeZone: 'Mars/Olympus' }]) {
+    const id = identityFor({ session: null, settings });
+    assert.deepEqual([id.locale, id.languages, id.timezoneId], ['en-US', ['en-US', 'en'], 'UTC'], JSON.stringify(settings));
+  }
+  // The manifest's defaults, as the Host sends them to a member that set nothing.
+  const d = identityFor({ session: null, settings: { languages: ['en-US'], timeZone: 'UTC' } });
+  assert.deepEqual([d.locale, d.languages, d.timezoneId], ['en-US', ['en-US', 'en'], 'UTC']);
+  const gb = identityFor({ session: null, settings: { languages: ['en-GB'], timeZone: 'Europe/London' } });
+  assert.deepEqual([gb.locale, gb.languages, gb.timezoneId], ['en-GB', ['en-GB', 'en'], 'Europe/London']);
+});
+
+test('withBaseLanguages adds a regional language its base after the last of that base, unless listed', () => {
+  assert.deepEqual(withBaseLanguages(['en-US']), ['en-US', 'en']);
+  assert.deepEqual(withBaseLanguages(['en-US', 'en-GB', 'de-DE']), ['en-US', 'en-GB', 'en', 'de-DE', 'de']);
+  assert.deepEqual(withBaseLanguages(['en-GB', 'en', 'fr']), ['en-GB', 'en', 'fr']);
+  assert.deepEqual(withBaseLanguages(['zh-TW']), ['zh-TW', 'zh']);
+});
+
+test('the manifest: Language and Time zone are optional, under Advanced, default en-US and UTC, and choose from the Host\'s locale and time zone sets', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../plugin.json', import.meta.url), 'utf8'));
+  const { languages, timeZone } = manifest.config;
+
+  assert.equal(languages.type, 'list');
+  assert.equal(languages.options, 'locale');
+  assert.deepEqual(languages.default, ['en-US']);
+  assert.equal(languages.label, 'Language');
+  assert.equal(timeZone.type, 'string');
+  assert.equal(timeZone.options, 'timeZone');
+  assert.equal(timeZone.default, 'UTC');
+  assert.equal(timeZone.label, 'Time zone');
+  for (const field of [languages, timeZone]) {
+    assert.notEqual(field.required, true);
+    assert.equal(field.advanced, true);
+    assert.equal(field.enum, undefined);
+    assert.equal(field.setBy, 'person');
+  }
+  // The defaults are a valid locale and zone, and the descriptions say them.
+  assert.deepEqual(Intl.getCanonicalLocales(languages.default), ['en-US']);
+  assert.equal(new Intl.DateTimeFormat('en-US', { timeZone: timeZone.default }).resolvedOptions().timeZone, 'UTC');
+  assert.match(languages.description, /Default: English \(United States\), en-US\.$/);
+  assert.match(timeZone.description, /Default: UTC\.$/);
+  assert.doesNotMatch(timeZone.description, /machine/);
+  // Nothing else in the plugin's settings is required.
+  assert.deepEqual(Object.entries(manifest.config).filter(([, f]) => f.required).map(([n]) => n), []);
 });
 
 test('chrome: choose takes the session version, else its major, else the newest', () => {
