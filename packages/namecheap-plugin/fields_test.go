@@ -8,8 +8,8 @@ import (
 )
 
 // Every setting and secret has a short label for the settings screen; a secret that names an
-// account or a key rather than granting access is shown (masked false), and a secret the plugin
-// cannot work without is required.
+// account or a key rather than granting access is shown (masked false), and every secret is one
+// moved to the namecheap connection, so none is required of the member itself.
 func TestEveryFieldHasItsLabelAndEverySecretItsMasking(t *testing.T) {
 	raw, err := os.ReadFile("plugin.json")
 	if err != nil {
@@ -38,8 +38,8 @@ func TestEveryFieldHasItsLabelAndEverySecretItsMasking(t *testing.T) {
 		masked, required bool
 	}
 	secrets := map[string]secret{
-		"apiUser": {"API user", false, true},
-		"apiKey":  {"API key", true, true},
+		"apiUser": {"API user", false, false},
+		"apiKey":  {"API key", true, false},
 	}
 	if len(m.Config) != len(settings) || len(m.Secrets) != len(secrets) {
 		t.Fatalf("%d settings and %d secrets; the labels cover %d and %d", len(m.Config), len(m.Secrets), len(settings), len(secrets))

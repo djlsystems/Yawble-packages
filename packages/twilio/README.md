@@ -1,15 +1,18 @@
-# Twilio SMS/MMS 1.6.1
+# Twilio SMS/MMS 1.7.0
 
 A team that texts through your Twilio account. The **Texting Assistant** guides you through
 Twilio setup, writes texts for you and sends them through the **twilio** plugin member, and tells
 you about replies, opt-outs and failed texts.
 
-## Install asks for one thing, and offers a second
+## Install asks for one thing, and offers two more
 
 Your **cell phone number** (10 US digits or `+15551234567`). It goes on `sendAllowlist`, the only
 number twilio may text until you add others. Everything else starts at a safe default: **dry run**
 (nothing is sent), your cell only, US only, the sender found from your Twilio account, a poll every
 5 minutes. Turning on real sending is one change: `mode` to `send` on the solution's panel.
+
+It also offers **your Twilio account**: an API key connection with the Twilio preset, bound to
+twilio's `twilio` slot (see Set up below). Leave it empty if you have no key yet.
 
 It also offers **messagePrefix**: your business name as it starts each text (`Acme Plumbing: `),
 the name your campaign registered. It can be left empty and set later; `check` reminds you.
@@ -98,18 +101,13 @@ number with an answer meant for the owner.
 ## Set up: talk to the Texting Assistant
 
 Say "set up Twilio" (or "what's next"). It goes one step at a time, links to the right Twilio
-Console page and runs `check` after each step. The only manual step is the three secrets: the keys
-bound to twilio's `accountSid`, `apiKeySid` and `apiKeySecret` settings. A person sets them in the
-twilio member's settings on the screen, or the operator runs `yawble secret set <KEY>` for each on
-the machine that runs the platform; each command asks for the value and hides it. This solution
-binds the default keys:
+Console page and runs `check` after each step. The only manual step is the Twilio credential: an
+API key connection with the Twilio preset (Account SID, API key SID and the secret of a Restricted
+API key from https://console.twilio.com/us1/account/keys-credentials/api-keys), which a person adds
+in Team settings -> Connections and binds to twilio's `twilio` slot. The install offers the slot
+too; it may be left empty until the key exists.
 
-```
-yawble secret set TWILIO_ACCOUNT_SID      # value: <AC... Account SID>   from https://console.twilio.com/
-yawble secret set TWILIO_API_KEY_SID      # value: <SK... key SID>       from a Restricted API key:
-yawble secret set TWILIO_API_KEY_SECRET   # value: <the key's secret>    https://console.twilio.com/us1/account/keys-credentials/api-keys
-yawble up
-```
+The Account SID is on the Console home page: https://console.twilio.com/
 
 Twilio has two Consoles. The links above are the legacy Console's. In the new Twilio Console:
 
@@ -134,8 +132,8 @@ The key's secret is shown only once, when the key is created; if it is lost, mak
 
 **Open** on the solution's tile shows the setup checklist (Done / Next / Waiting, with Console
 links), recent texts, and the consented-recipients list where only you add and activate people.
-The first poll runs at install, so the checklist fills straight away. Until the three secrets are
-set, the 5-minute poll answers "Poll skipped: Twilio is not set up: accountSid has no value on this
+The first poll runs at install, so the checklist fills straight away. Until the Twilio connection is
+bound, the 5-minute poll answers "Poll skipped: Twilio is not set up: accountSid has no value on this
 platform; …" quietly and wakes nobody.
 
 ## The last setup step: the live test
@@ -144,6 +142,16 @@ With your real Twilio account, after setup: `check` shows every step done; one r
 your cell and the next poll reports it `delivered`; your reply appears as a received text; and
 `STOP` from your phone is reported as an opt-out (text `START` afterwards). The Texting Assistant
 walks you through it.
+
+## What changed in 1.7.0
+
+- twilio is `twilio-plugin` 3.0.0: the Twilio credential is an API key connection (Twilio preset)
+  bound to twilio's `twilio` slot, set in Team settings -> Connections, and twilio binds no secret
+  keys any more. The install offers the slot.
+  A team that has this package installed and updates to this version: twilio's own Account SID,
+  API key SID and API key secret are carried over into a Twilio connection, assigned to the team
+  and bound to the slot, without anyone typing them again. A value set only in the Host's
+  environment is not carried over: make the connection and bind it.
 
 ## What changed in 1.6.1
 

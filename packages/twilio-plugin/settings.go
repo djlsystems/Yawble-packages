@@ -52,7 +52,10 @@ type settings struct {
 	OwnerKeywords            []string // lower case
 }
 
+// secrets is the Twilio credential, read from the connection bound to slot; Bound says a
+// connection is bound there at all.
 type secrets struct {
+	Bound                               bool
 	AccountSid, APIKeySid, APIKeySecret string
 }
 

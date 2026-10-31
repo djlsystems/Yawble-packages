@@ -3,7 +3,7 @@
   "id": "stripe-plugin",
   "name": "Stripe",
   "description": "Sets up Stripe products, one-time prices and webhook endpoints with a restricted key, and reads checkouts, payments, customers and events. Webhook signing secrets go straight into an Azure Key Vault, never into any output. Dry run by default; never moves money.",
-  "version": "2.0.1",
+  "version": "3.0.0",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/stripe",
@@ -46,11 +46,16 @@
   "secrets": {
     "apiKey": {
       "label": "Restricted API key",
-      "description": "A Stripe restricted key (rk_test_... or rk_live_...). A secret key (sk_...) is refused. Make it in the Stripe Dashboard under Developers, API keys, Create restricted key, with the permissions the package README lists under \"The restricted key's permissions\".",
-      "required": true
+      "description": "Moved: from 3.0.0 the restricted key is held by the API-key connection bound to the stripe slot, set in Team settings -> Connections. Declared only so an update carries an existing value over into that connection.",
+      "movedTo": "stripe"
     }
   },
   "connections": {
+    "stripe": {
+      "description": "The Stripe account's restricted key (rk_test_... or rk_live_...): an API-key connection with the Stripe preset, added and assigned to this team in Team settings -> Connections. A secret key (sk_...) is refused. Make the key with the permissions the package README lists under \"The restricted key's permissions\".",
+      "providers": ["apikey"],
+      "required": true
+    },
     "microsoft": {
       "description": "Optional: a Microsoft account with the Contributor or Key Vault Contributor role on the Key Vaults in keyVaults. Used for Azure management only, to write secrets to the Key Vaults in keyVaults.",
       "providers": ["microsoft"],

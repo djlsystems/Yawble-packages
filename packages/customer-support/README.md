@@ -12,7 +12,7 @@ counts and open inquiries back within a minute.
 | `sites/support/` | The team's page: running counts, the last summary, open and closed inquiries. |
 | `sites/mail/`, `sites/twilio/` | The pages the mail and twilio plugins keep their state on, as the Mail and Twilio packages ship them. |
 | `plugins/mail-plugin/build.sh` | Builds the mail-plugin plugin 3.0.1 from its plugin package, `packages/mail-plugin`. |
-| `plugins/twilio-plugin/build.sh` | Builds the twilio-plugin plugin 2.0.1 from its plugin package, `packages/twilio-plugin`. |
+| `plugins/twilio-plugin/build.sh` | Builds the twilio-plugin plugin 3.0.0 from its plugin package, `packages/twilio-plugin`. |
 | `.tests/` | The package's tests (Go); not part of the zip. |
 
 ## The team
@@ -28,6 +28,8 @@ counts and open inquiries back within a minute.
 
 - **Your mailbox** (required): connected in Admin, Connections - an app password for Gmail,
   iCloud, Yahoo or another IMAP mailbox, or a Microsoft or Google account.
+- **Your Twilio account**: an API key connection with the Twilio preset, bound to twilio's `twilio`
+  slot (below).
 - **Your cell phone number** (required): twilio's `sendAllowlist`.
 - **The Twilio number** that texts you (`fromNumber`): empty uses the account's only SMS number.
 - Behind Advanced:
@@ -36,17 +38,10 @@ counts and open inquiries back within a minute.
   - `moveTo`: `Junk` and `New Customers` by default. New Customers is created at the top level
     of your mailbox the first time a message is moved there; Junk is your mailbox's own.
 
-The three Twilio secrets are bound by key name, as the Twilio package binds them. A person sets
-each value on the screen: the install's secrets step, or the member's settings, shows a value box
-under each key name, and the next run reads it with no restart. The operator CLI sets them too, on
-the machine that runs the platform:
-
-```
-yawble secret set TWILIO_ACCOUNT_SID
-yawble secret set TWILIO_API_KEY_SID
-yawble secret set TWILIO_API_KEY_SECRET
-yawble up
-```
+The Twilio credential is a connection: an API key connection with the Twilio preset (Account
+SID, API key SID and the secret of a Restricted API key), set in Team settings -> Connections and
+bound to twilio's `twilio` slot. The install asks for it ("Which Twilio account should text you?");
+until one is bound, twilio's setup checklist says so and nothing is sent.
 
 The Twilio package's README says how to make the restricted API key and which permissions it needs.
 
@@ -104,6 +99,16 @@ The `support` site shows the `counts` collection (one document, `running`: the t
 counting started, the last summary and whether its text went out) and the `inquiries` collection (one document per inquiry,
 `open` or `closed`). The launcher tile shows the open inquiries. The `mail` and `twilio` sites show
 Mailer's watch and follows and twilio's texts and setup.
+
+## What changed in 1.3.0
+
+- twilio is `twilio-plugin` 3.0.0: the Twilio credential is an API key connection (Twilio preset)
+  bound to twilio's `twilio` slot, set in Team settings -> Connections, and twilio binds no secret
+  keys any more. The install asks for the connection.
+  A team that has this package installed and updates to this version: twilio's own Account SID,
+  API key SID and API key secret are carried over into a Twilio connection, assigned to the team
+  and bound to the slot, without anyone typing them again. A value set only in the Host's
+  environment is not carried over: make the connection and bind it.
 
 ## What changed in 1.2.1
 

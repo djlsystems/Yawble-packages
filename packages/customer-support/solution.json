@@ -2,7 +2,7 @@
   "format": 1,
   "id": "customer-support",
   "name": "Customer Support",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "A team that watches your mailbox, sorts new mail by your rules and texts you about it: a short summary of each batch of new mail, an alert for each inquiry at once, and a reminder every hour until you reply to it. Text \"summary\" from your cell to get the current counts and open inquiries back.\n\nIt files spam in Junk and new-customer mail in New Customers, counts new-customer, order and other mail on its page, and never marks mail read, sends email or deletes anything. Its rules are a team skill, support-playbook, that you edit in Team settings, Skills. It uses the mail plugin for your mailbox and the twilio plugin for your Twilio number, and texts only the numbers you allow.",
 
   "team": {
@@ -22,12 +22,7 @@
     },
     {
       "name": "twilio",
-      "pluginId": "twilio-plugin",
-      "secrets": {
-        "accountSid": "TWILIO_ACCOUNT_SID",
-        "apiKeySid": "TWILIO_API_KEY_SID",
-        "apiKeySecret": "TWILIO_API_KEY_SECRET"
-      }
+      "pluginId": "twilio-plugin"
     }
   ],
 
@@ -98,6 +93,12 @@
         "slot": "mailbox",
         "description": "The mailbox your customers write to, connected in Admin, Connections: an app password for Gmail, iCloud, Yahoo or another IMAP mailbox (the simplest), or a Microsoft or Google account. Mailer reads it, moves mail to the folders on moveTo and sees your replies in Sent; it never sends or deletes.",
         "required": true
+      },
+      {
+        "member": "twilio",
+        "slot": "twilio",
+        "description": "Your Twilio account: an API-key connection with the Twilio preset (Account SID, API key SID and the secret of a Restricted API key), set in Team settings -> Connections. twilio texts you through it; until one is bound, its setup checklist says so and nothing is sent.",
+        "required": false
       }
     ],
     "settings": [
@@ -143,6 +144,12 @@
         "slot": "mailbox",
         "question": "Which mailbox do your customers write to?",
         "hint": "An app password for Gmail, iCloud, Yahoo or other IMAP mail is the simplest. The team never sends or deletes mail."
+      },
+      {
+        "member": "twilio",
+        "slot": "twilio",
+        "question": "Which Twilio account should text you?",
+        "hint": "An API key connection with the Twilio preset: Account SID, API key SID and API key secret. Set it in Team settings -> Connections."
       }
     ],
     "settings": [

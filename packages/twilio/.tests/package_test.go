@@ -14,7 +14,7 @@ import (
 const pkgDir = ".."
 
 // No sentence in the package - manifest, README, skills, site - says a key is never set in
-// settings: the twilio member's settings on the screen are the first place to set one.
+// settings: the twilio member's settings on the screen are where a person sets them.
 func TestNoSentenceSaysNeverInSettings(t *testing.T) {
 	// One sentence: no full stop, and in JSON no string boundary, between the words.
 	never := regexp.MustCompile("(?i)\\bnever\\b[^.\"`]*?\\bin(?:to)?\\b[^.\"`]*?\\bsettings\\b")

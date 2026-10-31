@@ -22,8 +22,9 @@ The first word is the command. A value with spaces goes in double or single quot
 for the domain itself, or the name below it: `www`, `_dmarc`, `selector1._domainkey`
 (`www.example.com` is read as `www`).
 
-- `setup` - checks, in order: the API user and key are set; this computer's internet address
-  (named); API access is on; that address is on Namecheap's API allow-list; each listed domain is
+- `setup` - checks, in order: a Namecheap API-key connection with an API user and key is bound to
+  the `namecheap` slot; this computer's internet address (named; the connection's Whitelisted IP when
+  it has one); API access is on; that address is on Namecheap's API allow-list; each listed domain is
   in the account and uses Namecheap DNS. It ends with `Next step:` in words, or `Ready`. It changes
   nothing. Pass the next step to the person as it is written.
 - `list <domain>` - every record, as `TYPE host value [pref N] ttl N`, and the newest backup ids.
@@ -68,7 +69,10 @@ answer names the backup id, with the records as Namecheap now holds them.
 Show the person the dry run's before and after, then ask them to switch mode, for example: "Here is
 what changes on example.com. To make it, set mode to apply in the Namecheap member's settings, then
 tell me." Then send the same command again. You cannot change `mode`, `domains`, `clientIp`,
-`sandbox` or the keys yourself; never ask anybody for the API key in a message. A person may set
+`sandbox` or the Namecheap connection yourself; never ask anybody for the API key in a message. The
+API user, API key and Whitelisted IP are set by a person in Team settings, Connections, as a
+Namecheap API-key connection bound to this member's `namecheap` slot - never in the member's
+settings. A person may set
 `mode` back to `dryrun` when the work is done.
 
 ## Live on the name servers
@@ -143,6 +147,10 @@ refuses it, saying so. Only DKIM (when the provider does not already hold it) an
 
 Every refusal ends "Nothing was changed."
 
+- `Refused: no Namecheap API user and API key are bound` - a person adds a Namecheap API-key
+  connection in Team settings, Connections, assigns it to the team and binds it to the `namecheap`
+  slot. A connection carried over from an older version reads Needs you until a person fills in its
+  Whitelisted IP once; pass that on as it is.
 - `... is not in this member's domains setting` - a person adds the domain to `domains`.
 - `... holds a URL redirect record ...` - the answer names the `remove` command; send it once a
   person has approved replacing the redirect, then ensure again. No change in Namecheap's own

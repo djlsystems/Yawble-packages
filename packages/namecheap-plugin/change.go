@@ -25,7 +25,7 @@ func (p *plugin) readSet(domain string) (*hostSet, error) {
 		return nil, notListed(domain)
 	}
 	if p.sec.APIUser == "" || p.sec.APIKey == "" {
-		return nil, refusal("Refused: the Namecheap API user or API key is not set; a person pastes them into this member's apiUser and apiKey key fields, then runs setup. Nothing was changed.")
+		return nil, refusal("Refused: no Namecheap API user and API key are bound: " + noKeys + ", then runs setup. Nothing was changed.")
 	}
 	set, err := p.api.getHosts(domain)
 	if err != nil {

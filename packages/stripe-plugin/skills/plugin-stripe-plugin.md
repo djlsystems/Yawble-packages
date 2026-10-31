@@ -8,7 +8,9 @@ roles: manager member
 
 A plugin member, not an agent: it runs no model. Send it one command per instruction with `tell`;
 it acts on one Stripe account through a restricted key and hands back one result. It never moves
-money. You never see the key or a webhook signing secret, and never ask anybody for either.
+money. You never see the key or a webhook signing secret, and never ask anybody for either. The key
+is an API-key connection (Stripe preset) a person sets in Team settings -> Connections and binds to
+this member's `stripe` slot; when it is missing or wrong, that is what to tell the person.
 
 ## Commands
 
@@ -66,8 +68,9 @@ chat or a document. To give the application a webhook secret, name the vault and
 ## Refusals
 
 A refused command changes nothing and publishes `plugin.stripe-plugin.refused` with the command and the
-reason. The reasons, in the plugin's words: an `sk_` or other non-restricted key; a key for another
-account than `expectedAccount` or than the account setup kept (a person fixes the key, or sets
+reason. The reasons, in the plugin's words: no `stripe` connection bound (a person adds a Stripe API-key
+connection in Team settings -> Connections and binds it); an `sk_` or other non-restricted key in it; a key for another
+account than `expectedAccount` or than the account setup kept (a person fixes the connection's key, or sets
 `expectedAccount` and runs `setup`); `setup` not yet run; a vault not in `keyVaults`; no Microsoft
 connection on the `microsoft` slot; arguments of the wrong shape (the sentence shows the right one).
 A missing permission makes Stripe answer 403; run `setup` to see which one. A vault the signed-in

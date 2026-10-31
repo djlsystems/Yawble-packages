@@ -657,5 +657,5 @@ func TestStripesOwnMessagesNeverCarryTheKeyOut(t *testing.T) {
 	if r.ok() || strings.Contains(r.raw, "eeee") {
 		t.Fatalf("result = %s", r.raw)
 	}
-	mustContain(t, r.text(), "Stripe does not accept apiKey (401)")
+	mustContain(t, r.text(), "Stripe does not accept the key in the stripe connection (401)")
 }

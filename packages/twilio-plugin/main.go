@@ -1,7 +1,9 @@
 // TWILIO: a plugin member, protocol harness.member/1, that sends SMS and MMS through Twilio, reads
 // delivery status and replies by polling, and keeps its state on the team's `twilio` site.
 //
-// In:  ONE JSON request on stdin - { work: [{ instruction }], config, secrets, sites, ... }.
+// In:  ONE JSON request on stdin - { work: [{ instruction }], config, connections, sites, ... },
+// the Twilio credential being the API-key connection on the twilio slot (readConnection).
+//
 // Out: JSON Lines on stdout - progress, site.put / site.delete, publish, then exactly one result.
 //
 // One command per instruction; the first word is the command (commands.go lists them). Real sends
@@ -22,10 +24,22 @@ import (
 )
 
 type request struct {
-	Work    []workItem                 `json:"work"`
-	Config  map[string]json.RawMessage `json:"config"`
-	Secrets map[string]string          `json:"secrets"`
-	Sites   []siteRead                 `json:"sites"`
+	Work   []workItem                 `json:"work"`
+	Config map[string]json.RawMessage `json:"config"`
+	Sites  []siteRead                 `json:"sites"`
+	// Connections holds the bound slots; the Twilio credential is the API-key connection on slot.
+	Connections map[string]json.RawMessage `json:"connections"`
+}
+
+// slot is the manifest's one connection slot: an API-key connection (Twilio preset) holding
+// accountSid, apiKeySid and apiKeySecret.
+const slot = "twilio"
+
+// apiKeyConnection is an API-key slot on stdin.
+type apiKeyConnection struct {
+	Kind   string            `json:"kind"`
+	Preset string            `json:"preset"`
+	Fields map[string]string `json:"fields"`
 }
 
 type workItem struct {
@@ -97,11 +111,7 @@ func run(in io.Reader, out io.Writer, now func() time.Time) int {
 		return 1
 	}
 	p.cfg = cfg
-	p.sec = secrets{
-		AccountSid:   strings.TrimSpace(req.Secrets["accountSid"]),
-		APIKeySid:    strings.TrimSpace(req.Secrets["apiKeySid"]),
-		APIKeySecret: strings.TrimSpace(req.Secrets["apiKeySecret"]),
-	}
+	p.sec = readConnection(req.Connections)
 	p.api = &client{account: p.sec.AccountSid, keySid: p.sec.APIKeySid, keySecret: p.sec.APIKeySecret}
 	p.st = loadStore(req.Sites)
 
@@ -190,4 +200,20 @@ func (p *plugin) sitePut(collection, id string, doc any) {
 
 func (p *plugin) siteDelete(collection, id string) {
 	p.emit(map[string]any{"t": "site.delete", "site": siteName, "collection": collection, "id": id})
+}
+
+// readConnection reads the Twilio credential from the API-key connection bound to slot. An unbound
+// slot, or one that is not an object, reads as no connection.
+func readConnection(conns map[string]json.RawMessage) secrets {
+	raw, ok := conns[slot]
+	var c apiKeyConnection
+	if !ok || json.Unmarshal(raw, &c) != nil {
+		return secrets{}
+	}
+	return secrets{
+		Bound:        true,
+		AccountSid:   strings.TrimSpace(c.Fields["accountSid"]),
+		APIKeySid:    strings.TrimSpace(c.Fields["apiKeySid"]),
+		APIKeySecret: strings.TrimSpace(c.Fields["apiKeySecret"]),
+	}
 }
