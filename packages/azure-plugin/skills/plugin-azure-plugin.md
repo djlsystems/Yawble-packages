@@ -151,13 +151,13 @@ Container Apps:
   workspace `<environment>-logs`.
 - `containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag>
   [port=<n>] [cpu=<0.25 to 2>] [env=<NAME>=<value>]... [secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name>]...
-  [secret=<NAME>=<named secret>]... [secret=<NAME>=appSecret<1-8>]...`
+  [secret=<NAME>=<app secret name>]...`
   - in an owned environment, from an owned or shared registry. Creates the identity
   `<app>-id`, grants it AcrPull on the registry and Key Vault Secrets User on each owned vault a
   `secret=` names, then creates or updates the app (0 to 1 replicas, 0.5 CPU and 1 GiB unless `cpu=` names
   another size, which gets twice as many GiB). `port=`
-  gives it public HTTPS ingress. Each Key Vault secret must already be in the vault, each named
-  secret must be one this member holds, and each `appSecret<N>` must be bound and set (see Secrets). An `env=` that looks like a secret is
+  gives it public HTTPS ingress. Each Key Vault secret must already be in the vault, each other
+  `secret=` must name an app secret this member holds (see Secrets). An `env=` that looks like a secret is
   refused. The app's environment gets `AZURE_CLIENT_ID` set to `<app>-id`'s client id, unless the
   command sets `env=AZURE_CLIENT_ID=...` itself: Azure's SDKs (`DefaultAzureCredential`,
   `ManagedIdentityCredential`) read that variable to pick a user-assigned identity, and without it
@@ -229,20 +229,20 @@ a message. A template refers to it with a Key Vault reference; a container app w
 `secret=<NAME>=<the secret's address>`. The app reads it with its managed identity (Key Vault
 Secrets User). The member never calls Key Vault for a value.
 
-An app secret can also come from this member's own named secrets, and this is the form to use. A
-person adds each on the screen (the Azure member's settings, under App secrets), with a name they
-choose, such as `MicrosoftClientSecret`, and its value typed masked; the `status` tool lists the
-names this member holds, never a value.
-`secret=<NAME>=<name>` on `containerapp create` puts that value in the app's own secrets, and the
-app reads it as `<NAME>`: `secret=AUTH_MICROSOFT_SECRET=MicrosoftClientSecret`. When the app needs a
-secret the member does not hold, ask the person to add a secret named, say, `StripeApiKey` on the
-Azure member's settings screen - name it, say what it is for, and never ask for its value in a
-message - then run the command again. A name the member does not hold is refused before anything
-changes, naming it.
+An app secret can also come from a connection, and this is the form to use. A person sets the app
+secrets in Team settings -> Connections: an API-key connection (preset Other) whose fields are the
+secrets, each under a name they choose, such as `MicrosoftClientSecret`, its value typed masked. They
+assign the connection to this team and bind it to the Azure member's `appSecrets` slot, which takes
+as many connections as needed. `secret=<NAME>=<name>` on `containerapp create` puts the value of the
+field of that name (ignoring case) in the app's own secrets, and the app reads it as `<NAME>`:
+`secret=AUTH_MICROSOFT_SECRET=MicrosoftClientSecret`. When the app needs a secret the member does not
+hold, ask the person to add a field named, say, `StripeApiKey` to a connection bound to `appSecrets`
+- name it, say what it is for, and never ask for its value in a message - then run the command
+again. A name no bound connection holds is refused before anything changes, naming it; so is a name
+two bound connections hold with different values.
 
-The older keys still work: `appSecret1` to `appSecret8`: a person
-binds the field to a key and sets the key's value on the screen (this member's settings).
-`secret=<NAME>=appSecret<N>` on `containerapp create` puts the value in the app's own secrets and
-nowhere else; the member never writes it out. When the field is unbound or its key is not set, the
-command is refused naming the key: tell the person to set it in this member's settings, then run
-the command again. Never put a secret's value in an instruction.
+`appSecret1` to `appSecret8` from before 3.0.0 still resolve: an update carried each value a member
+held into a connection bound to `appSecrets`, as a field of the same name, so
+`secret=<NAME>=appSecret<N>` keeps working. Named secrets set on the member's settings screen before
+3.0.0 are still read too, after the connections. The member puts a value in the app's own secrets
+and nowhere else, and never writes it out. Never put a secret's value in an instruction.

@@ -52,7 +52,7 @@ func (p *plugin) setupSteps() []step {
 	var steps []step
 	add := func(name, state, text string) { steps = append(steps, step{name, state, text}) }
 
-	// 1. Secrets, by setting name only: set or missing, and the last 4 characters of the SIDs.
+	// 1. The connection's fields, by name only: set or missing, and the last 4 characters of the SIDs.
 	keys := []struct{ key, value string }{
 		{"accountSid", p.sec.AccountSid}, {"apiKeySid", p.sec.APIKeySid}, {"apiKeySecret", p.sec.APIKeySecret},
 	}
@@ -72,8 +72,8 @@ func (p *plugin) setupSteps() []step {
 		add("secrets", "Done", "secrets — "+strings.Join(set, ", "))
 	} else {
 		add("secrets", "Next", fmt.Sprintf("secrets — %s missing; %s. The values are on %s",
-			strings.Join(missing, ", "), howToSetKeys(missing), consoleKeys))
-		add("credentials", "Next", "credentials — set the missing secrets, then run check again")
+			strings.Join(missing, ", "), p.howToSetKeys(missing), consoleKeys))
+		add("credentials", "Next", "credentials — set the missing fields of the Twilio connection, then run check again")
 	}
 
 	// 2-3. Credentials and account type.
@@ -241,7 +241,7 @@ func (p *plugin) poll() outcome {
 	}
 	now := p.now().UTC()
 	if err := p.needSecrets(); err != nil {
-		// Before the operator has set the secrets the schedule still runs; it fills the checklist
+		// Before a person has bound the Twilio connection the schedule still runs; it fills the checklist
 		// and wakes nobody.
 		p.setupSteps()
 		return outcome{text: "Poll skipped: " + err.Error(), quiet: true}

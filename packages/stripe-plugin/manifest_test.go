@@ -20,7 +20,10 @@ func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 			Default any    `json:"default"`
 			SetBy   string `json:"setBy"`
 		} `json:"config"`
-		Secrets     map[string]struct{ Required bool } `json:"secrets"`
+		Secrets map[string]struct {
+			Required bool
+			MovedTo  string `json:"movedTo"`
+		} `json:"secrets"`
 		Connections map[string]struct {
 			Providers []string            `json:"providers"`
 			Scopes    map[string][]string `json:"scopes"`
@@ -46,7 +49,7 @@ func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
 	}
-	if m.ID != "stripe-plugin" || m.Version != "2.0.1" {
+	if m.ID != "stripe-plugin" || m.Version != "3.0.0" {
 		t.Fatalf("id %q version %q", m.ID, m.Version)
 	}
 	for _, name := range []string{"mode", "keyVaults", "expectedAccount"} {
@@ -57,8 +60,13 @@ func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 	if m.Config["mode"].Default != "dryrun" {
 		t.Fatalf("mode defaults to %v", m.Config["mode"].Default)
 	}
-	if !m.Secrets["apiKey"].Required {
-		t.Fatal("apiKey is not a required secret")
+	// THE KEY IS A CONNECTION: apiKey is declared only as moved to the stripe slot, an API-key slot
+	// that is required, so an update carries a member's key over and no field asks for it.
+	if len(m.Secrets) != 1 || m.Secrets["apiKey"].MovedTo != keySlot || m.Secrets["apiKey"].Required {
+		t.Fatalf("secrets = %+v, want only apiKey, moved to %s and not required itself", m.Secrets, keySlot)
+	}
+	if k, ok := m.Connections[keySlot]; !ok || !k.Required || !slices.Equal(k.Providers, []string{"apikey"}) || len(k.Scopes) != 0 {
+		t.Fatalf("the %s slot = %+v, want a required slot of providers exactly [apikey]", keySlot, k)
 	}
 	c, ok := m.Connections[slot]
 	if !ok || c.Required || !slices.Equal(c.Providers, []string{"microsoft"}) {

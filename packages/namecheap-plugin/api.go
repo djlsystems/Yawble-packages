@@ -103,16 +103,19 @@ type xmlHost struct {
 	TTL     string `xml:"TTL,attr"`
 }
 
-// address is this computer's public IPv4 address, as Namecheap sees it: the clientIp setting, or
-// what the address service answers.
+// address is this computer's public IPv4 address, as Namecheap sees it: the connection's
+// Whitelisted IP, else the clientIp setting, else what the address service answers.
 func (c *client) address() (string, error) {
+	if c.p.sec.ClientIP != "" {
+		return c.p.sec.ClientIP, nil
+	}
 	if c.p.cfg.ClientIP != "" {
 		return c.p.cfg.ClientIP, nil
 	}
 	if c.clientIP != "" {
 		return c.clientIP, nil
 	}
-	fail := refusal("This computer's internet address could not be found from the address service; a person sets it in this member's clientIp setting (Advanced).")
+	fail := refusal("This computer's internet address could not be found from the address service; a person sets it as the Whitelisted IP of the namecheap connection in Team settings, Connections.")
 	resp, err := httpClient.Get(addressURL)
 	if err != nil {
 		return "", fail

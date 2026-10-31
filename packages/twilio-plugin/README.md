@@ -1,4 +1,4 @@
-# Twilio 2.0.1
+# Twilio 3.0.0
 
 The `twilio-plugin` plugin: a plugin member that sends SMS and MMS through a person's Twilio
 account with a restricted API key, and reads delivery status and replies by polling. It keeps a
@@ -10,8 +10,10 @@ caps, countries, prefix, footer, auto-reply and owner-command settings are the p
 
 ## What it needs
 
-- **Three secrets**: `accountSid`, `apiKeySid` and `apiKeySecret`, each bound to a key the person
-  sets in the member's settings (or the operator sets with `yawble secret set <KEY>`).
+- **A Twilio connection on the `twilio` slot**: an API-key connection with the Twilio preset (Account
+  SID, API key SID and the secret of a Restricted API key), which a person sets in Team settings ->
+  Connections and binds to the member's `twilio` slot. Until one is bound, `check` and the poll still
+  run and say so on the setup checklist.
 - **The team's `twilio` site, with the collections `state`, `messages` and `recipients`.** The
   plugin keeps its poll position, the texts and the consented recipients there. Without the site,
   a command that needs it refuses and says why, and `check` names the site as the next step.
@@ -25,13 +27,25 @@ skill `plugin-twilio-plugin` lists every command and what each answer means.
 ## Build and test
 
 ```sh
-packages/twilio-plugin/build.sh ~/plugins-build/twilio-plugin/2.0.1   # one installable version
+packages/twilio-plugin/build.sh ~/plugins-build/twilio-plugin/3.0.0   # one installable version
 (cd packages/twilio-plugin && go test ./...)                         # against a fake Twilio API
 ```
 
-`scripts/build.sh` puts the package zip in `dist/twilio-plugin-2.0.1.zip`. A solution that hires
+`scripts/build.sh` puts the package zip in `dist/twilio-plugin-3.0.0.zip`. A solution that hires
 this plugin ships it from this same source: its `plugins/twilio-plugin/build.sh` runs this folder's
 `build.sh`.
+
+## 3.0.0
+
+- **The Twilio credential is a connection.** The plugin reads the Account SID, API key SID and API
+  key secret from the API-key connection (Twilio preset) bound to its `twilio` slot, set in Team
+  settings -> Connections, and no longer from its own settings.
+- **An update carries existing values over.** `accountSid`, `apiKeySid` and `apiKeySecret` are
+  declared moved to the `twilio` slot: installing this version over 2.0.1 makes a Twilio connection
+  from each member's own values, assigns it to the member's team and binds it to the slot. A value
+  only in the Host's environment is not moved: a person makes the connection and binds it.
+- **The slot stays optional**, as the three settings were: `check` and the poll run without it and
+  say what to do on the setup checklist.
 
 ## 2.0.1
 

@@ -1,7 +1,11 @@
 // NAMECHEAP: a plugin member, protocol harness.member/1, that adds and changes DNS records for
 // domains registered at Namecheap that use Namecheap's DNS.
 //
-// In:  ONE JSON request on stdin - { work: [{ instruction }], config, secrets, workingDirectory, ... }.
+// In:  ONE JSON request on stdin - { work: [{ instruction }], config,
+//
+//	connections: { namecheap: { kind, account, preset, fields: { apiUser, apiKey, clientIp } } },
+//	workingDirectory, ... }.
+//
 // Out: JSON Lines on stdout - progress, publish, then exactly one result.
 //
 // One command per instruction; the first word is the command (commands.go lists them). Namecheap's
@@ -27,7 +31,7 @@ import (
 type request struct {
 	Work             []workItem                 `json:"work"`
 	Config           map[string]json.RawMessage `json:"config"`
-	Secrets          map[string]string          `json:"secrets"`
+	Connections      map[string]connection      `json:"connections"`
 	WorkingDirectory string                     `json:"workingDirectory"`
 }
 
@@ -35,6 +39,19 @@ type workItem struct {
 	Instruction *string         `json:"instruction"`
 	Payload     json.RawMessage `json:"payload"`
 }
+
+// connection is a bound slot on stdin: for the namecheap slot an API-key connection, its fields
+// named as the Namecheap preset names them.
+type connection struct {
+	Kind   string            `json:"kind"`
+	Preset string            `json:"preset"`
+	Fields map[string]string `json:"fields"`
+}
+
+// slot is the manifest's one connection slot: the Namecheap account's API user and key, and the
+// address its key is whitelisted for. The credential is set in Team settings, Connections, never
+// in this member's settings.
+const slot = "namecheap"
 
 // refusal is a sentence the plugin fails with, word for word.
 type refusal string
@@ -75,9 +92,12 @@ func run(in io.Reader, out io.Writer, c clock) int {
 		return 1
 	}
 
-	p.sec = secrets{
-		APIUser: strings.TrimSpace(req.Secrets["apiUser"]),
-		APIKey:  strings.TrimSpace(req.Secrets["apiKey"]),
+	if c, ok := req.Connections[slot]; ok {
+		p.sec = secrets{
+			APIUser:  strings.TrimSpace(c.Fields["apiUser"]),
+			APIKey:   strings.TrimSpace(c.Fields["apiKey"]),
+			ClientIP: strings.TrimSpace(c.Fields["clientIp"]),
+		}
 	}
 	cfg, problem := parseSettings(req.Config)
 	if problem != "" {

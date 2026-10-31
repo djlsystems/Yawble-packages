@@ -190,11 +190,11 @@ func TestPollFirstRunLooksBackAndFillsTheChecklist(t *testing.T) {
 
 func TestPollWithoutSecretsIsQuietAndFillsTheChecklist(t *testing.T) {
 	newFake(t)
-	r := runWith(t, opts{secrets: map[string]string{}}, "poll")
+	r := runWith(t, opts{unbound: true}, "poll")
 	if !r.ok || !r.quiet {
 		t.Fatalf("ok=%t quiet=%t %s", r.ok, r.quiet, r.text)
 	}
-	wantOK(t, r, "Poll skipped: Twilio is not set up: accountSid has no value on this platform; a person sets the key bound to accountSid in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for that key; nothing was sent.")
+	wantOK(t, r, "Poll skipped: Twilio is not set up: accountSid has no value on this platform; no connection is bound to this member's `twilio` slot; a person adds an API-key connection with the Twilio preset (Account SID, API key SID, API key secret) in Team settings -> Connections and binds it to the `twilio` slot; nothing was sent.")
 	if r.put(colState, "setup") == nil {
 		t.Fatal("state/setup not written")
 	}

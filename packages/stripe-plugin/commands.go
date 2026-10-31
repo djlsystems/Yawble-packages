@@ -174,7 +174,7 @@ func (p *plugin) checkAccount(needSetup bool) error {
 	case want == "" && needSetup:
 		return refusal("Refused: setup has not run for this key yet, so the account it belongs to is not known. Run setup first. Nothing was changed.")
 	case want != "" && acct != want:
-		return refusal(fmt.Sprintf("Refused: apiKey belongs to Stripe account %s, not %s (%s). Nothing was changed. If the key was changed to another account on purpose, a person sets expectedAccount to %s and runs setup.", acct, want, source, acct))
+		return refusal(fmt.Sprintf("Refused: the stripe connection's key belongs to Stripe account %s, not %s (%s). Nothing was changed. If the key was changed to another account on purpose, a person sets expectedAccount to %s and runs setup.", acct, want, source, acct))
 	}
 	p.account = acct
 	return nil

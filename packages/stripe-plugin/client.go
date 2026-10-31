@@ -108,7 +108,7 @@ func (c *stripeClient) accountID() (string, error) {
 	}
 	if e, ok := err.(*apiError); ok {
 		if e.status == http.StatusUnauthorized {
-			return "", refusal("Refused: Stripe does not accept apiKey (401). It may have been deleted or rolled; make a new restricted key and bind it.")
+			return "", refusal("Refused: Stripe does not accept the key in the stripe connection (401). It may have been deleted or rolled; make a new restricted key and put it in the connection in Team settings -> Connections.")
 		}
 		if e.status == http.StatusForbidden {
 			if m := accountInMessage.FindString(e.message); m != "" {

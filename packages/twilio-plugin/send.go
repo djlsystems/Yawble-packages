@@ -106,9 +106,8 @@ func (s sender) label() string {
 	return s.service
 }
 
-// missingSecret names the first secret setting with no value. The platform sends a plugin each
-// secret's value by setting name only, never the key the member binds to it, so the sentences name
-// the setting.
+// missingSecret names the first field of the Twilio connection with no value, by the field's name
+// in the connection (the Twilio preset's accountSid, apiKeySid and apiKeySecret).
 func (p *plugin) missingSecret() string {
 	switch {
 	case p.sec.AccountSid == "":
@@ -121,13 +120,13 @@ func (p *plugin) missingSecret() string {
 	return ""
 }
 
-// howToSetKeys says where the keys bound to the named secret settings are set: this member's
-// settings on the screen first, the operator CLI second.
-func howToSetKeys(names []string) string {
-	if len(names) == 1 {
-		return fmt.Sprintf("a person sets the key bound to %s in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for that key", names[0])
+// howToSetKeys says where the named fields of the Twilio credential are set: an API-key connection
+// (Twilio preset) in Team settings -> Connections, bound to this member's `twilio` slot.
+func (p *plugin) howToSetKeys(names []string) string {
+	if !p.sec.Bound {
+		return "no connection is bound to this member's `twilio` slot; a person adds an API-key connection with the Twilio preset (Account SID, API key SID, API key secret) in Team settings -> Connections and binds it to the `twilio` slot"
 	}
-	return fmt.Sprintf("a person sets the keys bound to %s in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for each of those keys", joinAnd(names))
+	return fmt.Sprintf("a person fills in %s in the API-key connection bound to the `twilio` slot, in Team settings -> Connections", joinAnd(names))
 }
 
 func joinAnd(names []string) string {
@@ -142,7 +141,7 @@ func joinAnd(names []string) string {
 
 func (p *plugin) needSecrets() error {
 	if name := p.missingSecret(); name != "" {
-		return refusal(fmt.Sprintf("Twilio is not set up: %s has no value on this platform; %s; nothing was sent.", name, howToSetKeys([]string{name})))
+		return refusal(fmt.Sprintf("Twilio is not set up: %s has no value on this platform; %s; nothing was sent.", name, p.howToSetKeys([]string{name})))
 	}
 	return nil
 }

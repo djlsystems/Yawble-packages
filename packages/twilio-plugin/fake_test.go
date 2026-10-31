@@ -285,7 +285,9 @@ func (r result) put(collection, id string) map[string]any {
 
 type opts struct {
 	cfg     map[string]any
-	secrets map[string]string
+	secrets map[string]string // the fields of the Twilio connection bound to slot
+	unbound bool              // no connection bound to slot at all
+	legacy  map[string]string // values handed under secrets, which the plugin must ignore
 	site    *siteState
 	now     time.Time
 }
@@ -342,10 +344,15 @@ func runWith(t *testing.T, o opts, instructions ...string) result {
 		"protocol": "harness.member/1",
 		"work":     work,
 		"config":   o.cfg,
-		"secrets":  o.secrets,
+		"secrets":  o.legacy,
 		"sites": []any{
 			collection(colState, o.site.state), collection(colMessages, o.site.messages), collection(colRecipients, o.site.recipients),
 		},
+	}
+	if !o.unbound {
+		req["connections"] = map[string]any{slot: map[string]any{
+			"kind": "apikey", "account": "Shop Twilio", "preset": "twilio", "fields": o.secrets,
+		}}
 	}
 	raw, _ := json.Marshal(req)
 	var out bytes.Buffer

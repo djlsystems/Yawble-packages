@@ -121,30 +121,39 @@ func TestSendModeWithEmptyAllowlistRefusesAnyCommand(t *testing.T) {
 	}
 }
 
-// The platform sends secrets by setting name only, so an unset one is named by its setting, with
-// this member's settings on the screen first and the operator CLI second.
-func TestMissingSecretsAreNamedBySetting(t *testing.T) {
+// A field the Twilio connection lacks is named by its field name, with where it is filled in: the
+// connection in Team settings -> Connections, never a key setting or the operator CLI.
+func TestMissingConnectionFieldsAreNamedByField(t *testing.T) {
 	newFake(t)
 	for _, field := range []string{"accountSid", "apiKeySid", "apiKeySecret"} {
 		s := goodSecrets()
 		delete(s, field)
 		r := runWith(t, opts{secrets: s}, sms(ownCell, "x"))
-		wantFail(t, r, "Twilio is not set up: "+field+" has no value on this platform; a person sets the key bound to "+field+" in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for that key; nothing was sent.")
-		if screen, cli := strings.Index(r.text, "settings on the screen"), strings.Index(r.text, "yawble secret set"); screen < 0 || cli < screen {
-			t.Fatalf("the screen does not come before yawble secret set: %s", r.text)
-		}
-		if strings.Contains(r.text, "TWILIO_") {
-			t.Fatalf("named a default key the member may not be bound to: %s", r.text)
+		wantFail(t, r, "Twilio is not set up: "+field+" has no value on this platform; a person fills in "+field+" in the API-key connection bound to the `twilio` slot, in Team settings -> Connections; nothing was sent.")
+		if strings.Contains(r.text, "TWILIO_") || strings.Contains(r.text, "secret set") || strings.Contains(r.text, "member's settings") {
+			t.Fatalf("named a key setting: %s", r.text)
 		}
 	}
 }
 
-// A member bound to a non-default key: the request still carries only setting names and values,
-// so the sentence names the setting and never a default key.
-func TestMissingSecretWithCustomBindingNamesTheSetting(t *testing.T) {
+// With no connection bound to the slot, the sentence names the slot and the Twilio preset.
+func TestNoConnectionNamesTheSlot(t *testing.T) {
 	newFake(t)
-	r := runWith(t, opts{secrets: map[string]string{"apiKeySid": testKeySid, "apiKeySecret": "s"}}, sms(ownCell, "x"))
-	wantFail(t, r, "Twilio is not set up: accountSid has no value on this platform; a person sets the key bound to accountSid in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for that key; nothing was sent.")
+	r := runWith(t, opts{unbound: true}, sms(ownCell, "x"))
+	wantFail(t, r, "Twilio is not set up: accountSid has no value on this platform; no connection is bound to this member's `twilio` slot; a person adds an API-key connection with the Twilio preset (Account SID, API key SID, API key secret) in Team settings -> Connections and binds it to the `twilio` slot; nothing was sent.")
+}
+
+// The credential is read from the connection alone: values handed under secrets, as an older
+// version's binding would, are never used.
+func TestTheCredentialComesFromTheConnectionOnly(t *testing.T) {
+	newFake(t)
+	r := runWith(t, opts{unbound: true, legacy: goodSecrets()}, sms(ownCell, "x"))
+	wantFail(t, r, "Twilio is not set up: accountSid has no value on this platform; no connection is bound to this member's `twilio` slot; a person adds an API-key connection with the Twilio preset (Account SID, API key SID, API key secret) in Team settings -> Connections and binds it to the `twilio` slot; nothing was sent.")
+
+	r = runWith(t, opts{legacy: map[string]string{"accountSid": "AC" + strings.Repeat("0", 32)}}, sms(ownCell, "x"))
+	if !r.ok {
+		t.Fatalf("the connection's values were not used: %s", r.text)
+	}
 }
 
 func TestSenderFallbacks(t *testing.T) {
@@ -523,7 +532,7 @@ func Test21610OnSendMarksAConsentedEntryOptedOut(t *testing.T) {
 func TestHTTPErrors(t *testing.T) {
 	f := newFake(t)
 	r := runWith(t, opts{cfg: send(), secrets: map[string]string{"accountSid": testAccount, "apiKeySid": testKeySid, "apiKeySecret": "wrong-secret"}}, sms(ownCell, "x"))
-	wantFail(t, r, "Twilio rejected the keys bound to accountSid, apiKeySid and apiKeySecret (401). A person replaces them in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for each of those keys.")
+	wantFail(t, r, "Twilio rejected the Account SID, API key SID and API key secret of the connection bound to the `twilio` slot (401). A person replaces them in that connection in Team settings -> Connections, or makes a new key.")
 
 	f.numbersCode = 403
 	wantFail(t, run1(t, nil, sms(ownCell, "x")), "Twilio refused the request (403): the API key lacks the permission /twilio/phone-numbers/active-numbers/list. A person adds it to the restricted key in the Twilio Console.")

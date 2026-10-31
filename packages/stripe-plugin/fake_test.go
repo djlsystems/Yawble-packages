@@ -514,11 +514,13 @@ func (f *fake) writes() []call {
 // ---- running the plugin ----
 
 type runOpts struct {
-	key     string
-	config  map[string]any
-	vault   bool // bind the microsoft connection, its token as accessToken
-	tokens  bool // with vault: Azure management's token in tokens, and another API's as accessToken
-	workdir string
+	key      string
+	keyField string // the stripe connection's field holding the key: key (the Stripe preset) by default
+	noKey    bool   // bind no stripe connection at all
+	config   map[string]any
+	vault    bool // bind the microsoft connection, its token as accessToken
+	tokens   bool // with vault: Azure management's token in tokens, and another API's as accessToken
+	workdir  string
 }
 
 type records struct {
@@ -562,6 +564,15 @@ func runPlugin(t *testing.T, o runOpts, instructions ...string) records {
 		work = append(work, map[string]any{"seq": i + 1, "instruction": in, "payload": map[string]any{"instruction": in}})
 	}
 	conns := map[string]any{}
+	if !o.noKey {
+		field, preset := o.keyField, "stripe"
+		if field == "" {
+			field = "key"
+		} else if field != "key" {
+			preset = "other"
+		}
+		conns[keySlot] = map[string]any{"kind": "apikey", "account": "Shop - stripe", "preset": preset, "fields": map[string]any{field: o.key}}
+	}
 	if o.vault && o.tokens {
 		conns["microsoft"] = map[string]any{"provider": "microsoft", "account": "person@example.com", "accessToken": graphToken,
 			"tokens": map[string]any{
@@ -579,7 +590,7 @@ func runPlugin(t *testing.T, o runOpts, instructions ...string) records {
 		"protocol":         "harness.member/1",
 		"work":             work,
 		"config":           cfg,
-		"secrets":          map[string]any{"apiKey": o.key},
+		"secrets":          map[string]any{},
 		"connections":      conns,
 		"workingDirectory": o.workdir,
 	}

@@ -45,18 +45,19 @@ func sameHosts(t *testing.T, want, got []xmlHost) {
 
 func TestSetupNamesTheKeysTheAddressAndTheDomainsWhenNothingIsSet(t *testing.T) {
 	n := newHarness(t)
-	n.sec = map[string]string{}
+	n.sec = nil
 	n.cfg = map[string]any{}
 	r := n.run("setup")
 	if !r.ok {
 		t.Fatalf("setup failed: %s", r.output)
 	}
 	mustContain(t, r.output,
-		"MISSING  the API user or API key is not set",
+		"MISSING  no Namecheap API user and API key are bound",
 		"this computer's internet address is "+testIP,
 		testIP+" is on Namecheap's API allow-list (checked once the key is set)",
 		"MISSING  no domains are listed",
-		"Next step: Paste the Namecheap API user",
+		"Next step: In Team settings, Connections, add a Namecheap API-key connection",
+		"bind it to this member's `namecheap` slot",
 		"Then: List the domains",
 		"mode     dryrun")
 	if len(n.fake.commands) != 0 {

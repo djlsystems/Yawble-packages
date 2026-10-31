@@ -3,7 +3,7 @@
   "id": "twilio-plugin",
   "name": "Twilio",
   "description": "Sends SMS and MMS through Twilio with a restricted API key, reads delivery status and replies by polling, and keeps a consented-recipients list and opt-outs on the twilio site. Dry run by default; sends only to your numbers or person-activated consented recipients; never buys numbers or deletes anything.",
-  "version": "2.0.1",
+  "version": "3.0.0",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/twilio",
@@ -198,18 +198,30 @@
     "accountSid": {
       "label": "Account SID",
       "masked": false,
-      "description": "Your Twilio Account SID (AC…). The twilio solution binds it to the key TWILIO_ACCOUNT_SID. A person sets the bound key in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for it. It is shown on the Twilio Console home page: https://console.twilio.com/ or, in the new Twilio Console: https://1console.twilio.com/",
-      "required": false
+      "description": "Account SID: now held by the API-key connection bound to the `twilio` slot (Twilio preset), set in Team settings -> Connections. Declared only so an update carries an existing value over to that connection.",
+      "required": false,
+      "movedTo": "twilio"
     },
     "apiKeySid": {
       "label": "API key SID",
       "masked": false,
-      "description": "The SID (SK…) of a Restricted API key. The twilio solution binds it to the key TWILIO_API_KEY_SID. A person sets the bound key in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for it. Press Create API key and choose Restricted; tick only the permissions listed in the solution's README under \"The API key's permissions\" (messages create, read and list; services read; active numbers read and list; accounts read). Make the key on the API keys & tokens page: https://console.twilio.com/us1/account/keys-credentials/api-keys or, in the new Twilio Console: https://1console.twilio.com/go?to=/account/__account__/settings/us1/api-keys/list",
-      "required": false
+      "description": "API key SID: now held by the API-key connection bound to the `twilio` slot (Twilio preset), set in Team settings -> Connections. Declared only so an update carries an existing value over to that connection.",
+      "required": false,
+      "movedTo": "twilio"
     },
     "apiKeySecret": {
       "label": "API key secret",
-      "description": "That API key's secret. The twilio solution binds it to the key TWILIO_API_KEY_SECRET. A person sets the bound key in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for it. Twilio shows it only once, when the key is created: copy it before leaving that page, and if it is lost, make a new key. The page: https://console.twilio.com/us1/account/keys-credentials/api-keys or, in the new Twilio Console: https://1console.twilio.com/go?to=/account/__account__/settings/us1/api-keys/list",
+      "description": "API key secret: now held by the API-key connection bound to the `twilio` slot (Twilio preset), set in Team settings -> Connections. Declared only so an update carries an existing value over to that connection.",
+      "required": false,
+      "movedTo": "twilio"
+    }
+  },
+  "connections": {
+    "twilio": {
+      "description": "The Twilio account to text through: an API-key connection with the Twilio preset (Account SID, API key SID and the secret of a Restricted API key), made in Team settings -> Connections.",
+      "providers": [
+        "apikey"
+      ],
       "required": false
     }
   },

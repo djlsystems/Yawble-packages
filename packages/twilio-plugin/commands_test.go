@@ -248,7 +248,7 @@ func TestCheckWithNoSecretsNamesEachMissingKey(t *testing.T) {
 		t.Fatal(r.text)
 	}
 	lines := strings.Split(r.text, "\n")
-	if !strings.HasPrefix(lines[0], "Next: secrets — apiKeySid, apiKeySecret missing; a person sets the keys bound to apiKeySid and apiKeySecret in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for each of those keys. The values are on ") {
+	if !strings.HasPrefix(lines[0], "Next: secrets — apiKeySid, apiKeySecret missing; a person fills in apiKeySid and apiKeySecret in the API-key connection bound to the `twilio` slot, in Team settings -> Connections. The values are on ") {
 		t.Fatalf("secrets line: %s", lines[0])
 	}
 	wantBareLinks(t, r)
@@ -288,7 +288,7 @@ func TestCheckFullWalk(t *testing.T) {
 	wantContains(t, run1(t, nil, "check"), "Next: choose fromNumber — the account has 2 SMS-capable numbers (+18445550100, +16175550100); a person sets fromNumber to one in this member's settings")
 
 	r = runWith(t, opts{secrets: map[string]string{"accountSid": testAccount, "apiKeySid": testKeySid, "apiKeySecret": "bad-secret-1"}}, "check")
-	wantContains(t, r, "Next: credentials — Twilio rejected the keys bound to accountSid, apiKeySid and apiKeySecret (401). A person replaces them in this member's settings on the screen, or the operator runs `yawble secret set <KEY>` for each of those keys.")
+	wantContains(t, r, "Next: credentials — Twilio rejected the Account SID, API key SID and API key secret of the connection bound to the `twilio` slot (401). A person replaces them in that connection in Team settings -> Connections, or makes a new key.")
 }
 
 func TestCheckFirstMessageStates(t *testing.T) {

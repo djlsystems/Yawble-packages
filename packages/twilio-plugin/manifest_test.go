@@ -35,7 +35,7 @@ func TestTheManifestDeclaresTheSentEventAndItsMonitorHint(t *testing.T) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
 	}
-	if m.ID != "twilio-plugin" || m.Version != "2.0.1" {
+	if m.ID != "twilio-plugin" || m.Version != "3.0.0" {
 		t.Fatalf("id %q version %q", m.ID, m.Version)
 	}
 	var types []string
@@ -77,5 +77,42 @@ func TestTheManifestDeclaresTheSentEventAndItsMonitorHint(t *testing.T) {
 	}
 	if !slices.Equal(types, []string{"sent", "received", "optout", "optin", "delivery", "command"}) {
 		t.Fatalf("events %v", types)
+	}
+}
+
+// The Twilio credential is an API-key connection on the twilio slot. Each field the plugin once
+// took as a secret is declared moved to that slot, so an update carries its value over; none is a
+// secret the version asks for.
+func TestTheCredentialFieldsMoveToTheTwilioSlot(t *testing.T) {
+	raw, err := os.ReadFile("plugin.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Secrets map[string]struct {
+			Required bool   `json:"required"`
+			MovedTo  string `json:"movedTo"`
+		} `json:"secrets"`
+		Connections map[string]struct {
+			Providers []string        `json:"providers"`
+			Scopes    json.RawMessage `json:"scopes"`
+			Multiple  bool            `json:"multiple"`
+		} `json:"connections"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	c, ok := m.Connections[slot]
+	if !ok || len(m.Connections) != 1 || !slices.Equal(c.Providers, []string{"apikey"}) || c.Scopes != nil || c.Multiple {
+		t.Fatalf("connections = %+v", m.Connections)
+	}
+	fields := []string{"accountSid", "apiKeySid", "apiKeySecret"}
+	if len(m.Secrets) != len(fields) {
+		t.Fatalf("secrets %v, want only the moved %v", m.Secrets, fields)
+	}
+	for _, f := range fields {
+		if s, ok := m.Secrets[f]; !ok || s.MovedTo != slot || s.Required {
+			t.Errorf("secret %s = %+v, want movedTo %q and not required", f, s, slot)
+		}
 	}
 }

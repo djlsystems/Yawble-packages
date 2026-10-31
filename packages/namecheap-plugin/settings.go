@@ -19,9 +19,14 @@ type settings struct {
 	DefaultTTL int
 }
 
+// secrets are the namecheap connection's fields. ClientIP is its Whitelisted IP, "" when the
+// connection leaves it empty.
 type secrets struct {
-	APIUser, APIKey string
+	APIUser, APIKey, ClientIP string
 }
+
+// noKeys is what a run says when the namecheap slot has no connection, or one without a user or key.
+const noKeys = "a person binds a Namecheap API-key connection (API user, API key, Whitelisted IP) to this member's `namecheap` slot; the connection is added and assigned to the team in Team settings, Connections"
 
 var domainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}$`)
 

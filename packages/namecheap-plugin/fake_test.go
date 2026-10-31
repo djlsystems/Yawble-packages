@@ -240,7 +240,7 @@ type harness struct {
 	dir   string
 	clock *fakeClock
 	cfg   map[string]any
-	sec   map[string]string
+	sec   map[string]string // the namecheap connection's fields; nil binds no connection
 }
 
 func newHarness(t *testing.T) *harness {
@@ -279,7 +279,7 @@ func (h *harness) runWith(c clock, instructions ...string) runResult {
 		work = append(work, map[string]any{"instruction": in})
 	}
 	req, _ := json.Marshal(map[string]any{
-		"protocol": "harness.member/1", "work": work, "config": h.cfg, "secrets": h.sec, "workingDirectory": h.dir,
+		"protocol": "harness.member/1", "work": work, "config": h.cfg, "connections": h.connections(), "workingDirectory": h.dir,
 	})
 	var out bytes.Buffer
 	code := run(bytes.NewReader(req), &out, c)
@@ -333,4 +333,13 @@ func mustContain(t *testing.T, got string, wants ...string) {
 			t.Errorf("missing %q in:\n%s", w, got)
 		}
 	}
+}
+
+// connections is the request's connections: the namecheap slot bound to an API-key connection with
+// the Namecheap preset holding h.sec, or none when h.sec is nil.
+func (h *harness) connections() map[string]any {
+	if h.sec == nil {
+		return map[string]any{}
+	}
+	return map[string]any{slot: map[string]any{"kind": "apikey", "account": "Namecheap", "preset": "namecheap", "fields": h.sec}}
 }

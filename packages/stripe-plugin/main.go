@@ -3,9 +3,10 @@
 // events. A webhook signing secret goes from Stripe's answer straight into an Azure Key Vault,
 // written through Azure Resource Manager, and is never written anywhere else.
 //
-// In:  ONE JSON request on stdin - { work: [{ instruction }], config, secrets: { apiKey },
+// In:  ONE JSON request on stdin - { work: [{ instruction }], config,
 //
-//	connections: { microsoft: { accessToken, tokens } }, workingDirectory, ... }.
+//	connections: { stripe: { kind: "apikey", preset, fields: { key } }, microsoft: { accessToken, tokens } },
+//	workingDirectory, ... }.
 //
 // Out: JSON Lines on stdout - progress, publish, then exactly one result.
 //
@@ -30,7 +31,6 @@ import (
 type request struct {
 	Work             []workItem                 `json:"work"`
 	Config           map[string]json.RawMessage `json:"config"`
-	Secrets          map[string]string          `json:"secrets"`
 	Connections      map[string]connection      `json:"connections"`
 	WorkingDirectory string                     `json:"workingDirectory"`
 }
@@ -40,12 +40,15 @@ type workItem struct {
 	Payload     json.RawMessage `json:"payload"`
 }
 
-// connection is a bound slot on stdin. accessToken is the first API's token; tokens, when present,
-// holds a token per API, keyed by the API's address (https://management.azure.com/).
+// connection is a bound slot on stdin. For the microsoft slot accessToken is the first API's token;
+// tokens, when present, holds a token per API, keyed by the API's address (https://management.azure.com/).
+// For the stripe slot, an API-key connection, fields holds the key.
 type connection struct {
 	Provider    string              `json:"provider"`
+	Kind        string              `json:"kind"`
 	AccessToken string              `json:"accessToken"`
 	Tokens      map[string]apiToken `json:"tokens"`
+	Fields      map[string]string   `json:"fields"`
 }
 
 type apiToken struct {
@@ -63,8 +66,22 @@ func (c connection) managementToken() string {
 	return c.AccessToken
 }
 
-// slot is the manifest's one connection slot, for Azure management only.
+// slot is the manifest's Microsoft connection slot, for Azure management only.
 const slot = "microsoft"
+
+// keySlot is the manifest's API-key connection slot, which holds the restricted key.
+const keySlot = "stripe"
+
+// connectionKey answers the restricted key from the stripe slot's connection: the Stripe preset's
+// key field, else apiKey - the field 2.x kept, which an update carries over under its own name.
+func connectionKey(c connection) string {
+	for _, field := range []string{"key", "apiKey"} {
+		if v := strings.TrimSpace(c.Fields[field]); v != "" {
+			return v
+		}
+	}
+	return ""
+}
 
 // refusal is a sentence the plugin refuses a command with, word for word. A refusal publishes
 // plugin.stripe-plugin.refused; any other error does not.
@@ -111,7 +128,12 @@ func run(in io.Reader, out io.Writer, now func() time.Time) int {
 		return 1
 	}
 	p.cfg = cfg
-	p.key = strings.TrimSpace(req.Secrets["apiKey"])
+	if c, ok := req.Connections[keySlot]; ok {
+		p.key = connectionKey(c)
+		for _, v := range c.Fields {
+			p.hide(v)
+		}
+	}
 	p.hide(p.key)
 	if c, ok := req.Connections[slot]; ok {
 		p.vault = c.managementToken()
@@ -174,15 +196,15 @@ func run(in io.Reader, out io.Writer, now func() time.Time) int {
 func keyKind(key string) (env, why string) {
 	switch {
 	case key == "":
-		return "", "Refused: no Stripe key is set. A person binds the apiKey secret to a restricted key (rk_...) in this member's settings."
+		return "", "Refused: no Stripe key is bound. A person adds an API-key connection with the Stripe preset holding a restricted key (rk_...), assigns it to this team in Team settings -> Connections, and binds it to this member's stripe slot."
 	case strings.HasPrefix(key, "sk_"):
-		return "", "Refused: apiKey is a secret key (sk_), which can do anything in the account. Make a restricted key (rk_) with the permissions the README lists, bind it instead, and roll the secret key if it was shared. Nothing was sent to Stripe."
+		return "", "Refused: the stripe connection holds a secret key (sk_), which can do anything in the account. Make a restricted key (rk_) with the permissions the README lists, put it in the connection instead (Team settings -> Connections), and roll the secret key if it was shared. Nothing was sent to Stripe."
 	case strings.HasPrefix(key, "rk_test_"):
 		return "test", ""
 	case strings.HasPrefix(key, "rk_live_"):
 		return "live", ""
 	default:
-		return "", "Refused: apiKey is not a Stripe restricted key; it must start rk_test_ or rk_live_. Nothing was sent to Stripe."
+		return "", "Refused: the stripe connection does not hold a Stripe restricted key; it must start rk_test_ or rk_live_. Nothing was sent to Stripe."
 	}
 }
 

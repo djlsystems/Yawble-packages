@@ -20,17 +20,19 @@ func (p *plugin) setup() string {
 
 	keys := p.sec.APIUser != "" && p.sec.APIKey != ""
 	if keys {
-		ok("the API user and API key are set")
+		ok("the namecheap connection holds an API user and API key")
 	} else {
-		miss("the API user or API key is not set",
-			"Paste the Namecheap API user (your Namecheap user name) and the API key (Profile, Tools, Namecheap API Access) into this member's apiUser and apiKey key fields.")
+		miss("no Namecheap API user and API key are bound",
+			"In Team settings, Connections, add a Namecheap API-key connection - API user (your Namecheap user name), API key (Profile, Tools, Namecheap API Access) and Whitelisted IP - assign it to this team and bind it to this member's `namecheap` slot.")
 	}
 
 	ip, ipErr := p.api.address()
 	switch {
 	case ipErr != nil:
 		miss("this computer's internet address could not be found",
-			"Set this computer's public IPv4 address in this member's clientIp setting (Advanced).")
+			"The namecheap connection has no Whitelisted IP: set this computer's public IPv4 address in this member's `clientIp` setting, or bind a Namecheap API-key connection whose Whitelisted IP is that address (Team settings, Connections).")
+	case p.sec.ClientIP != "":
+		ok("this computer's internet address is " + ip + " (the namecheap connection's Whitelisted IP)")
 	case p.cfg.ClientIP != "":
 		ok("this computer's internet address is " + ip + " (from the clientIp setting)")
 	default:
@@ -73,7 +75,7 @@ func (p *plugin) setup() string {
 			miss(allowLine("is not on Namecheap's API allow-list"), allowStep())
 		case errors.As(err, &e) && e.accessProblem():
 			miss("API access is off for the account, or the API user or key is wrong ("+errorWords(err)+")",
-				"Turn API access on in Namecheap (Profile, Tools, Namecheap API Access, ON) and paste that page's API key and your Namecheap user name into apiKey and apiUser. The README says what Namecheap asks of an account before it turns API access on.")
+				"Turn API access on in Namecheap (Profile, Tools, Namecheap API Access, ON) and put that page's API key and your Namecheap user name in the namecheap connection (Team settings, Connections). The README says what Namecheap asks of an account before it turns API access on.")
 			unchecked(allowLine("is on Namecheap's API allow-list (checked once API access works)"))
 			next = append(next, allowStep())
 		default:

@@ -154,7 +154,7 @@ func memberPlugin(t *testing.T, s solution, name string) plugin {
 
 func TestIdentity(t *testing.T) {
 	s, _ := loadSolution(t)
-	if s.Format != 1 || s.ID != "customer-support" || s.Name != "Customer Support" || s.Version != "1.2.1" {
+	if s.Format != 1 || s.ID != "customer-support" || s.Name != "Customer Support" || s.Version != "1.3.0" {
 		t.Fatalf("identity: format %d id %q name %q version %q", s.Format, s.ID, s.Name, s.Version)
 	}
 }
@@ -165,8 +165,8 @@ func TestMembers(t *testing.T) {
 	if v := ps["mail-plugin"].Version; v != "3.0.1" {
 		t.Fatalf("the published mail plugin is %s, want 3.0.1", v)
 	}
-	if v := ps["twilio-plugin"].Version; v != "2.0.1" {
-		t.Fatalf("the published twilio plugin is %s, want 2.0.1", v)
+	if v := ps["twilio-plugin"].Version; v != "3.0.0" {
+		t.Fatalf("the published twilio plugin is %s, want 3.0.0", v)
 	}
 	got := map[string]string{}
 	for _, m := range s.Members {
@@ -196,9 +196,9 @@ func TestMembers(t *testing.T) {
 	if !strings.Contains(s.Members[0].Instructions, "support-playbook") {
 		t.Fatal("the Manager's instructions do not name support-playbook")
 	}
-	tw := s.Members[2].Secrets
-	if tw["accountSid"] != "TWILIO_ACCOUNT_SID" || tw["apiKeySid"] != "TWILIO_API_KEY_SID" || tw["apiKeySecret"] != "TWILIO_API_KEY_SECRET" {
-		t.Fatalf("twilio's secrets are bound as %v", tw)
+	// The Twilio credential is a connection on twilio's twilio slot: twilio binds no secret keys.
+	if tw := s.Members[2].Secrets; len(tw) != 0 {
+		t.Fatalf("twilio binds secrets %v; its credential is the connection on its twilio slot", tw)
 	}
 }
 
@@ -323,8 +323,15 @@ func TestInputsAndSetup(t *testing.T) {
 			t.Errorf("%s is not asked for", k)
 		}
 	}
-	if len(s.Inputs.Connections) != 1 || s.Inputs.Connections[0].Member != "Mailer" || s.Inputs.Connections[0].Slot != "mailbox" || !s.Inputs.Connections[0].Required {
+	if len(s.Inputs.Connections) != 2 || s.Inputs.Connections[0].Member != "Mailer" || s.Inputs.Connections[0].Slot != "mailbox" || !s.Inputs.Connections[0].Required {
 		t.Errorf("connections: %+v", s.Inputs.Connections)
+	}
+	// twilio's slot is asked for, as optional as the plugin declares it.
+	if c := s.Inputs.Connections[len(s.Inputs.Connections)-1]; c.Member != "twilio" || c.Slot != "twilio" || c.Required {
+		t.Errorf("twilio's connection input: %+v", c)
+	}
+	if _, ok := ps["twilio-plugin"].Connections["twilio"]; !ok {
+		t.Error("the twilio plugin has no twilio slot")
 	}
 	if _, ok := ps["mail-plugin"].Connections["mailbox"]; !ok {
 		t.Error("the mail plugin has no mailbox slot")

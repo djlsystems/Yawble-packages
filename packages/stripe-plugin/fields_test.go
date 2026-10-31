@@ -36,7 +36,7 @@ func TestEveryFieldHasItsLabelAndEverySecretItsMasking(t *testing.T) {
 		masked, required bool
 	}
 	secrets := map[string]secret{
-		"apiKey": {"Restricted API key", true, true},
+		"apiKey": {"Restricted API key", true, false}, // moved to the stripe slot
 	}
 	if len(m.Config) != len(settings) || len(m.Secrets) != len(secrets) {
 		t.Fatalf("%d settings and %d secrets; the labels cover %d and %d", len(m.Config), len(m.Secrets), len(settings), len(secrets))

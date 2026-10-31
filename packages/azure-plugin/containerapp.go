@@ -14,9 +14,9 @@ import (
 
 // Container Apps: an environment whose logs go to its own Log Analytics workspace, and apps in it
 // that pull their image with a managed identity the plugin creates for each, and read their secrets
-// from Key Vault through that identity, or from this member's own named secrets (each named and set
-// by a person on the screen), or its older keys (appSecret1 to appSecret8, which a person binds and
-// sets on the screen). No registry password is ever part of an app, and a
+// from Key Vault through that identity, or from a field of an API-key connection bound to this
+// member's appSecrets slot (added in Team settings -> Connections), or from one of its old named
+// secrets. No registry password is ever part of an app, and a
 // secret's value is put only in the app's configuration, never in what the plugin writes out.
 // Logs are read through Azure management's query on the workspace resource, or, for an environment
 // whose diagnostic setting archives its logs to a storage account instead, from that account's
@@ -26,7 +26,7 @@ const (
 	diagAPIVersion  = "2021-05-01-preview"
 	logsAPIVersion  = "2017-01-01-preview"
 	maxLogLines     = 500
-	appSecretFields = 8
+	appSecretFields = 8                 // appSecret1 to appSecret8, which 3.0.0 moved to the appSecrets slot
 	clientIDVar     = "AZURE_CLIENT_ID" // the variable Azure's SDKs read for a user-assigned identity
 )
 
@@ -34,7 +34,6 @@ var (
 	appName    = regexp.MustCompile(`^[a-z](?:[a-z0-9]|-[a-z0-9]){0,29}[a-z0-9]?$`)
 	envVarName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 	acrImage   = regexp.MustCompile(`^([a-z0-9]{5,50})\.azurecr\.io/(.+)$`)
-	appSecretN = regexp.MustCompile(`(?i)^appsecret([0-9]+)$`)
 	secretName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`) // a named secret's name, as the Host holds it
 )
 
@@ -52,30 +51,58 @@ func (p *plugin) namedSecret(name string) (string, string, bool) {
 	return "", "", false
 }
 
-// namedRefusal is the sentence for secret=NAME=<name> when the member holds no secret by that name:
-// the agent asks the person to add it, never for its value.
-func namedRefusal(env, name string) refusal {
-	return refusef("Refused: secret=%s=%s names no secret this member holds (secret= takes a Key Vault secret's address, the name of one of this member's named secrets or appSecret<1-8>, never a value), so ask the person to add a secret named %s under App secrets on the Azure member's settings screen, never to send its value in a message, then run containerapp create again; nothing was changed.", env, name, name)
+// connectionSecret answers the field name and value of the field called name in the connections
+// bound to the appSecrets slot, matched ignoring case, and whether one holds it. Two connections
+// holding a field by that name with different values is a refusal naming both, never a value.
+func (p *plugin) connectionSecret(env, name string) (string, string, bool, error) {
+	field, value, from, at := "", "", "", 0
+	for i, k := range p.keys {
+		for f, v := range k.Fields {
+			if !strings.EqualFold(f, name) || v == "" {
+				continue
+			}
+			if from != "" && v != value {
+				named := "both hold a field named " + field
+				if f != field {
+					named = "hold fields named " + field + " and " + f
+				}
+				return "", "", false, refusef("Refused: secret=%s=%s is a field of two connections bound to this member's appSecrets slot, the %s (%s) and the %s (%s) connection, which %s with different values, so ask the person to rename the field in one of them in Team settings -> Connections, then run containerapp create again; nothing was changed.", env, name, ordinal(at+1), from, ordinal(i+1), k.Account, named)
+			}
+			if from == "" {
+				field, value, from, at = f, v, k.Account, i
+			}
+		}
+	}
+	return field, value, from != "", nil
 }
 
-// appSecretField answers the canonical field name (appSecret1 to appSecret8) of a value such as
-// appSecret3, and whether it names one of the eight.
-func appSecretField(v string) (string, bool) {
-	m := appSecretN.FindStringSubmatch(v)
-	if m == nil {
-		return "", false
+// ordinal is 1st, 2nd, 3rd, 4th, ...: a connection's place among the slot's bindings, which the Host
+// hands over in binding order (appSecrets, appSecrets#2, ...), the order the member's settings show.
+func ordinal(n int) string {
+	suffix := "th"
+	if n%100 < 11 || n%100 > 13 {
+		switch n % 10 {
+		case 1:
+			suffix = "st"
+		case 2:
+			suffix = "nd"
+		case 3:
+			suffix = "rd"
+		}
 	}
-	n, err := strconv.Atoi(m[1])
-	if err != nil || n < 1 || n > appSecretFields || strconv.Itoa(n) != m[1] {
-		return "", false
-	}
-	return "appSecret" + m[1], true
+	return strconv.Itoa(n) + suffix
+}
+
+// namedRefusal is the sentence for secret=NAME=<name> when no connection bound to appSecrets holds a
+// field by that name: the agent asks the person to add it, never for its value.
+func namedRefusal(env, name string) refusal {
+	return refusef("Refused: secret=%s=%s names no app secret this member holds (secret= takes a Key Vault secret's address or the name of a field of a connection bound to this member's appSecrets slot, never a value), so ask the person to add an API-key connection (preset Other) with a field named %s in Team settings -> Connections, assign it to this team and bind it to the Azure member's appSecrets slot, never to send its value in a message, then run containerapp create again; nothing was changed.", env, name, name)
 }
 
 func init() {
 	register(
 		command{words: []string{"containerapp", "env", "create"}, usage: "<resource group> <environment>", run: (*plugin).envCreate},
-		command{words: []string{"containerapp", "create"}, usage: "<resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [cpu=<0.25 to 2>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>|<named secret>|appSecret<1-8>]...", run: (*plugin).appCreate},
+		command{words: []string{"containerapp", "create"}, usage: "<resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [cpu=<0.25 to 2>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>|<app secret name>]...", run: (*plugin).appCreate},
 		command{words: []string{"containerapp", "show"}, usage: "<app>", run: (*plugin).appShow},
 		command{words: []string{"containerapp", "revisions"}, usage: "<app>", run: (*plugin).appRevisions},
 		command{words: []string{"containerapp", "restart"}, usage: "<app>", run: (*plugin).appRestart},
@@ -138,25 +165,16 @@ func (p *plugin) envCreate(args []string) (string, error) {
 }
 
 // appSecret is one secret=NAME=... argument: an environment variable read from Key Vault (address,
-// vault and secret set), or from one of this member's own keys or named secrets (field set to the
-// key's field or the secret's name, value its value).
+// vault and secret set), or from an appSecrets connection's field or an old named secret (field set
+// to its name, value its value).
 type appSecret struct {
 	env, name, address, vault, secret string
 	field, value                      string
 }
 
-// keyRefusal is the sentence for secret=NAME=appSecretN when the member has no value for the field.
-// It names the key when the request names it, and never a value.
-func (p *plugin) keyRefusal(env, field string) refusal {
-	if key := p.appSecretKeys[field]; key != "" {
-		return refusef("Refused: secret=%s=%s names this member's %s, which is bound to the key %s, and that key is not set. A person sets %s on the screen first (this member's settings), then runs containerapp create again. Nothing was changed.", env, field, field, key, key)
-	}
-	return refusef("Refused: secret=%s=%s names this member's %s, which this member does not bind to a key. A person binds %s to a key and sets it on the screen first (this member's settings), then runs containerapp create again. Nothing was changed.", env, field, field, field)
-}
-
 func (p *plugin) appCreate(args []string) (string, error) {
 	if len(args) < 4 {
-		return "", refusal("Refused: containerapp create takes <resource group> <app> <environment> <registry>.azurecr.io/<image:tag>, then optionally port=<n>, cpu=<0.25 to 2> (its memory is twice that in GiB; 0.5 by default), env=<NAME>=<value> and secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name>, secret=<NAME>=<the name of one of this member's named secrets> or secret=<NAME>=appSecret<1-8>.")
+		return "", refusal("Refused: containerapp create takes <resource group> <app> <environment> <registry>.azurecr.io/<image:tag>, then optionally port=<n>, cpu=<0.25 to 2> (its memory is twice that in GiB; 0.5 by default), env=<NAME>=<value> and secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name> or secret=<NAME>=<the name of a field of a connection bound to this member's appSecrets slot>.")
 	}
 	if err := p.needSubscription(); err != nil {
 		return "", err
@@ -202,7 +220,7 @@ func (p *plugin) appCreate(args []string) (string, error) {
 			seen[v] = true
 			if strings.EqualFold(key, "env") {
 				if secretParam.MatchString(v) || credentialShaped[0].MatchString(val) || credentialShaped[1].MatchString(val) {
-					return "", refusef("Refused: %s looks like a secret. App secrets go in Key Vault or in this member's own keys: pass it as secret=%s=https://<vault>.vault.azure.net/secrets/<name> for a Key Vault secret, set by a person or another plugin, as secret=%s=<name> for one of this member's named secrets, which a person adds by name on the screen (this member's settings), or as secret=%s=appSecret<1-8> for one of this member's keys, which a person binds and sets there.", v, v, v, v)
+					return "", refusef("Refused: %s looks like a secret. App secrets go in Key Vault or in a connection: pass it as secret=%s=https://<vault>.vault.azure.net/secrets/<name> for a Key Vault secret, set by a person or another plugin, or as secret=%s=<name> for the field of that name in an API-key connection a person adds in Team settings -> Connections and binds to this member's appSecrets slot.", v, v, v)
 				}
 				envs = append(envs, map[string]any{"name": v, "value": val})
 				continue
@@ -212,21 +230,14 @@ func (p *plugin) appCreate(args []string) (string, error) {
 				return "", refusef("Refused: %s would be the app's secret %s, which another secret= already names.", v, sname)
 			}
 			secretSeen[sname] = true
-			if _, ok := appSecretField(val); !ok {
-				if n, value, ok := p.namedSecret(val); ok {
-					secrets = append(secrets, appSecret{env: v, name: sname, field: n, value: value})
-					continue
-				}
+			field, value, ok, err := p.connectionSecret(v, val)
+			if err != nil {
+				return "", err
 			}
-			if appSecretN.MatchString(val) {
-				field, ok := appSecretField(val)
-				if !ok {
-					return "", refusef("Refused: secret=%s=%s names no field of this member; its own keys are appSecret1 to appSecret%d.", v, val, appSecretFields)
-				}
-				value := p.appSecrets[field]
-				if value == "" {
-					return "", p.keyRefusal(v, field)
-				}
+			if !ok {
+				field, value, ok = p.namedSecret(val)
+			}
+			if ok {
 				secrets = append(secrets, appSecret{env: v, name: sname, field: field, value: value})
 				continue
 			}
@@ -235,7 +246,7 @@ func (p *plugin) appCreate(args []string) (string, error) {
 				if secretName.MatchString(val) && !p.isHidden(val) {
 					return "", namedRefusal(v, val)
 				}
-				return "", refusef("Refused: secret=%s takes a Key Vault secret's address, https://<vault>.vault.azure.net/secrets/<name>, the name of one of this member's named secrets, or one of this member's own keys, appSecret1 to appSecret%d; never a value.", v, appSecretFields)
+				return "", refusef("Refused: secret=%s takes a Key Vault secret's address, https://<vault>.vault.azure.net/secrets/<name>, or the name of a field of a connection bound to this member's appSecrets slot; never a value.", v)
 			}
 			secrets = append(secrets, appSecret{env: v, name: sname, address: val, vault: sm[1], secret: sm[2]})
 		default:
@@ -345,7 +356,7 @@ func (p *plugin) appCreate(args []string) (string, error) {
 	if appExists {
 		appStep = "update container app " + name + " (exists)"
 	}
-	steps = append(steps, fmt.Sprintf("%s in environment %s running %s on %s, with %s, %s, %d Key Vault secrets and %d secrets from this member's keys", appStep, env.Name, image, appSize(cpu), ingress, settings, vaultSecrets, keySecrets))
+	steps = append(steps, fmt.Sprintf("%s in environment %s running %s on %s, with %s, %s, %d Key Vault secrets and %d secrets from this member's connections", appStep, env.Name, image, appSize(cpu), ingress, settings, vaultSecrets, keySecrets))
 	if appExists {
 		steps = append(steps, kept.says())
 	}
@@ -595,7 +606,7 @@ func keepFrom(app map[string]any, name string, given []appSecret) (keptApp, erro
 		delete(refs, sname)
 		url := str(s["keyVaultUrl"])
 		if url == "" {
-			return keptApp{}, refusef("Refused: container app %s has a setting that reads its secret %s, which holds a value Azure does not answer back, so a containerapp create that leaves it out would remove it. Name it again with secret=%s=<the name of one of this member's named secrets> or secret=%[3]s=appSecret<1-8>. Nothing was changed.", name, sname, strings.ToUpper(strings.ReplaceAll(sname, "-", "_")))
+			return keptApp{}, refusef("Refused: container app %s has a setting that reads its secret %s, which holds a value Azure does not answer back, so a containerapp create that leaves it out would remove it. Name it again with secret=%s=<the name of a field of a connection bound to this member's appSecrets slot>. Nothing was changed.", name, sname, strings.ToUpper(strings.ReplaceAll(sname, "-", "_")))
 		}
 		ks := map[string]any{"name": sname, "keyVaultUrl": url}
 		if id := str(s["identity"]); id != "" {

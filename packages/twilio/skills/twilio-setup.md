@@ -23,10 +23,8 @@ The commands, output and refusals of `twilio` are in the skill `plugin-twilio-pl
   then say in one sentence what is done and what is next.
 - **Never a secret value.** Never ask for the Account SID's, key SID's or key secret's value, never
   tell anyone to paste one into chat or a page, and never repeat one the person pastes by mistake
-  (tell them to make a new key, step 2). The person sets the keys bound to twilio's `accountSid`,
-  `apiKeySid` and `apiKeySecret` in the twilio member's settings on the screen, or the operator
-  runs `yawble secret set <KEY>` for each on the machine that runs the platform; on a single-person
-  install the person is the operator.
+  (tell them to make a new key, step 2). The person types the three values into
+  an API-key connection with the Twilio preset (Account SID, API key SID, API key secret) in Team settings -> Connections, bound to twilio's `twilio` slot.
 - **Settings are the person's.** The person changes `mode`, `fromNumber`, `messagingServiceSid`,
   `sendAllowlist` and every other twilio setting on this solution's panel (Marketplace >
   Installed > Twilio SMS/MMS > Manage). You say which setting and which value when they ask; you never change one
@@ -44,13 +42,13 @@ The commands, output and refusals of `twilio` are in the skill `plugin-twilio-pl
 
 The steps come in this order: `secrets`, `credentials`, `account type`, `number` (or `buy a
 number` / `choose fromNumber`), `capabilities`, `registration` (one or more lines), `mode`,
-`allowlist`, and last `first message`. While a secret is missing, `check` stops after `secrets` and
-`credentials`; the network steps are skipped.
+`allowlist`, and last `first message`. While the Twilio connection is unbound or lacks a field, `check`
+stops after `secrets` and `credentials`; the network steps are skipped.
 
 Work on the **first** `Next:` line. A `Waiting:` line needs nothing from the person but time: say
 how long it typically takes and that the twilio page shows when it changes. The first poll runs at
-install, so the checklist is filled before the first conversation. Until the secrets are set, each
-poll answers `Poll skipped: Twilio is not set up: <setting> has no value on this platform; …` - quietly,
+install, so the checklist is filled before the first conversation. Until the Twilio connection is bound, each
+poll answers `Poll skipped: Twilio is not set up: <field> has no value on this platform; …` - quietly,
 waking nobody - and still fills the checklist.
 
 ## The steps
@@ -74,9 +72,7 @@ until step 6, so carry on with step 3. A Full one shows `Done: account type — 
 
 ### 2. Credentials (the only manual step that cannot be avoided)
 
-The person makes a **Restricted** API key, then sets three values as the keys bound to twilio's
-`accountSid`, `apiKeySid` and `apiKeySecret`: in the twilio member's settings on the screen, or the
-operator with `yawble secret set <KEY>`.
+The person makes a **Restricted** API key, then puts its three values in an API-key connection with the Twilio preset (Account SID, API key SID, API key secret) in Team settings -> Connections, bound to twilio's `twilio` slot.
 
 1. Open https://console.twilio.com/us1/account/keys-credentials/api-keys and press
    **Create API key**. Key type **Restricted**. Name it `yawble-twilio`. In the new Twilio
@@ -95,18 +91,9 @@ operator with `yawble secret set <KEY>`.
 4. The Account SID (`AC…`) is on the Console home page: https://console.twilio.com/ or, in the
    new Twilio Console: https://1console.twilio.com/
 
-The person sets the three keys in the twilio member's settings on the screen first. When they use
-the operator CLI instead, give them this block, exactly, to run on the machine that runs the
-platform; it names the keys this solution binds. Each `secret set` asks for the value and hides it;
-nothing goes on the command line or in chat:
-
-```
-# Run on the machine that runs the platform. Paste each value only when the command asks for it.
-yawble secret set TWILIO_ACCOUNT_SID      # value: <AC... Account SID>   from https://console.twilio.com/
-yawble secret set TWILIO_API_KEY_SID      # value: <SK... key SID>       from the key you just created
-yawble secret set TWILIO_API_KEY_SECRET   # value: <the key's secret>    shown once when the key was created
-yawble up                                 # restarts the platform so twilio sees the secrets
-```
+5. In Team settings -> Connections the person adds an **API key** connection, chooses **Twilio**,
+   types the Account SID, the API key SID and the API key secret, saves it, and binds it to the
+   twilio member's `twilio` slot. Nothing goes in chat or on a page.
 
 Never use the account's Auth Token: twilio does not accept it.
 
@@ -114,12 +101,14 @@ Never use the account's Auth Token: twilio does not accept it.
 set` (last 4 characters of the SIDs, never the secret) and `Done:
 credentials — the API key signs in to account …1234`. What `check` names, and what to do:
 
-- `Next: secrets — <settings> missing; …` - the keys bound to those settings have no value: they
-  were not set in the member's settings on the screen, or the `secret set` lines were not run, or
-  `yawble up` was not run after them. Set the keys bound to only the missing settings.
-- `Twilio rejected the keys bound to accountSid, apiKeySid and apiKeySecret (401)` - a value is
-  mistyped or the key was deleted; replace the values in the member's settings on the screen, or
-  with `yawble secret set <KEY>`, or make a new key.
+- `` Next: secrets — <fields> missing; no connection is bound to this member's `twilio` slot; … `` - no
+  Twilio connection is bound yet: do step 5.
+- `` Next: secrets — <fields> missing; a person fills in <fields> in the API-key connection bound to
+  the `twilio` slot … `` - the bound connection lacks those fields: fill in only those, in Team
+  settings -> Connections.
+- `` Twilio rejected the Account SID, API key SID and API key secret of the connection bound to the
+  `twilio` slot (401) `` - a value is mistyped or the key was deleted; replace the values in that
+  connection in Team settings -> Connections, or make a new key.
 - `Twilio refused the request (403): the API key lacks the permission <permission>` - edit the key
   at the link above and tick that permission.
 

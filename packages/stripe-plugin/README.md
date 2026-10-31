@@ -1,4 +1,4 @@
-# Stripe 2.0.1
+# Stripe 3.0.0
 
 A plugin member that sets up a team's Stripe objects - products, one-time prices and webhook
 endpoints - and reads checkouts, payments, customers and events. It works through a **restricted
@@ -13,10 +13,10 @@ changes nothing until a person sets `mode` to `apply`.
 ## Set up, with no script
 
 1. **Marketplace**, **Get** Stripe, then **Add member** on a team and choose the Stripe plugin.
-2. Make a restricted key in the Stripe Dashboard (below). In the member's `apiKey` field type a key
-   name, such as `STRIPE_RESTRICTED_KEY`, paste the key into the value box under it, and press Add
-   member (or Save). The next run reads it; nothing restarts. The operator CLI's
-   `yawble secret set STRIPE_RESTRICTED_KEY`, then `yawble up`, sets it too.
+2. Make a restricted key in the Stripe Dashboard (below). The key is a connection, set in **Team
+   settings -> Connections**: add an **API key** connection, choose **Stripe**, paste the key into
+   its Secret key box, and assign it to the team. Then bind it to the member's `stripe` connection
+   slot (when adding the member, or in its settings). The next run reads it; nothing restarts.
 3. Optional, to create webhook endpoints: make a Key Vault ready (below), add its name to
    `keyVaults`, and sign in with Microsoft on the member's `microsoft` connection slot.
 4. Tell the member `setup`. It checks each thing and says the next step in words:
@@ -65,8 +65,8 @@ mode first.
 | Events | Read | `events` |
 | Balance | Read | `setup` checks the key with it |
 
-5. Press **Create key**. Stripe may show the whole key only once: copy it now into the member's
-   value box as in step 2 of the setup. Never paste it into a chat, a card or a file in a
+5. Press **Create key**. Stripe may show the whole key only once: copy it now into the Stripe
+   connection as in step 2 of the setup. Never paste it into a chat, a card or a file in a
    repository.
 6. Tell the member `setup`. A missing permission is named, such as
    `- permissions: missing Prices (write)`, and setup publishes `plugin.stripe-plugin.refused` naming it;
@@ -74,7 +74,7 @@ mode first.
    Read on Products, Prices or Webhook Endpoints is named missing when setup runs in apply.
 
 When the test key works the way you want, make a live key the same way with the **Test mode**
-switch off, and bind it instead.
+switch off, and put it in the connection instead (Team settings -> Connections, Edit).
 
 ## Make a Key Vault ready for webhook secrets
 
@@ -105,7 +105,8 @@ the application's repository, its settings files or a chat.
 
 ## Settings
 
-All three are set by a person only; no command or instruction changes them.
+The key is not a setting: it is the API-key connection bound to the `stripe` slot (Team settings ->
+Connections). The three settings are set by a person only; no command or instruction changes them.
 
 - `mode`: `dryrun` (the default) changes nothing and says what it would do; `apply` makes the
   changes.
@@ -157,13 +158,26 @@ labelled with the lookup key (an endpoint's URL). Refusals, reads and dry runs s
 ## Build and test
 
 ```sh
-packages/stripe-plugin/build.sh ~/plugins-build/stripe-plugin/2.0.1
+packages/stripe-plugin/build.sh ~/plugins-build/stripe-plugin/3.0.0
 (cd packages/stripe-plugin && go test ./...)
 ```
 
 The tests run the plugin against a fake Stripe API and a fake Azure Resource Manager (subscriptions,
 each subscription's Key Vaults, and a vault's secrets) on a local test server; they reach no real
 service.
+
+## 3.0.0
+
+- **The restricted key is a connection.** It is an API-key connection with the Stripe preset, set
+  in Team settings -> Connections and bound to the member's new, required `stripe` slot; the
+  member no longer has a key field. The optional `microsoft` slot is unchanged.
+- **An update carries the key over.** `apiKey` is declared moved to the `stripe` slot, so
+  installing 3.0.0 over 2.x makes a connection from each member's own key, assigns it to the team
+  and binds it, with nobody typing the key again. That connection keeps the field's name
+  (`apiKey`, preset Other), and the plugin reads it as it reads a Stripe connection's `key`. A key
+  held only in the Host's environment (`yawble secret set`) is not a member's own value and is not
+  carried over: add a Stripe connection for it.
+- A refusal about the key names the `stripe` connection, not `apiKey`.
 
 ## 2.0.1
 

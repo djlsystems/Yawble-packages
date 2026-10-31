@@ -236,7 +236,7 @@ func TestADeploymentNamesEachResourceByItsIdAndNoValue(t *testing.T) {
 func TestAContainerAppsResourceEventsHoldNoSecret(t *testing.T) {
 	w := newWorld(t)
 	line := "containerapp create " + ownedRG + " new-app my-app-env " + acrRef("myregistry", "my-app:1.0") + " port=8080 secret=STRIPE_KEY=appSecret1 secret=DB_PASSWORD=" + w.vaultURL
-	r := runPlugin(t, runOpts{config: apply(nil), secrets: map[string]string{"appSecret1": secretValue}, secretKeys: map[string]string{"appSecret1": "SHOP_STRIPE_KEY"}}, line)
+	r := runPlugin(t, runOpts{config: apply(nil), moved: map[string]string{"appSecret1": secretValue}}, line)
 	if !r.ok() {
 		t.Fatal(r.text())
 	}
