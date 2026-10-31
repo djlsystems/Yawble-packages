@@ -164,6 +164,13 @@ To make a new version of a package, raise `version` in its manifest (and in each
 A package is published by uploading its zip, `dist/<id>-<version>.zip`, on the yawble.ai
 Marketplace's admin page, after `scripts/check.sh` passes. Upload each zip whose version is new.
 
+## Retired packages
+
+- **`web-credentials`** (solution) and **`web-credentials-plugin`** (plugin) were retired. Website
+  sign-ins are now **Website connections**, used through **Team Connections**, from Yawble
+  v2026.10.31.1. Their source is in this repository's git history. Versions already published stay
+  downloadable on the Marketplace for instances that have not updated.
+
 ## License
 
 The packages are open source under the [Apache License 2.0](LICENSE) (SPDX: Apache-2.0): use,
