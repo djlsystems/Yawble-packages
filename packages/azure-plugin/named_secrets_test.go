@@ -11,7 +11,7 @@ import (
 // otherValue is a second named secret's value, put together at run time like secretValue.
 var otherValue = "other-" + strings.Repeat("K3", 12) + "-value"
 
-func TestTheManifestDeclaresTheAppSecretsBlockBesideTheEightKeys(t *testing.T) {
+func TestTheManifestKeepsTheOldAppSecretsBlockBesideTheEightMovedKeys(t *testing.T) {
 	var m struct {
 		Secrets      map[string]json.RawMessage `json:"secrets"`
 		NamedSecrets *struct {
@@ -25,7 +25,7 @@ func TestTheManifestDeclaresTheAppSecretsBlockBesideTheEightKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := m.NamedSecrets
-	if n == nil || n.Label != "App secrets" || n.Max != 20 || !strings.Contains(n.Description, "the name is how the team refers to it") {
+	if n == nil || n.Label != "App secrets (old)" || n.Max != 20 || !strings.Contains(n.Description, "the name is how the team refers to it") || !strings.Contains(n.Description, "Team settings -> Connections") {
 		t.Fatalf("namedSecrets = %+v", n)
 	}
 	if len(m.Secrets) != appSecretFields {
@@ -76,7 +76,7 @@ func TestANamedSecretGoesIntoTheAppsSecretsByItsName(t *testing.T) {
 	if !r.ok() {
 		t.Fatal(r.text())
 	}
-	mustContain(t, r.text(), "0 Key Vault secrets and 1 secrets from this member's keys", "Nothing was changed")
+	mustContain(t, r.text(), "0 Key Vault secrets and 1 secrets from this member's connections", "Nothing was changed")
 	if len(w.f.writes()) != 0 {
 		t.Fatal("whatif wrote")
 	}
@@ -150,8 +150,9 @@ func TestANameTheMemberDoesNotHoldIsRefusedBeforeAnyAzureCall(t *testing.T) {
 		if r.ok() {
 			t.Fatalf("%s was accepted", c.arg)
 		}
-		mustContain(t, r.text(), "Refused: secret=AUTH_MICROSOFT_SECRET=MicrosoftClientSecret names no secret this member holds",
-			"ask the person to add a secret named MicrosoftClientSecret under App secrets on the Azure member's settings screen",
+		mustContain(t, r.text(), "Refused: secret=AUTH_MICROSOFT_SECRET=MicrosoftClientSecret names no app secret this member holds",
+			"ask the person to add an API-key connection (preset Other) with a field named MicrosoftClientSecret in Team settings -> Connections",
+			"bind it to the Azure member's appSecrets slot",
 			"never to send its value in a message", "nothing was changed")
 		if strings.Count(strings.TrimSuffix(r.text(), "."), ". ") != 0 {
 			t.Fatalf("the refusal is not one sentence: %q", r.text())
@@ -175,7 +176,7 @@ func TestASecretsValueTypedWhereItsNameBelongsIsRefusedWithoutWritingItOut(t *te
 		t.Fatal("a value in place of a name was accepted")
 	}
 	mustContain(t, r.text(), "Refused", "never a value")
-	if strings.Contains(r.raw, value) || strings.Contains(r.raw, "add a secret named") {
+	if strings.Contains(r.raw, value) || strings.Contains(r.raw, "with a field named") {
 		t.Fatalf("the value was written out or asked for by name:\n%s", r.raw)
 	}
 	if len(w.f.calls) != 0 {
@@ -183,14 +184,13 @@ func TestASecretsValueTypedWhereItsNameBelongsIsRefusedWithoutWritingItOut(t *te
 	}
 }
 
-func TestAppSecretNStillResolvesBesideANamedSecret(t *testing.T) {
+func TestAMovedAppSecretNStillResolvesBesideAnOldNamedSecret(t *testing.T) {
 	w := newWorld(t)
 	line := "containerapp create " + ownedRG + " new-app my-app-env " + acrRef("myregistry", "my-app:1.0") + " secret=STRIPE_KEY=appSecret1 secret=AUTH_MICROSOFT_SECRET=MicrosoftClientSecret"
 	r := runPlugin(t, runOpts{
-		config:     apply(nil),
-		secrets:    map[string]string{"appSecret1": otherValue},
-		secretKeys: map[string]string{"appSecret1": "SHOP_STRIPE_KEY"},
-		named:      map[string]string{"MicrosoftClientSecret": secretValue},
+		config: apply(nil),
+		moved:  map[string]string{"appSecret1": otherValue},
+		named:  map[string]string{"MicrosoftClientSecret": secretValue},
 	}, line)
 	if !r.ok() {
 		t.Fatal(r.text())

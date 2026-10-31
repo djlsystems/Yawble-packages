@@ -11,7 +11,7 @@ import (
 )
 
 // Key Vault and the apps' logs are reached through Azure management only, and an app may read a
-// secret from this member's own keys.
+// secret from a connection bound to its appSecrets slot.
 
 func TestTheMicrosoftSlotAsksForAzureManagementSQLAndStorageOnly(t *testing.T) {
 	m := readManifest(t)
@@ -30,7 +30,7 @@ func TestTheMicrosoftSlotAsksForAzureManagementSQLAndStorageOnly(t *testing.T) {
 	for n := 1; n <= appSecretFields; n++ {
 		field := "appSecret" + string(rune('0'+n))
 		s, ok := m.Secrets[field]
-		if !ok || s.Required || !strings.Contains(s.Description, "secret=<NAME>="+field) || !strings.Contains(s.Description, "on the screen") {
+		if !ok || s.Required || s.MovedTo != keySlot || !strings.Contains(s.Description, "secret=<NAME>="+field) || !strings.Contains(s.Description, "Team settings -> Connections") {
 			t.Fatalf("%s = %+v", field, s)
 		}
 	}
@@ -152,13 +152,13 @@ var secretValue = "app-" + strings.Repeat("Q7", 12) + "-value"
 func TestAnAppSecretFromTheMembersOwnKeysGoesOnlyIntoTheAppsConfiguration(t *testing.T) {
 	w := newWorld(t)
 	line := "containerapp create " + ownedRG + " new-app my-app-env " + acrRef("myregistry", "my-app:1.0") + " port=8080 secret=STRIPE_KEY=appSecret1 secret=DB_PASSWORD=" + w.vaultURL
-	o := runOpts{secrets: map[string]string{"appSecret1": secretValue}, secretKeys: map[string]string{"appSecret1": "SHOP_STRIPE_KEY"}}
+	o := runOpts{moved: map[string]string{"appSecret1": secretValue}}
 
 	r := runPlugin(t, o, line)
 	if !r.ok() {
 		t.Fatal(r.text())
 	}
-	mustContain(t, r.text(), "1 Key Vault secrets and 1 secrets from this member's keys", "Nothing was changed")
+	mustContain(t, r.text(), "1 Key Vault secrets and 1 secrets from this member's connections", "Nothing was changed")
 	if len(w.f.writes()) != 0 {
 		t.Fatal("whatif wrote")
 	}
@@ -170,7 +170,7 @@ func TestAnAppSecretFromTheMembersOwnKeysGoesOnlyIntoTheAppsConfiguration(t *tes
 		t.Fatal(r.text())
 	}
 	assertNoValue(t, r.raw)
-	if ev := r.events("applied"); len(ev) != 1 || !strings.Contains(ev[0]["summary"].(string), "1 secrets from this member's keys") {
+	if ev := r.events("applied"); len(ev) != 1 || !strings.Contains(ev[0]["summary"].(string), "1 secrets from this member's connections") {
 		t.Fatalf("applied = %v", ev)
 	}
 	put := w.f.callsTo(http.MethodPut, "/containerApps/new-app")
@@ -215,7 +215,7 @@ func TestAnAppSecretFromTheMembersOwnKeysGoesOnlyIntoTheAppsConfiguration(t *tes
 	}
 }
 
-func TestAnAppSecretFromAnUnboundOrUnsetKeyIsRefusedNamingTheKey(t *testing.T) {
+func TestAnAppSecretNoConnectionHoldsIsRefusedSayingWhereToAddIt(t *testing.T) {
 	w := newWorld(t)
 	base := "containerapp create " + ownedRG + " new-app my-app-env " + acrRef("myregistry", "my-app:1.0") + " "
 	for _, c := range []struct {
@@ -223,14 +223,14 @@ func TestAnAppSecretFromAnUnboundOrUnsetKeyIsRefusedNamingTheKey(t *testing.T) {
 		arg  string
 		want []string
 	}{
-		{runOpts{config: apply(nil), secretKeys: map[string]string{"appSecret2": "SHOP_WEBHOOK_SECRET"}}, "secret=HOOK=appSecret2",
-			[]string{"appSecret2, which is bound to the key SHOP_WEBHOOK_SECRET, and that key is not set", "A person sets SHOP_WEBHOOK_SECRET on the screen first (this member's settings)"}},
+		{runOpts{config: apply(nil), moved: map[string]string{"appSecret1": secretValue}}, "secret=HOOK=appSecret2",
+			[]string{"secret=HOOK=appSecret2 names no app secret this member holds", "add an API-key connection (preset Other) with a field named appSecret2 in Team settings -> Connections", "bind it to the Azure member's appSecrets slot"}},
 		{runOpts{config: apply(nil)}, "secret=HOOK=appSecret3",
-			[]string{"appSecret3, which this member does not bind to a key", "sets it on the screen first (this member's settings)"}},
-		{runOpts{config: apply(nil), secrets: map[string]string{"appSecret1": secretValue}}, "secret=HOOK=appSecret9",
-			[]string{"names no field of this member; its own keys are appSecret1 to appSecret8"}},
-		{runOpts{config: apply(nil), secrets: map[string]string{"appSecret1": secretValue}}, "secret=HOOK=appSecret01",
-			[]string{"names no field of this member"}},
+			[]string{"names no app secret this member holds", "Team settings -> Connections"}},
+		{runOpts{config: apply(nil), moved: map[string]string{"appSecret1": secretValue}}, "secret=HOOK=appSecret9",
+			[]string{"names no app secret this member holds"}},
+		{runOpts{config: apply(nil), moved: map[string]string{"appSecret1": secretValue}}, "secret=HOOK=appSecret01",
+			[]string{"names no app secret this member holds"}},
 	} {
 		r := runPlugin(t, c.o, base+c.arg)
 		if r.ok() {
@@ -240,7 +240,7 @@ func TestAnAppSecretFromAnUnboundOrUnsetKeyIsRefusedNamingTheKey(t *testing.T) {
 		assertNoValue(t, r.raw)
 	}
 	r := runPlugin(t, runOpts{config: apply(nil)}, base+"env=API_TOKEN=x"+strings.Repeat("y", 8))
-	mustContain(t, r.text(), "API_TOKEN looks like a secret", "secret=API_TOKEN=https://<vault>.vault.azure.net/secrets/<name>", "secret=API_TOKEN=appSecret<1-8>")
+	mustContain(t, r.text(), "API_TOKEN looks like a secret", "secret=API_TOKEN=https://<vault>.vault.azure.net/secrets/<name>", "secret=API_TOKEN=<name>", "Team settings -> Connections")
 	if len(w.f.writes()) != 0 {
 		t.Fatal("a refused app wrote")
 	}
@@ -249,7 +249,7 @@ func TestAnAppSecretFromAnUnboundOrUnsetKeyIsRefusedNamingTheKey(t *testing.T) {
 func TestAnAppSecretValueIsRedactedWhereverItWouldBeWritten(t *testing.T) {
 	newFake(t)
 	// A value an instruction quotes back is hidden like a token.
-	r := runPlugin(t, runOpts{secrets: map[string]string{"appSecret4": secretValue}}, "show "+secretValue)
+	r := runPlugin(t, runOpts{moved: map[string]string{"appSecret4": secretValue}}, "show "+secretValue)
 	assertNoValue(t, r.raw)
 }
 

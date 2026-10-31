@@ -501,13 +501,14 @@ func (f *fake) deployment(w http.ResponseWriter, method, path string, body []byt
 // ---- running the plugin ----
 
 type runOpts struct {
-	config     map[string]any
-	secrets    map[string]string // the request's secrets: field -> value
-	secretKeys map[string]string // the request's secretKeys: field -> key name
-	named      map[string]string // the request's namedSecrets: name -> value; nil: the Host sends none
-	noConnect  bool              // no microsoft slot bound
-	tokens     map[string]string // the slot's tokens map; nil: one per API
-	trees      []string
+	config    map[string]any
+	moved     map[string]string            // appSecret<N> -> value: the one connection CON 7 makes of 2.x's own values, bound first to appSecrets
+	keys      map[string]map[string]string // further appSecrets connections, by name (bound in name order): field -> value
+	named     map[string]string            // the request's namedSecrets: name -> value; nil: the Host sends none
+	sent      map[string]string            // the request's secrets, which 3.0.0 ignores
+	noConnect bool                         // no microsoft slot bound
+	tokens    map[string]string            // the slot's tokens map; nil: one per API
+	trees     []string
 }
 
 type result struct {
@@ -554,18 +555,33 @@ func runPlugin(t *testing.T, o runOpts, instruction string) *result {
 			"expiresAt": "2026-10-09T16:00:00Z", "scopes": []string{"offline_access"}, "tokens": tm,
 		}
 	}
+	var keys []map[string]any
+	if o.moved != nil {
+		keys = append(keys, map[string]any{"kind": "apikey", "account": testTeam + " - Azure", "preset": "other", "fields": o.moved})
+	}
+	accounts := make([]string, 0, len(o.keys))
+	for a := range o.keys {
+		accounts = append(accounts, a)
+	}
+	sort.Strings(accounts)
+	for _, a := range accounts {
+		keys = append(keys, map[string]any{"kind": "apikey", "account": a, "preset": "other", "fields": o.keys[a]})
+	}
+	if keys != nil {
+		conns[keySlot] = keys
+	}
 	var trees []map[string]any
 	for _, tr := range o.trees {
 		trees = append(trees, map[string]any{"repo": "my-repo", "path": tr, "clonePath": tr})
 	}
 	req := map[string]any{
 		"protocol":         "harness.member/1",
-		"plugin":           map[string]any{"id": "azure-plugin", "version": "2.1.0"},
+		"plugin":           map[string]any{"id": "azure-plugin", "version": "3.0.0"},
 		"member":           map[string]any{"id": testTeam + "/Azure", "team": testTeam, "name": "Azure"},
 		"work":             []map[string]any{{"seq": 1, "instruction": instruction, "payload": map[string]any{"instruction": instruction}}},
 		"config":           cfg,
-		"secrets":          orEmpty(o.secrets),
-		"secretKeys":       orEmpty(o.secretKeys),
+		"secrets":          orEmpty(o.sent),
+		"secretKeys":       map[string]string{},
 		"connections":      conns,
 		"workingDirectory": t.TempDir(),
 		"worktrees":        trees,

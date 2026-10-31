@@ -3,8 +3,8 @@
 //
 // In:  ONE JSON request on stdin - { member: { team }, work: [{ instruction }], config,
 //
-//	connections: { microsoft: { account, accessToken, tokens: { <API>: { accessToken } } } },
-//	secrets: { appSecret<N>: <value> }, secretKeys: { appSecret<N>: <key name> },
+//	connections: { microsoft: { account, accessToken, tokens: { <API>: { accessToken } } },
+//	               appSecrets: [{ kind: "apikey", account, preset, fields: { <name>: <value> } }] },
 //	namedSecrets: { <name>: <value> }, namedSecretNames: [<name>],
 //	workingDirectory, worktrees: [{ path }], siteFiles: [{ folder }], ... }.
 //
@@ -38,9 +38,7 @@ type request struct {
 	} `json:"member"`
 	Work             []workItem                 `json:"work"`
 	Config           map[string]json.RawMessage `json:"config"`
-	Connections      map[string]connection      `json:"connections"`
-	Secrets          map[string]string          `json:"secrets"`
-	SecretKeys       map[string]string          `json:"secretKeys"`
+	Connections      map[string]json.RawMessage `json:"connections"`
 	NamedSecrets     map[string]string          `json:"namedSecrets"`
 	WorkingDirectory string                     `json:"workingDirectory"`
 	Worktrees        []struct {
@@ -69,8 +67,21 @@ type apiToken struct {
 	AccessToken string `json:"accessToken"`
 }
 
-// slot is the manifest's one connection slot.
+// slot is the manifest's Microsoft connection slot.
 const slot = "microsoft"
+
+// keySlot is the manifest's API-key slot that holds the app secrets. It takes several connections
+// ("multiple": true), so stdin carries it as an array, one entry per bound connection.
+const keySlot = "appSecrets"
+
+// keyConnection is one API-key connection bound to the appSecrets slot: its name and its fields,
+// each field an app secret by the field's name.
+type keyConnection struct {
+	Kind    string            `json:"kind"`
+	Account string            `json:"account"`
+	Preset  string            `json:"preset"`
+	Fields  map[string]string `json:"fields"`
+}
 
 // documentsRoot holds every team's documents folder, /data/documents/<team>. Only tests change it.
 var documentsRoot = "/data/documents"
@@ -94,14 +105,11 @@ type plugin struct {
 	trees   []string // the run's worktrees
 	now     func() time.Time
 
-	// appSecrets holds the values of the app secret fields this member binds and whose keys are
-	// set, by field (appSecret1 to appSecret8); appSecretKeys the key name each bound field is
-	// bound to, set or not. A value is only ever put in a container app's configuration.
-	appSecrets    map[string]string
-	appSecretKeys map[string]string
-	// namedSecrets holds the member's named secrets, by the name a person gave each on the screen
-	// (this member's settings); like an app secret's, a value only ever goes in an app's
-	// configuration.
+	// keys holds the API-key connections bound to the appSecrets slot, in binding order; each field
+	// is an app secret by its name. A value is only ever put in a container app's configuration.
+	keys []keyConnection
+	// namedSecrets holds the member's old named secrets, by the name a person gave each on the
+	// screen before the app secrets moved to connections; read only after keys.
 	namedSecrets map[string]string
 
 	// hidden holds every value that must never be written out: each API's token and each app
@@ -127,7 +135,8 @@ func run(in io.Reader, out io.Writer, now func() time.Time) int {
 	}
 
 	tokens := map[api]string{}
-	if c, ok := req.Connections[slot]; ok {
+	var c connection
+	if raw, ok := req.Connections[slot]; ok && json.Unmarshal(raw, &c) == nil {
 		p.account = c.Account
 		for k, t := range c.Tokens {
 			tokens[api(strings.ToLower(strings.TrimSuffix(k, "/"))+"/")] = t.AccessToken
@@ -141,11 +150,12 @@ func run(in io.Reader, out io.Writer, now func() time.Time) int {
 	}
 	p.az = &client{tokens: tokens, progress: p.progress}
 
-	p.appSecrets, p.appSecretKeys = map[string]string{}, map[string]string{}
-	for field, value := range req.Secrets {
-		p.hide(value)
-		if _, ok := appSecretField(field); ok && value != "" {
-			p.appSecrets[field] = value
+	if raw, ok := req.Connections[keySlot]; ok {
+		p.keys = keyConnections(raw)
+		for _, k := range p.keys {
+			for _, v := range k.Fields {
+				p.hide(v)
+			}
 		}
 	}
 	p.namedSecrets = map[string]string{}
@@ -153,11 +163,6 @@ func run(in io.Reader, out io.Writer, now func() time.Time) int {
 		p.hide(value)
 		if value != "" {
 			p.namedSecrets[name] = value
-		}
-	}
-	for field, key := range req.SecretKeys {
-		if _, ok := appSecretField(field); ok {
-			p.appSecretKeys[field] = key
 		}
 	}
 
@@ -271,6 +276,20 @@ func instructionText(item workItem) string {
 		return payload.Instruction
 	}
 	return ""
+}
+
+// keyConnections reads the appSecrets slot: an array of connections, or one object from a Host that
+// sends a single slot's shape; anything else holds none.
+func keyConnections(raw json.RawMessage) []keyConnection {
+	var many []keyConnection
+	if json.Unmarshal(raw, &many) == nil {
+		return many
+	}
+	var one keyConnection
+	if json.Unmarshal(raw, &one) == nil && one.Fields != nil {
+		return []keyConnection{one}
+	}
+	return nil
 }
 
 func (p *plugin) hide(value string) {

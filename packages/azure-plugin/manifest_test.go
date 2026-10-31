@@ -24,11 +24,13 @@ type manifest struct {
 	Secrets map[string]struct {
 		Description string `json:"description"`
 		Required    bool   `json:"required"`
+		MovedTo     string `json:"movedTo"`
 	} `json:"secrets"`
 	Connections map[string]struct {
 		Providers []string            `json:"providers"`
 		Scopes    map[string][]string `json:"scopes"`
 		Required  bool                `json:"required"`
+		Multiple  bool                `json:"multiple"`
 	} `json:"connections"`
 	Events struct {
 		Publishes []struct {
@@ -54,7 +56,7 @@ func readManifest(t *testing.T) manifest {
 
 func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 	m := readManifest(t)
-	if m.ID != "azure-plugin" || m.Version != "2.1.0" {
+	if m.ID != "azure-plugin" || m.Version != "3.0.0" {
 		t.Fatalf("id %q version %q", m.ID, m.Version)
 	}
 	settingNames := []string{"subscription", "regions", "mode", "allowDelete", "sharedSqlServers", "sharedContainerRegistries", "sharedRegistries", "monthlyBudget", "budgetEmails", "namePrefix"}
@@ -90,8 +92,8 @@ func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 		t.Fatalf("regions: enum %v, default %v", r.Enum, r.Default)
 	}
 
-	if len(m.Connections) != 1 {
-		t.Fatalf("connection slots = %d, want one", len(m.Connections))
+	if len(m.Connections) != 2 {
+		t.Fatalf("connection slots = %d, want microsoft and appSecrets", len(m.Connections))
 	}
 	c, ok := m.Connections[slot]
 	if !ok || !c.Required || !slices.Equal(c.Providers, []string{"microsoft"}) {

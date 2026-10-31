@@ -199,7 +199,7 @@ func TestContainerAppCreateRefusesToDropAValueSecretAKeptSettingReads(t *testing
 	}
 
 	value := "q" + strings.Repeat("v", 12)
-	r = runPlugin(t, runOpts{config: apply(nil), secrets: map[string]string{"appSecret2": value}, secretKeys: map[string]string{"appSecret2": "QUEUE_CONN_KEY"}}, appAgain(w)+" secret=QUEUE_CONN=appSecret2")
+	r = runPlugin(t, runOpts{config: apply(nil), moved: map[string]string{"appSecret2": value}}, appAgain(w)+" secret=QUEUE_CONN=appSecret2")
 	if !r.ok() {
 		t.Fatal(r.text())
 	}
