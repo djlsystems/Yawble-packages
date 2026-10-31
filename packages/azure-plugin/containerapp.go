@@ -55,21 +55,42 @@ func (p *plugin) namedSecret(name string) (string, string, bool) {
 // bound to the appSecrets slot, matched ignoring case, and whether one holds it. Two connections
 // holding a field by that name with different values is a refusal naming both, never a value.
 func (p *plugin) connectionSecret(env, name string) (string, string, bool, error) {
-	field, value, from := "", "", ""
-	for _, k := range p.keys {
+	field, value, from, at := "", "", "", 0
+	for i, k := range p.keys {
 		for f, v := range k.Fields {
 			if !strings.EqualFold(f, name) || v == "" {
 				continue
 			}
 			if from != "" && v != value {
-				return "", "", false, refusef("Refused: secret=%s=%s is a field of two connections bound to this member's appSecrets slot, %s and %s, holding different values, so ask the person to rename the field in one of them in Team settings -> Connections, then run containerapp create again; nothing was changed.", env, name, from, k.Account)
+				named := "both hold a field named " + field
+				if f != field {
+					named = "hold fields named " + field + " and " + f
+				}
+				return "", "", false, refusef("Refused: secret=%s=%s is a field of two connections bound to this member's appSecrets slot, the %s (%s) and the %s (%s) connection, which %s with different values, so ask the person to rename the field in one of them in Team settings -> Connections, then run containerapp create again; nothing was changed.", env, name, ordinal(at+1), from, ordinal(i+1), k.Account, named)
 			}
 			if from == "" {
-				field, value, from = f, v, k.Account
+				field, value, from, at = f, v, k.Account, i
 			}
 		}
 	}
 	return field, value, from != "", nil
+}
+
+// ordinal is 1st, 2nd, 3rd, 4th, ...: a connection's place among the slot's bindings, which the Host
+// hands over in binding order (appSecrets, appSecrets#2, ...), the order the member's settings show.
+func ordinal(n int) string {
+	suffix := "th"
+	if n%100 < 11 || n%100 > 13 {
+		switch n % 10 {
+		case 1:
+			suffix = "st"
+		case 2:
+			suffix = "nd"
+		case 3:
+			suffix = "rd"
+		}
+	}
+	return strconv.Itoa(n) + suffix
 }
 
 // namedRefusal is the sentence for secret=NAME=<name> when no connection bound to appSecrets holds a

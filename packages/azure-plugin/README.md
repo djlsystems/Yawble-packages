@@ -379,7 +379,9 @@ the app reads it as the environment variable `<NAME>`:
 `secret=AUTH_MICROSOFT_SECRET=MicrosoftClientSecret`. The name matches ignoring case. A name no bound
 connection holds is refused before anything changes, in one sentence naming it and telling the team
 to ask the person to add a field by that name to a connection bound to `appSecrets`; a name two bound
-connections hold with different values is refused naming both. A value is never asked for in a
+connections hold with different values is refused naming both by their place among the slot's
+bindings (1st, 2nd, ... in the order the member's settings show) and their account, and the field
+each holds. A value is never asked for in a
 message, and a secret's value typed where its name belongs is refused without writing it out.
 
 `appSecret1` to `appSecret8` from 2.x are fields of the connection an update made (see New in

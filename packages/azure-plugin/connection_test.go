@@ -74,7 +74,27 @@ func TestAFieldTwoConnectionsHoldWithDifferentValuesIsRefusedNamingBoth(t *testi
 	if r.ok() {
 		t.Fatal("an ambiguous field was accepted")
 	}
-	mustContain(t, r.text(), "Refused: secret=AUTH=ClientSecret is a field of two connections bound to this member's appSecrets slot, Blog auth and Shop auth", "rename the field", "nothing was changed")
+	mustContain(t, r.text(), "Refused: secret=AUTH=ClientSecret is a field of two connections bound to this member's appSecrets slot, the 1st (Blog auth) and the 2nd (Shop auth) connection, which hold fields named clientsecret and ClientSecret with different values", "rename the field in one of them in Team settings -> Connections", "nothing was changed")
+	assertNoNamedValue(t, r.raw)
+	if len(w.f.calls) != 0 {
+		t.Fatal("Azure was called")
+	}
+
+	// Connections are named by their place among the slot's bindings, so two with the same account
+	// can be told apart; the field is named as each holds it.
+	w = newWorld(t)
+	r = runPlugin(t, runOpts{
+		config: apply(nil),
+		keys: map[string]map[string]string{
+			"Other":   {"appSecret1": secretValue},
+			"Other 2": {"appSecret2": otherValue},
+			"Other 3": {"appSecret1": otherValue},
+		},
+	}, appCreateLine("secret=S_AS1=appSecret1"))
+	if r.ok() {
+		t.Fatal("an ambiguous field was accepted")
+	}
+	mustContain(t, r.text(), "secret=S_AS1=appSecret1 is a field of two connections bound to this member's appSecrets slot, the 1st (Other) and the 3rd (Other 3) connection, which both hold a field named appSecret1 with different values", "nothing was changed")
 	assertNoNamedValue(t, r.raw)
 	if len(w.f.calls) != 0 {
 		t.Fatal("Azure was called")
@@ -124,4 +144,12 @@ func readFile(t *testing.T, name string) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+func TestOrdinalNamesABindingsPlace(t *testing.T) {
+	for n, want := range map[int]string{1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 11: "11th", 12: "12th", 13: "13th", 21: "21st", 22: "22nd", 23: "23rd", 111: "111th"} {
+		if got := ordinal(n); got != want {
+			t.Errorf("ordinal(%d) = %q, want %q", n, got, want)
+		}
+	}
 }
