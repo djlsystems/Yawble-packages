@@ -103,3 +103,16 @@ func TestTheConnectionsWhitelistedIPIsTheClientIP(t *testing.T) {
 		t.Fatalf("list from the connection's Whitelisted IP failed: %s", r.output)
 	}
 }
+
+// An Other connection without a clientIp field, no clientIp setting and no address service: the
+// next step names the member's clientIp setting.
+func TestSetupNamesTheClientIPSettingWhenTheConnectionHasNoIP(t *testing.T) {
+	n := newHarness(t)
+	old := addressURL
+	addressURL = "http://127.0.0.1:1"
+	t.Cleanup(func() { addressURL = old })
+	n.sec = map[string]string{"apiUser": testUser, "apiKey": testKey}
+	r := n.run("setup")
+	mustContain(t, r.output, "MISSING  this computer's internet address could not be found",
+		"The namecheap connection has no Whitelisted IP", "this member's `clientIp` setting")
+}

@@ -23,15 +23,16 @@ No script is needed. You need a Namecheap account that holds the domains, and a 
 3. **Add a Namecheap connection** in **Team settings, Connections**: **Add connection**, **API key**,
    **Namecheap**, then **API user** (your Namecheap user name, the one you sign in with), **API key**
    (the key from that page) and **Whitelisted IP** (the public IPv4 address this computer calls
-   Namecheap from; step 5 names it). Assign it to the team and bind it to the member's `namecheap`
+   Namecheap from; step 5 names it). The Namecheap preset requires the Whitelisted IP: it is the
+   address the plugin sends to Namecheap as `ClientIp`. Assign it to the team and bind it to the member's `namecheap`
    slot. The credential lives only there, never in the member's settings.
 4. **List the domains** it may change in the member's `domains` setting, such as `example.com`.
    It reads and changes no other domain.
 5. **Run the member's `setup` command** (tell it `setup`). It checks each thing and says the next
    step in words:
    - a Namecheap connection with an API user and key is bound to the `namecheap` slot;
-   - this computer's internet address, which it names, such as `203.0.113.7` (the connection's
-     Whitelisted IP when it has one);
+   - this computer's internet address, which it names, such as `203.0.113.7`: the connection's
+     Whitelisted IP;
    - API access is on for the account;
    - that address is on Namecheap's **API allow-list**. Namecheap answers only calls from
      addresses on it. The list is on the same API Access page, under **Whitelisted IPs**: press
@@ -58,11 +59,11 @@ All are set by a person.
 | `domains` | none | The only domains it may read or change. |
 | `mode` | `dryrun` | `dryrun` answers each change as the records before and after and changes nothing; `apply` makes it. |
 | `defaultTtl` (advanced) | `1799` | The TTL in seconds (60 to 60000) `ensure` gives a record it adds when the command names none. 1799 is Namecheap's Automatic. A ttl the command names always wins; a value out of range is refused, naming `defaultTtl`. |
-| `clientIp` (advanced) | empty | This computer's public IPv4 address, used only when the connection's Whitelisted IP is empty. Empty: the plugin finds it by asking `api.ipify.org`, and sends it to Namecheap as `ClientIp`. Set it when the computer reaches the internet through an address that changes or differs from the one found; that address must be on the allow-list. |
+| `clientIp` (advanced) | empty | Not used with a Namecheap connection: its Whitelisted IP is required and is always the `ClientIp` sent. Used only when the slot holds an Other API-key connection with `apiUser` and `apiKey` fields and no `clientIp` field: then this address is sent as `ClientIp`, and when it is empty too the plugin finds the address by asking `api.ipify.org`. The address must be on the allow-list. |
 | `sandbox` (advanced) | off | Calls Namecheap's sandbox API (https://www.sandbox.namecheap.com) instead of the real one. The sandbox has its own account, API access page, key and allow-list. |
 
 Connection: `namecheap`, required - a Namecheap API-key connection (API user, API key, Whitelisted
-IP), set in Team settings, Connections. The member's settings hold no credential.
+IP, all three required; the Whitelisted IP is the `ClientIp` sent), set in Team settings, Connections. The member's settings hold no credential.
 
 ## Commands
 
@@ -143,8 +144,13 @@ network.
 - **An update carries the values over.** The manifest declares both old fields moved to the slot,
   so installing 3.0.0 over 2.x makes one Namecheap connection from each member's own API user and
   key, assigns it to the team and binds it. Namecheap's Whitelisted IP was never held by the member,
-  so that connection reads **Needs you** until a person fills it in once and saves it.
-- The `clientIp` setting stays, used only when the connection's Whitelisted IP is empty.
+  so that connection reads **Needs you** until a person fills it in once and saves it, and no
+  command runs until then. If this member had `clientIp` set, put that address in the connection's
+  Whitelisted IP.
+- **The Whitelisted IP is the `ClientIp` sent.** The Namecheap preset requires it, so with a
+  Namecheap connection the `clientIp` setting and auto-detection (`api.ipify.org`) are not used. They
+  are used only by an Other API-key connection that holds `apiUser` and `apiKey` and no `clientIp`
+  field: the `clientIp` setting first, then auto-detection.
 
 ## 2.0.1
 

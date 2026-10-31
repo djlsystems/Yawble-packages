@@ -23,8 +23,8 @@ for the domain itself, or the name below it: `www`, `_dmarc`, `selector1._domain
 (`www.example.com` is read as `www`).
 
 - `setup` - checks, in order: a Namecheap API-key connection with an API user and key is bound to
-  the `namecheap` slot; this computer's internet address (named; the connection's Whitelisted IP when
-  it has one); API access is on; that address is on Namecheap's API allow-list; each listed domain is
+  the `namecheap` slot; this computer's internet address (named; the connection's Whitelisted IP,
+  which the Namecheap connection requires and which is sent as `ClientIp`); API access is on; that address is on Namecheap's API allow-list; each listed domain is
   in the account and uses Namecheap DNS. It ends with `Next step:` in words, or `Ready`. It changes
   nothing. Pass the next step to the person as it is written.
 - `list <domain>` - every record, as `TYPE host value [pref N] ttl N`, and the newest backup ids.
@@ -72,7 +72,9 @@ tell me." Then send the same command again. You cannot change `mode`, `domains`,
 `sandbox` or the Namecheap connection yourself; never ask anybody for the API key in a message. The
 API user, API key and Whitelisted IP are set by a person in Team settings, Connections, as a
 Namecheap API-key connection bound to this member's `namecheap` slot - never in the member's
-settings. A person may set
+settings. The Whitelisted IP is required there and is the address sent to Namecheap as `ClientIp`;
+the `clientIp` setting and finding the address by itself (`api.ipify.org`) are used only when the
+slot holds an Other API-key connection with no `clientIp` field. A person may set
 `mode` back to `dryrun` when the work is done.
 
 ## Live on the name servers
@@ -150,7 +152,8 @@ Every refusal ends "Nothing was changed."
 - `Refused: no Namecheap API user and API key are bound` - a person adds a Namecheap API-key
   connection in Team settings, Connections, assigns it to the team and binds it to the `namecheap`
   slot. A connection carried over from an older version reads Needs you until a person fills in its
-  Whitelisted IP once; pass that on as it is.
+  Whitelisted IP once; pass that on as it is. If the member's `clientIp` setting holds an address,
+  that is the address to put in the connection's Whitelisted IP.
 - `... is not in this member's domains setting` - a person adds the domain to `domains`.
 - `... holds a URL redirect record ...` - the answer names the `remove` command; send it once a
   person has approved replacing the redirect, then ensure again. No change in Namecheap's own

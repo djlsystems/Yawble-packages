@@ -50,7 +50,7 @@
       "type": "string",
       "default": "",
       "setBy": "person",
-      "description": "This computer's public IPv4 address, as on Namecheap's API allow-list, used only when the namecheap connection's Whitelisted IP is empty. Empty here too: the plugin finds it itself. Set it when the computer reaches the internet through an address that changes or differs from the one found.",
+      "description": "Not used with a Namecheap connection, whose required Whitelisted IP is the address sent. Used only when the namecheap slot holds an Other API-key connection with no clientIp field: this computer's public IPv4 address, as on Namecheap's API allow-list. Empty here too: the plugin finds it itself.",
       "advanced": true
     },
     "sandbox": {

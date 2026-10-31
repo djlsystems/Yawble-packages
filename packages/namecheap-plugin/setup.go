@@ -30,7 +30,7 @@ func (p *plugin) setup() string {
 	switch {
 	case ipErr != nil:
 		miss("this computer's internet address could not be found",
-			"Set this computer's public IPv4 address as the Whitelisted IP of the namecheap connection in Team settings, Connections.")
+			"The namecheap connection has no Whitelisted IP: set this computer's public IPv4 address in this member's `clientIp` setting, or bind a Namecheap API-key connection whose Whitelisted IP is that address (Team settings, Connections).")
 	case p.sec.ClientIP != "":
 		ok("this computer's internet address is " + ip + " (the namecheap connection's Whitelisted IP)")
 	case p.cfg.ClientIP != "":
