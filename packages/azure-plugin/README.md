@@ -376,7 +376,7 @@ never their values. The member never calls Key Vault itself: Azure reads the sec
 app's identity.
 
 An app's secret can also come from one of the team's own connections, set in
-**Team settings -> Connections**: a mailbox, a username and password, or an API key the team already has. Bind each one
+**Team settings -> Connections**: a mailbox, a username and password, an API key or a website the team already has. Bind each one
 an app may use to the Azure member's `appSecrets` slot, **Connections a deployed app may use** (when
 adding the member, or in its settings); the slot takes as many connections as you need. Then
 
@@ -392,8 +392,12 @@ the connection's name and the field's match ignoring case, and a name with space
 
 - a mailbox: `username`, `password`, `imapHost`, `imapPort`, `imapSecurity`, `smtpHost`, `smtpPort`
   and `smtpSecurity`;
-- a username and password: `username` and `password`;
-- an API key: the fields the connection has, such as `key`.
+- a username and password: `username`, `password` and `url`;
+- an API key: the fields the connection has, such as `key`;
+- a website: the fields it holds a value in, such as `siteUrl`, `hosts`, `method`, `signInUrl`,
+  `username`, `password`, `totpSecret`, `token`, `tokenHeader`, `checkUrl`, `checkText` and
+  `mayAct`, and `session`, the saved session that signing in on the connection (its **Sign in**)
+  keeps; nobody types a session, so until someone has signed in there is none to read.
 
 Changing a value on the connection (its **Update password**) reaches the app the next time
 `containerapp create` runs for it. A connection not bound to `appSecrets`, or a field it lacks or

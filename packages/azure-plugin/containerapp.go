@@ -73,11 +73,26 @@ func (p *plugin) connectionField(env, conn, name string) (string, string, error)
 			return f, v, nil
 		}
 	}
+	names := k.fieldNames()
 	has := "no field with a value"
-	if names := k.fieldNames(); len(names) > 0 {
+	switch len(names) {
+	case 0:
+	case 1:
+		has = "the field " + names[0]
+	default:
 		has = "the fields " + strings.Join(names, ", ")
 	}
-	return "", "", refusef("Refused: the secret %s reads %s.%s, the field %s of the connection %s, which that connection does not have or holds no value in; %s has %s, so run containerapp create again naming one of them as %s.<field>, or ask the person to add the field %s to it in Team settings -> Connections. Nothing was changed.", env, conn, name, name, k.Name, k.Name, has, k.Name, name)
+	retry := "so run containerapp create again naming another field as " + k.Name + ".<field>"
+	if len(names) == 1 {
+		retry = "so run containerapp create again naming it as " + k.Name + "." + names[0]
+	} else if len(names) == 0 {
+		retry = "so once it has one, run containerapp create again"
+	}
+	if k.Kind == "website" && strings.EqualFold(name, "session") {
+		// No form or agent types a website's saved session: Sign in on the connection keeps it.
+		return "", "", refusef("Refused: the secret %s reads %s.%s, the saved session of the website connection %s, which it does not hold yet: a person makes it by opening Sign in on that connection in Team settings -> Connections and signing in to the website, and nobody types it. %s has %s, so run containerapp create again once the person has signed in, or naming one of those as %s.<field> instead. Nothing was changed.", env, conn, name, k.Name, k.Name, has, k.Name)
+	}
+	return "", "", refusef("Refused: the secret %s reads %s.%s, the field %s of the connection %s, which that connection does not have or holds no value in; %s has %s, %s, or ask the person to add the field %s to it in Team settings -> Connections. Nothing was changed.", env, conn, name, name, k.Name, k.Name, has, retry, name)
 }
 
 // label is how a sentence names a bound connection: its name, or for a Host too old to send one,

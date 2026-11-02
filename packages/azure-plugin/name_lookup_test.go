@@ -157,6 +157,25 @@ func TestAWebsiteConnectionsFieldsGoIntoTheApp(t *testing.T) {
 	assertNoNamedValue(t, r.raw)
 }
 
+// A website's saved session is never typed - Sign in on the connection keeps it - so a refusal for
+// one it does not hold yet says how it comes to exist, never to add it in Team settings.
+func TestAWebsiteSessionNotYetKeptIsRefusedSayingSignInMakesIt(t *testing.T) {
+	w := newWorld(t)
+	r := runPlugin(t, runOpts{config: apply(nil), bound: []hostObject{website("Customer portal", siteValue, tokenValue)}},
+		appCreateLine(`"secret=PORTAL_USER=Customer portal.username" "secret=PORTAL_SESSION=customer portal.Session"`))
+	if r.ok() {
+		t.Fatal("a session the website does not hold was accepted")
+	}
+	mustContain(t, r.text(),
+		"Refused: the secret PORTAL_SESSION reads customer portal.Session, the saved session of the website connection Customer portal, which it does not hold yet: a person makes it by opening Sign in on that connection in Team settings -> Connections and signing in to the website, and nobody types it.",
+		"Customer portal has the fields mayAct, method, password, siteUrl, token, tokenHeader, username, so run containerapp create again once the person has signed in, or naming one of those as Customer portal.<field> instead. Nothing was changed.")
+	mustNotContain(t, r.text(), "add the field", "[redacted]")
+	if len(w.f.calls) != 0 {
+		t.Fatalf("Azure was called %d times", len(w.f.calls))
+	}
+	assertNoNamedValue(t, r.raw)
+}
+
 func TestTheConnectionsNameMatchesIgnoringCase(t *testing.T) {
 	w := newWorld(t)
 	r := runPlugin(t, runOpts{config: apply(nil), bound: []hostObject{mailbox("Billing Mailbox", "billing@example.test", secretValue)}},

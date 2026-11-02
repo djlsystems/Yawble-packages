@@ -240,8 +240,9 @@ settings -> Connections shows it, never its account: two API keys can share an a
 "Other", and are told apart only by name. Names match ignoring case; quote a connection name
 with spaces, `"secret=SHOP_KEY=Shop login.password"`. A mailbox's fields are `username`, `password`,
 `imapHost`, `imapPort`, `imapSecurity`, `smtpHost`, `smtpPort` and `smtpSecurity`; a username and
-password's are `username` and `password`; an API key's are its own, such as `key`; a website's
-include `siteUrl`, `username`, `password` and `token`. When the app needs
+password's are `username`, `password` and `url`; an API key's are its own, such as `key`; a website's
+include `siteUrl`, `username`, `password`, `token` and `session` (kept only by signing in on the
+connection; nobody types it). When the app needs
 a secret no bound connection holds, ask the person to bind the connection that holds it to
 `appSecrets`, or to add the field to one - name the connection and the field, say what it is for, and
 never ask for its value in a message - then run the command again. A connection not bound, or a

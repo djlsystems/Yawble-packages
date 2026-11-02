@@ -767,6 +767,15 @@ func mustContain(t *testing.T, text string, parts ...string) {
 	}
 }
 
+func mustNotContain(t *testing.T, text string, parts ...string) {
+	t.Helper()
+	for _, p := range parts {
+		if strings.Contains(text, p) {
+			t.Fatalf("answer holds %q:\n%s", p, text)
+		}
+	}
+}
+
 // docFile writes a file in the team's documents folder and answers its path.
 func docFile(t *testing.T, name, content string) string {
 	t.Helper()

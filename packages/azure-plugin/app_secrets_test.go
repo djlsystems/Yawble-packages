@@ -216,11 +216,11 @@ func TestAFieldTheConnectionLacksIsRefusedNamingItsFieldsAndChangesNothing(t *te
 		want  string
 	}{
 		{mailbox("mail", "bot@example.test", secretValue), "secret=SMTP_PASSWORD=mail.pass",
-			"Refused: the secret SMTP_PASSWORD reads mail.pass, the field pass of the connection mail, which that connection does not have or holds no value in; mail has the fields username, password, imapHost, imapPort, imapSecurity, smtpHost, smtpPort, smtpSecurity, so run containerapp create again naming one of them as mail.<field>"},
+			"Refused: the secret SMTP_PASSWORD reads mail.pass, the field pass of the connection mail, which that connection does not have or holds no value in; mail has the fields username, password, imapHost, imapPort, imapSecurity, smtpHost, smtpPort, smtpSecurity, so run containerapp create again naming another field as mail.<field>, or ask the person to add the field pass to it in Team settings -> Connections."},
 		{login("shop", "shopbot", otherValue), "secret=SHOP=shop.apiKey",
 			"the field apiKey of the connection shop, which that connection does not have or holds no value in; shop has the fields password, url, username,"},
 		{apiKey("stripe", "Stripe", "stripe", map[string]string{"key": keyValue, "webhook": ""}), "secret=HOOK=stripe.webhook",
-			"the field webhook of the connection stripe, which that connection does not have or holds no value in; stripe has the fields key,"},
+			"the field webhook of the connection stripe, which that connection does not have or holds no value in; stripe has the field key, so run containerapp create again naming it as stripe.key, or ask the person"},
 	} {
 		w := newWorld(t)
 		r := runPlugin(t, runOpts{config: apply(nil), bound: []hostObject{c.bound}}, appCreateLine(c.arg))
@@ -228,6 +228,7 @@ func TestAFieldTheConnectionLacksIsRefusedNamingItsFieldsAndChangesNothing(t *te
 			t.Fatalf("%s was accepted", c.arg)
 		}
 		mustContain(t, r.text(), c.want, "ask the person to add the field", "Nothing was changed.")
+		mustNotContain(t, r.text(), "the fields key,")
 		if len(w.f.calls) != 0 {
 			t.Fatalf("Azure was called %d times", len(w.f.calls))
 		}
@@ -393,6 +394,13 @@ func TestTheDocsShowOnlyTheConnectionFieldForm(t *testing.T) {
 	for _, want := range []string{"website", "never its account"} {
 		if !strings.Contains(readme, want) || !strings.Contains(skill, want) {
 			t.Errorf("the README or the skill lacks %q", want)
+		}
+	}
+	// The main App secrets section names every kind the slot takes, and the fields the Host sends.
+	for _, want := range []string{"a mailbox, a username and password, an API key or a website the team already has",
+		"a username and password: `username`, `password` and `url`", "a website: the fields it holds a value in, such as `siteUrl`"} {
+		if !strings.Contains(readme, want) {
+			t.Errorf("the README lacks %q", want)
 		}
 	}
 	rest := readme[:start] + readme[end:]
