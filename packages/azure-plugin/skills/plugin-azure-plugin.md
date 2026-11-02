@@ -30,8 +30,7 @@ Everything the member creates carries the tags `yawble-owner: <team id>` and
 - a resource carrying this team's tags, or anything inside a resource group that does;
 - a new database on a server in `sharedSqlServers`, which is tagged and then owned;
 - images built in, and AcrPull granted on, an Azure Container Registry in
-  `sharedContainerRegistries` (`sharedRegistries` is its old name, still read; setup and
-  `whoami` say to move what is still there).
+  `sharedContainerRegistries`, the one list of shared registries.
 
 SQL runs only on a database the team owns, even on a shared server. Blob, table and queue changes
 go only to storage accounts the team owns. It reads anything the person can read. Anything else is refused, naming the resource, and

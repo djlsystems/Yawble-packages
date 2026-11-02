@@ -204,9 +204,6 @@ func (p *plugin) setup(args []string) (string, error) {
 		base+"/providers/Microsoft.Sql/servers?api-version="+sqlAPIVersion)
 	p.checkShared(say, step, "Azure Container Registry", registriesSetting, p.cfg.SharedRegistries,
 		base+"/providers/Microsoft.ContainerRegistry/registries?api-version="+acrAPIVersion)
-	if move := p.cfg.moveRegistries(); move != "" {
-		say(move)
-	}
 
 	// THE PROVIDERS.
 	canRegister := perms.Value.allows("Microsoft.App/register/action")
