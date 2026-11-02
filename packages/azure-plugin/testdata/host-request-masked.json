@@ -35,7 +35,6 @@
   "allowDelete": false,
   "sharedSqlServers": [],
   "sharedContainerRegistries": [],
-  "sharedRegistries": [],
   "monthlyBudget": 0,
   "budgetEmails": [],
   "namePrefix": ""

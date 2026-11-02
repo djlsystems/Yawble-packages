@@ -262,7 +262,7 @@ func TestADatabaseIsCreatedOnASharedServerAndSQLRunsOnlyOnTaggedOnes(t *testing.
 func TestASharedRegistryTakesBuildsAndAcrPullOnly(t *testing.T) {
 	w := newWorld(t)
 	w.f.addApp(ownedRG, "mine", ownTags())
-	cfg := apply(map[string]any{"sharedRegistries": []string{"theirregistry"}, "allowDelete": true})
+	cfg := apply(map[string]any{"sharedContainerRegistries": []string{"theirregistry"}, "allowDelete": true})
 	reg := w.foreign["registry"].ID
 
 	r := runPlugin(t, runOpts{config: cfg}, "acr build theirregistry my-app:1.0 "+w.folder)

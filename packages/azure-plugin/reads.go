@@ -75,9 +75,6 @@ func (p *plugin) whoami(args []string) (string, error) {
 		"- monthlyBudget: " + budget,
 		"- namePrefix: " + or(nonEmpty(p.cfg.NamePrefix), "none"),
 	}
-	if move := p.cfg.moveRegistries(); move != "" {
-		lines = append(lines, "- "+move)
-	}
 	return "Azure member:\n" + strings.Join(lines, "\n"), nil
 }
 

@@ -56,10 +56,10 @@ func readManifest(t *testing.T) manifest {
 
 func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 	m := readManifest(t)
-	if m.ID != "azure-plugin" || m.Version != "3.1.0" {
+	if m.ID != "azure-plugin" || m.Version != "3.2.0" {
 		t.Fatalf("id %q version %q", m.ID, m.Version)
 	}
-	settingNames := []string{"subscription", "regions", "mode", "allowDelete", "sharedSqlServers", "sharedContainerRegistries", "sharedRegistries", "monthlyBudget", "budgetEmails", "namePrefix"}
+	settingNames := []string{"subscription", "regions", "mode", "allowDelete", "sharedSqlServers", "sharedContainerRegistries", "monthlyBudget", "budgetEmails", "namePrefix"}
 	for _, name := range settingNames {
 		c, ok := m.Config[name]
 		if !ok || c.SetBy != "person" {
@@ -77,14 +77,23 @@ func TestTheManifestDeclaresWhatThePluginUses(t *testing.T) {
 		t.Fatalf("defaults: mode %v, allowDelete %v, namePrefix %v", m.Config["mode"].Default, m.Config["allowDelete"].Default, m.Config["namePrefix"].Default)
 	}
 
-	// sharedContainerRegistries is the setting; sharedRegistries, its old name, stays declared so the
-	// Host still hands a stored value to the run.
+	// sharedContainerRegistries is the one registry list: the old name is not declared, and no
+	// setting's label or description is called old.
 	if d := m.Config["sharedContainerRegistries"].Description; m.Config["sharedContainerRegistries"].Advanced ||
 		!strings.HasPrefix(d, "Existing Azure Container Registries (ACR), by name such as myregistry,") || !strings.Contains(d, "Container App's image is pulled from one of them.") {
 		t.Fatalf("sharedContainerRegistries: %+v", m.Config["sharedContainerRegistries"])
 	}
-	if old := m.Config["sharedRegistries"]; !old.Advanced || old.Type != "list" || !strings.Contains(old.Description, "old name of sharedContainerRegistries") {
-		t.Fatalf("sharedRegistries: %+v", old)
+	if _, ok := m.Config["sharedRegistries"]; ok {
+		t.Fatal("sharedRegistries is still declared")
+	}
+	raw, err := os.ReadFile("plugin.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, gone := range []string{"sharedregistries", "(old", "old name", "old)"} {
+		if strings.Contains(strings.ToLower(string(raw)), gone) {
+			t.Fatalf("plugin.json holds %q", gone)
+		}
 	}
 
 	// Regions are chosen from a list, eastus2 unless a person picks others.

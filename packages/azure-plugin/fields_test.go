@@ -33,7 +33,6 @@ func TestEveryFieldHasItsLabelAndEverySecretItsMasking(t *testing.T) {
 		"allowDelete":               "Allow deletes",
 		"sharedSqlServers":          "Shared SQL servers",
 		"sharedContainerRegistries": "Shared container registries",
-		"sharedRegistries":          "Shared registries (old name)",
 		"monthlyBudget":             "Monthly budget",
 		"budgetEmails":              "Budget alert emails",
 		"namePrefix":                "Resource group name prefix",

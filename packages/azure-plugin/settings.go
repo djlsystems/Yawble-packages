@@ -15,8 +15,7 @@ type settings struct {
 	Mode             string   // whatif or apply
 	AllowDelete      bool
 	SharedSQLServers []string // server names, lower case
-	SharedRegistries []string // registry names, lower case: sharedContainerRegistries and the old sharedRegistries together
-	OldRegistries    []string // the names still under the old sharedRegistries
+	SharedRegistries []string // registry names from sharedContainerRegistries, lower case
 	MonthlyBudget    float64  // 0: no budget
 	BudgetEmails     []string
 	NamePrefix       string
@@ -111,24 +110,19 @@ func parseSettings(raw map[string]json.RawMessage) (settings, string) {
 		s.SharedSQLServers = append(s.SharedSQLServers, name)
 	}
 
-	// sharedRegistries is the old name of sharedContainerRegistries: the member reads both, and
-	// setup and whoami say to move what is still under the old one.
-	for _, key := range []string{registriesSetting, oldRegistriesSetting} {
-		registries, ok := list(key)
-		if !ok {
-			return s, "Refused: " + registriesSetting + " must be a list of Azure Container Registry names."
+	// sharedContainerRegistries is the one list of registries the member may build and push to.
+	// Any other key a run's settings may carry is never read.
+	registries, ok := list(registriesSetting)
+	if !ok {
+		return s, "Refused: " + registriesSetting + " must be a list of Azure Container Registry names."
+	}
+	for _, v := range registries {
+		name, good := lastName(v, acrID, ".azurecr.io")
+		if !good || !acrName.MatchString(name) {
+			return s, fmt.Sprintf("Refused: %s holds %q, which is not an Azure Container Registry name (5 to 50 letters and digits, such as myregistry), its address or its resource id.", registriesSetting, v)
 		}
-		for _, v := range registries {
-			name, good := lastName(v, acrID, ".azurecr.io")
-			if !good || !acrName.MatchString(name) {
-				return s, fmt.Sprintf("Refused: %s holds %q, which is not an Azure Container Registry name (5 to 50 letters and digits, such as myregistry), its address or its resource id.", registriesSetting, v)
-			}
-			if key == oldRegistriesSetting && !contains(s.OldRegistries, name) {
-				s.OldRegistries = append(s.OldRegistries, name)
-			}
-			if !contains(s.SharedRegistries, name) {
-				s.SharedRegistries = append(s.SharedRegistries, name)
-			}
+		if !contains(s.SharedRegistries, name) {
+			s.SharedRegistries = append(s.SharedRegistries, name)
 		}
 	}
 
@@ -186,19 +180,6 @@ func (s settings) sharedSQL(server string) bool { return contains(s.SharedSQLSer
 
 func (s settings) sharedRegistry(name string) bool { return contains(s.SharedRegistries, name) }
 
-const (
-	registriesSetting    = "sharedContainerRegistries"
-	oldRegistriesSetting = "sharedRegistries" // its old name, named only by moveRegistries
-)
-
-// moveRegistries is the one sentence that names the old setting: it says which registries are
-// still under it and to move them. It answers "" when none are.
-func (s settings) moveRegistries() string {
-	if len(s.OldRegistries) == 0 {
-		return ""
-	}
-	return fmt.Sprintf("%s is the old name of %s and still holds %s: a person moves them to %s in this member's settings and empties %s.",
-		oldRegistriesSetting, registriesSetting, strings.Join(s.OldRegistries, ", "), registriesSetting, oldRegistriesSetting)
-}
+const registriesSetting = "sharedContainerRegistries"
 
 func (s settings) apply() bool { return s.Mode == "apply" }

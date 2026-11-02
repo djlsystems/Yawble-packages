@@ -3,7 +3,7 @@
   "id": "azure-plugin",
   "name": "Azure",
   "description": "Builds and runs a team's own Azure resources, signed in as the person: resource groups, Bicep and ARM deployments checked by what-if first, registry builds, Azure SQL databases and SQL, storage blobs, tables and queues, Key Vault, Container Apps with their logs and custom domains, DNS zones, budgets and role assignments for its managed identities. Key Vault and the apps' logs are reached through Azure management, so the Microsoft sign-in asks for Azure management, Azure SQL and Azure Storage only.\n\nIt changes only what it created, which carries the tags yawble-owner and yawble-plugin, plus the shared SQL servers and registries a person lists. It acts with the person's own Azure rights, never more. What-if by default: every changing command says what it would do and changes nothing until a person sets mode to apply. It never reads a key, a connection string or a Key Vault secret's value, and no token reaches its output; an app's secret comes from Key Vault or from a field of one of the connections a deployed app may use, its appSecrets slot, named by the connection and its field, such as mail.password, and bound in Team settings -> Connections, and its value is never written out.",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/azure",
@@ -110,14 +110,6 @@
       "default": [],
       "setBy": "person",
       "description": "Existing Azure Container Registries (ACR), by name such as myregistry, that the member may build and push images to and grant pull rights on to its own managed identities; a Container App's image is pulled from one of them."
-    },
-    "sharedRegistries": {
-      "label": "Shared registries (old name)",
-      "type": "list",
-      "default": [],
-      "setBy": "person",
-      "advanced": true,
-      "description": "The old name of sharedContainerRegistries, still read; move its registries to sharedContainerRegistries."
     },
     "monthlyBudget": {
       "label": "Monthly budget",

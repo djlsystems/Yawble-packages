@@ -1,4 +1,4 @@
-# Azure 3.1.0
+# Azure 3.2.0
 
 A plugin member that builds and runs a team's own Azure resources: resource groups, deployments
 from Bicep or ARM templates, container registries and image builds, Azure SQL databases and the SQL
@@ -9,6 +9,16 @@ rights**, so it can never do more than you can yourself in the Azure portal.
 
 Everything starts in **whatif**: each changing command says what it would do and changes nothing,
 until you set `mode` to `apply`.
+
+## New in 3.2.0
+
+- **Shared container registries is the one list of registries** the member may build and push
+  images to and grant pull rights on. The second list under the setting's former name is gone, and
+  a value stored under it is no longer read.
+
+### Upgrading to 3.2.0
+
+- Registries listed under `sharedRegistries`, the setting's former name, must be re-entered under **Shared container registries**.
 
 ## New in 3.1.0
 
@@ -168,7 +178,6 @@ until you set `mode` to `apply`.
 | `allowDelete` | off | Off: every delete is refused, in whatif and apply; on: the member may delete what its team owns. |
 | `sharedSqlServers` | empty | Existing SQL servers, by name, on which the member may create its own databases. |
 | `sharedContainerRegistries` | empty | Existing Azure Container Registries (ACR), by name such as `myregistry`, it may build and push images to and grant pull rights on; a Container App's image is pulled from one of them. |
-| `sharedRegistries` (advanced) | empty | The old name of `sharedContainerRegistries`, still read; setup and `whoami` name what is still under it so a person moves it. |
 | `monthlyBudget` | 0 | A monthly budget put on every resource group it creates, alerting at 80% and 100%; 0 means none. |
 | `budgetEmails` | empty | Who gets the budget alerts; needed when `monthlyBudget` is more than 0. |
 | `namePrefix` (advanced) | empty | Text put before the name of every resource group it creates. |
