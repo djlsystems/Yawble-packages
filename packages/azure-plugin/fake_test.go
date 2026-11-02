@@ -504,7 +504,8 @@ type runOpts struct {
 	config    map[string]any
 	moved     map[string]string            // appSecret<N> -> value: the one connection CON 7 makes of 2.x's own values, bound first to appSecrets
 	keys      map[string]map[string]string // further appSecrets connections, by name (bound in name order): field -> value
-	named     map[string]string            // the request's namedSecrets: name -> value; nil: the Host sends none
+	bound     []map[string]any             // further appSecrets connections as the Host sends them (a mailbox, a login), bound last
+	named     map[string]string            // an old Host's namedSecrets: name -> value, which 3.1.0 never reads; nil: none
 	sent      map[string]string            // the request's secrets, which 3.0.0 ignores
 	noConnect bool                         // no microsoft slot bound
 	tokens    map[string]string            // the slot's tokens map; nil: one per API
@@ -567,6 +568,7 @@ func runPlugin(t *testing.T, o runOpts, instruction string) *result {
 	for _, a := range accounts {
 		keys = append(keys, map[string]any{"kind": "apikey", "account": a, "preset": "other", "fields": o.keys[a]})
 	}
+	keys = append(keys, o.bound...)
 	if keys != nil {
 		conns[keySlot] = keys
 	}
@@ -576,7 +578,7 @@ func runPlugin(t *testing.T, o runOpts, instruction string) *result {
 	}
 	req := map[string]any{
 		"protocol":         "harness.member/1",
-		"plugin":           map[string]any{"id": "azure-plugin", "version": "3.0.0"},
+		"plugin":           map[string]any{"id": "azure-plugin", "version": "3.1.0"},
 		"member":           map[string]any{"id": testTeam + "/Azure", "team": testTeam, "name": "Azure"},
 		"work":             []map[string]any{{"seq": 1, "instruction": instruction, "payload": map[string]any{"instruction": instruction}}},
 		"config":           cfg,

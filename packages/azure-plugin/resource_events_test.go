@@ -235,11 +235,12 @@ func TestADeploymentNamesEachResourceByItsIdAndNoValue(t *testing.T) {
 
 func TestAContainerAppsResourceEventsHoldNoSecret(t *testing.T) {
 	w := newWorld(t)
-	line := "containerapp create " + ownedRG + " new-app my-app-env " + acrRef("myregistry", "my-app:1.0") + " port=8080 secret=STRIPE_KEY=appSecret1 secret=DB_PASSWORD=" + w.vaultURL
-	r := runPlugin(t, runOpts{config: apply(nil), moved: map[string]string{"appSecret1": secretValue}}, line)
+	line := "containerapp create " + ownedRG + " new-app my-app-env " + acrRef("myregistry", "my-app:1.0") + " port=8080 secret=STRIPE_KEY=appSecret1 secret=SMTP_PASSWORD=mail.password secret=DB_PASSWORD=" + w.vaultURL
+	r := runPlugin(t, runOpts{config: apply(nil), moved: map[string]string{"appSecret1": secretValue}, bound: []map[string]any{mailbox("mail", otherValue)}}, line)
 	if !r.ok() {
 		t.Fatal(r.text())
 	}
+	assertNoNamedValue(t, r.raw)
 	got := resourcesOf(r)
 	if len(got) != 4 || got[0] != "managed-identity new-app-id created containerapp create" ||
 		!strings.HasPrefix(got[1], "role-assignment ") || !strings.HasPrefix(got[2], "role-assignment ") ||
@@ -248,7 +249,7 @@ func TestAContainerAppsResourceEventsHoldNoSecret(t *testing.T) {
 	}
 	for _, e := range r.events("resource") {
 		raw, _ := json.Marshal(e)
-		for _, bad := range []string{secretValue, w.vaultURL, "SHOP_STRIPE_KEY", "DB_PASSWORD"} {
+		for _, bad := range []string{secretValue, otherValue, mailUser, w.vaultURL, "SHOP_STRIPE_KEY", "DB_PASSWORD", "SMTP_PASSWORD", "mail.password"} {
 			if strings.Contains(string(raw), bad) {
 				t.Fatalf("a resource event holds %q: %s", bad, raw)
 			}

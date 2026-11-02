@@ -4,8 +4,8 @@
 // In:  ONE JSON request on stdin - { member: { team }, work: [{ instruction }], config,
 //
 //	connections: { microsoft: { account, accessToken, tokens: { <API>: { accessToken } } },
-//	               appSecrets: [{ kind: "apikey", account, preset, fields: { <name>: <value> } }] },
-//	namedSecrets: { <name>: <value> }, namedSecretNames: [<name>],
+//	               appSecrets: [{ kind: "apikey"|"login", account, preset, fields: { <name>: <value> } }
+//	                          | { kind: "imap", account, username, password, imap: { host, port, security }, smtp: {...} }] },
 //	workingDirectory, worktrees: [{ path }], siteFiles: [{ folder }], ... }.
 //
 // Out: JSON Lines on stdout - progress, publish, then exactly one result.
@@ -39,7 +39,6 @@ type request struct {
 	Work             []workItem                 `json:"work"`
 	Config           map[string]json.RawMessage `json:"config"`
 	Connections      map[string]json.RawMessage `json:"connections"`
-	NamedSecrets     map[string]string          `json:"namedSecrets"`
 	WorkingDirectory string                     `json:"workingDirectory"`
 	Worktrees        []struct {
 		Path string `json:"path"`
@@ -70,17 +69,62 @@ type apiToken struct {
 // slot is the manifest's Microsoft connection slot.
 const slot = "microsoft"
 
-// keySlot is the manifest's API-key slot that holds the app secrets. It takes several connections
-// ("multiple": true), so stdin carries it as an array, one entry per bound connection.
+// keySlot is the manifest's slot of the connections a deployed app may use: a mailbox, a username and
+// password or an API key. It takes several connections ("multiple": true), so stdin carries it as an
+// array, one entry per bound connection.
 const keySlot = "appSecrets"
 
-// keyConnection is one API-key connection bound to the appSecrets slot: its name and its fields,
-// each field an app secret by the field's name.
+// keyConnection is one connection bound to the appSecrets slot: its name (account) and its fields,
+// each one a value secret=<ENV>=<connection>.<field> may hand an app. A credential connection (API
+// key, username and password) carries its fields by name; a mailbox carries username, password and
+// its servers, which keyConnections turns into the fields mailboxFields names.
 type keyConnection struct {
-	Kind    string            `json:"kind"`
-	Account string            `json:"account"`
-	Preset  string            `json:"preset"`
-	Fields  map[string]string `json:"fields"`
+	Kind     string            `json:"kind"`
+	Account  string            `json:"account"`
+	Preset   string            `json:"preset"`
+	Fields   map[string]string `json:"fields"`
+	Username string            `json:"username"`
+	Password string            `json:"password"`
+	Imap     *mailServer       `json:"imap"`
+	Smtp     *mailServer       `json:"smtp"`
+}
+
+// mailServer is a mailbox's IMAP or SMTP server as stdin carries it.
+type mailServer struct {
+	Host     string          `json:"host"`
+	Port     json.RawMessage `json:"port"`
+	Security string          `json:"security"`
+}
+
+// mailboxFields are the fields of a mailbox connection, in the order a refusal lists them.
+var mailboxFields = []string{"username", "password", "imapHost", "imapPort", "imapSecurity", "smtpHost", "smtpPort", "smtpSecurity"}
+
+// secretField answers whether a field holds a secret, so its value is hidden from every output: all
+// of a credential connection's fields, and a mailbox's username and password (not its servers).
+func (k keyConnection) secretField(name string) bool {
+	if k.Kind != "imap" {
+		return true
+	}
+	return name == "username" || name == "password"
+}
+
+// normalise gives a mailbox connection its fields by name.
+func (k *keyConnection) normalise() {
+	if k.Kind != "imap" {
+		return
+	}
+	f := map[string]string{"username": k.Username, "password": k.Password}
+	for prefix, srv := range map[string]*mailServer{"imap": k.Imap, "smtp": k.Smtp} {
+		if srv == nil {
+			continue
+		}
+		port := strings.Trim(string(srv.Port), `"`)
+		if port == "null" {
+			port = ""
+		}
+		f[prefix+"Host"], f[prefix+"Port"], f[prefix+"Security"] = srv.Host, port, srv.Security
+	}
+	k.Fields = f
 }
 
 // documentsRoot holds every team's documents folder, /data/documents/<team>. Only tests change it.
@@ -105,15 +149,12 @@ type plugin struct {
 	trees   []string // the run's worktrees
 	now     func() time.Time
 
-	// keys holds the API-key connections bound to the appSecrets slot, in binding order; each field
-	// is an app secret by its name. A value is only ever put in a container app's configuration.
+	// keys holds the connections bound to the appSecrets slot, in binding order. A field's value is
+	// only ever put in a container app's configuration.
 	keys []keyConnection
-	// namedSecrets holds the member's old named secrets, by the name a person gave each on the
-	// screen before the app secrets moved to connections; read only after keys.
-	namedSecrets map[string]string
 
-	// hidden holds every value that must never be written out: each API's token and each app
-	// secret's and named secret's value.
+	// hidden holds every value that must never be written out: each API's token and each secret
+	// field's value of the appSecrets connections.
 	hidden []string
 	// tags caches the tags read this run, by lower-case resource id; nil for a resource not found.
 	tags map[string]map[string]string
@@ -153,16 +194,11 @@ func run(in io.Reader, out io.Writer, now func() time.Time) int {
 	if raw, ok := req.Connections[keySlot]; ok {
 		p.keys = keyConnections(raw)
 		for _, k := range p.keys {
-			for _, v := range k.Fields {
-				p.hide(v)
+			for f, v := range k.Fields {
+				if k.secretField(f) {
+					p.hide(v)
+				}
 			}
-		}
-	}
-	p.namedSecrets = map[string]string{}
-	for name, value := range req.NamedSecrets {
-		p.hide(value)
-		if value != "" {
-			p.namedSecrets[name] = value
 		}
 	}
 
@@ -282,14 +318,17 @@ func instructionText(item workItem) string {
 // sends a single slot's shape; anything else holds none.
 func keyConnections(raw json.RawMessage) []keyConnection {
 	var many []keyConnection
-	if json.Unmarshal(raw, &many) == nil {
-		return many
+	if json.Unmarshal(raw, &many) != nil {
+		var one keyConnection
+		if json.Unmarshal(raw, &one) != nil || (one.Fields == nil && one.Kind != "imap") {
+			return nil
+		}
+		many = []keyConnection{one}
 	}
-	var one keyConnection
-	if json.Unmarshal(raw, &one) == nil && one.Fields != nil {
-		return []keyConnection{one}
+	for i := range many {
+		many[i].normalise()
 	}
-	return nil
+	return many
 }
 
 func (p *plugin) hide(value string) {

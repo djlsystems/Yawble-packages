@@ -1,4 +1,4 @@
-# Azure 3.0.0
+# Azure 3.1.0
 
 A plugin member that builds and runs a team's own Azure resources: resource groups, deployments
 from Bicep or ARM templates, container registries and image builds, Azure SQL databases and the SQL
@@ -10,41 +10,48 @@ rights**, so it can never do more than you can yourself in the Azure portal.
 Everything starts in **whatif**: each changing command says what it would do and changes nothing,
 until you set `mode` to `apply`.
 
+## New in 3.1.0
+
+- **A deployed app's secrets come from the team's own connections, by name.**
+  `containerapp create ... secret=SMTP_PASSWORD=mail.password` gives the app the password of the
+  connection named `mail`: `secret=<NAME>=<connection>.<field>`, the connection's name and the
+  field's matched ignoring case. Bind the connections an app may use to the member's `appSecrets`
+  slot, **Connections a deployed app may use**, in **Team settings -> Connections**.
+- **Every kind of credential connection fits that slot:** a mailbox (fields `username`, `password`,
+  `imapHost`, `imapPort`, `imapSecurity`, `smtpHost`, `smtpPort`, `smtpSecurity`), a username and
+  password, and an API key. A team binds the mailbox it already has, so the password lives in one
+  place, and an **Update password** on that connection reaches the app at its next `containerapp create`.
+- **No App secrets section any more.** The member's settings show no app secret keys and no
+  **App secrets (old)** table.
+- A connection that is not bound, or a field it lacks, is refused before anything changes, naming
+  the connection, the field and the fields that connection has - never a value.
+
+### Migrating from 3.0.0 or earlier
+
+- Named secrets typed under **App secrets (old)** on the member's settings screen are no longer
+  read. Before updating, put each one in a connection - or use the connection that already holds the
+  value, such as the team's mailbox - bind it to `appSecrets`, and change the deploy line to
+  `secret=<NAME>=<connection>.<field>`.
+- `appSecret1` to `appSecret8` are no longer declared, so an update from 2.x straight to 3.1.0 carries
+  no value over: update to 3.0.0 first, or add the values to a connection yourself.
+- A 3.0.0 deploy line that names a bare field, such as `secret=STRIPE_KEY=appSecret1`, still works:
+  it resolves against the bound connection that has a field of that name. Change it to
+  `<connection>.<field>` when you next touch it.
+
 ## New in 3.0.0
 
-- **App secrets are connections.** An app's secrets are now set in **Team settings -> Connections**:
-  an **API key** connection (preset **Other**) whose fields are the secrets, each under the name the
-  team refers to it by, such as `MicrosoftClientSecret`. Assign it to the team and bind it to the
-  member's `appSecrets` connection slot, which takes as many connections as you need (one per app,
-  say). `containerapp create ... secret=AUTH_MICROSOFT_SECRET=MicrosoftClientSecret` reads the field
-  of that name. The member no longer has key settings for app secrets.
-- **An update carries existing values over.** `appSecret1` to `appSecret8` are declared as moved to
-  `appSecrets`, so when 3.0.0 is installed each member's own values become one API-key connection
-  named `<team> - <member>`, assigned to its team and bound to `appSecrets`, with fields still named
-  `appSecret1` and so on: `secret=<NAME>=appSecret<N>` keeps working. A value held only in the Host's
-  environment (`yawble secret set`) is not moved; add it to a connection.
-- **Named secrets** set on the member's settings screen in 2.1.0 are still read, after the
-  connections, under **App secrets (old)**, so an app that names one keeps working. The platform has
-  no way to move them, so add each as a connection field and remove the old one.
-- It is 3.0.0 because a package that binds keys to `appSecret<N>` no longer gives the member a value.
+- App secrets moved from the member's own keys to API-key connections bound to the `appSecrets`
+  slot (see Migrating from 3.0.0 or earlier, above, for what still applies).
 
 ## New in 2.1.0
 
-- **App secrets by name.** The member's settings screen has an **App secrets** table: you give each
-  secret a name you choose, such as `MicrosoftClientSecret`, and type its value masked beside it. The
-  team refers to it by that name - `containerapp create ... secret=AUTH_MICROSOFT_SECRET=MicrosoftClientSecret`
-  puts that value in the app's secrets - so nobody has to remember what "App secret 1" holds. A name
-  you have not added is refused before anything changes, telling the team to ask you to add a secret
-  by that name on the Azure member's settings screen; nobody sends a value in a message. It needs a
-  Yawble whose plugins may declare named secrets.
-- **`appSecret1` to `appSecret8` keep working** exactly as before, so apps and instructions that use
-  them do not break; for anything new, use a named secret.
+- App secrets by a name the team chooses, on the member's settings screen; replaced in 3.1.0 by
+  `secret=<NAME>=<connection>.<field>`.
 
 ## New in 2.0.1
 
-- **Every setting and secret has a short label** on the member's settings screen, such as
-  "Subscription ID", "Monthly budget" and "App secret 1". The app secrets stay masked and optional:
-  each is a value an app reads as a secret, and the plugin runs without any.
+- **Every setting has a short label** on the member's settings screen, such as "Subscription ID"
+  and "Monthly budget".
 
 ## New in 2.0.0
 
@@ -271,7 +278,7 @@ keyvault create <resource group> <vault>
 keyvault secrets <vault>
 
 containerapp env create <resource group> <environment>
-containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [cpu=<0.25 to 2>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>|<app secret name>]...
+containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [cpu=<0.25 to 2>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>|<connection>.<field>]...
 containerapp show <app>
 containerapp revisions <app>
 containerapp restart <app>
@@ -367,26 +374,32 @@ reads it with its managed identity; `keyvault secrets <vault>` lists the names a
 never their values. The member never calls Key Vault itself: Azure reads the secret with the
 app's identity.
 
-An app's secret can also come from a connection, set in **Team settings -> Connections**. Add an
-**API key** connection, choose the **Other** preset, and add one field per secret: its **name** is how
-the team refers to it - a letter, then letters, digits and underscores, such as
-`MicrosoftClientSecret` - and its **value** is typed masked and never shown again. Assign the
-connection to the team and bind it to the Azure member's `appSecrets` slot (when adding the member,
-or in its settings); the slot takes several connections, so each app's secrets can be a connection
-of their own. `containerapp create ... secret=<NAME>=<name>` then puts the value of the field of that
-name in the app's own secrets, named after `<NAME>` in lower case with hyphens for underscores, and
-the app reads it as the environment variable `<NAME>`:
-`secret=AUTH_MICROSOFT_SECRET=MicrosoftClientSecret`. The name matches ignoring case. A name no bound
-connection holds is refused before anything changes, in one sentence naming it and telling the team
-to ask the person to add a field by that name to a connection bound to `appSecrets`; a name two bound
-connections hold with different values is refused naming both by their place among the slot's
-bindings (1st, 2nd, ... in the order the member's settings show) and their account, and the field
-each holds. A value is never asked for in a
-message, and a secret's value typed where its name belongs is refused without writing it out.
+An app's secret can also come from one of the team's own connections, set in
+**Team settings -> Connections**: a mailbox, a username and password, or an API key the team already has. Bind each one
+an app may use to the Azure member's `appSecrets` slot, **Connections a deployed app may use** (when
+adding the member, or in its settings); the slot takes as many connections as you need. Then
 
-`appSecret1` to `appSecret8` from 2.x are fields of the connection an update made (see New in
-3.0.0), so `secret=<NAME>=appSecret<N>` still resolves. Named secrets set on the member's settings
-screen before 3.0.0 (**App secrets (old)**) are still read, after the connections.
+```
+containerapp create my-project-rg my-app my-project-env <registry>.azurecr.io/my-app:1.0 secret=SMTP_USER=mail.username secret=SMTP_PASSWORD=mail.password
+```
+
+puts the `username` and `password` of the connection named `mail` in the app's own secrets, each
+named after `<NAME>` in lower case with hyphens for underscores, and the app reads them as the
+environment variables `SMTP_USER` and `SMTP_PASSWORD`. The form is `secret=<NAME>=<connection>.<field>`;
+the connection's name and the field's match ignoring case, and a name with spaces is quoted:
+`"secret=SHOP_KEY=Shop login.password"`. The fields are:
+
+- a mailbox: `username`, `password`, `imapHost`, `imapPort`, `imapSecurity`, `smtpHost`, `smtpPort`
+  and `smtpSecurity`;
+- a username and password: `username` and `password`;
+- an API key: the fields the connection has, such as `key`.
+
+Changing a value on the connection (its **Update password**) reaches the app the next time
+`containerapp create` runs for it. A connection not bound to `appSecrets`, or a field it lacks or
+holds no value in, is refused before anything changes, in plain words naming the connection, the
+field and the fields that connection has, never a value, and saying nothing was changed. A value is
+never asked for in a message, and a secret's value typed where its name belongs is refused without
+writing it out.
 
 The value goes only to Azure, in the app's configuration: no what-if, answer, event or progress line
 holds it, and every value the member is given is redacted from what it writes. The what-if and the

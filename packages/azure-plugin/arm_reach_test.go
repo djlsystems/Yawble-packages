@@ -24,15 +24,8 @@ func TestTheMicrosoftSlotAsksForAzureManagementSQLAndStorageOnly(t *testing.T) {
 	if got := m.Connections[slot].Scopes["microsoft"]; !slices.Equal(got, want) {
 		t.Fatalf("scopes = %v, want %v", got, want)
 	}
-	if len(m.Secrets) != appSecretFields {
-		t.Fatalf("secrets = %d, want %d", len(m.Secrets), appSecretFields)
-	}
-	for n := 1; n <= appSecretFields; n++ {
-		field := "appSecret" + string(rune('0'+n))
-		s, ok := m.Secrets[field]
-		if !ok || s.Required || s.MovedTo != keySlot || !strings.Contains(s.Description, "secret=<NAME>="+field) || !strings.Contains(s.Description, "Team settings -> Connections") {
-			t.Fatalf("%s = %+v", field, s)
-		}
+	if len(m.Secrets) != 0 {
+		t.Fatalf("secrets = %d, want none: an app's secrets come from the appSecrets connections", len(m.Secrets))
 	}
 }
 
@@ -224,13 +217,13 @@ func TestAnAppSecretNoConnectionHoldsIsRefusedSayingWhereToAddIt(t *testing.T) {
 		want []string
 	}{
 		{runOpts{config: apply(nil), moved: map[string]string{"appSecret1": secretValue}}, "secret=HOOK=appSecret2",
-			[]string{"secret=HOOK=appSecret2 names no app secret this member holds", "add an API-key connection (preset Other) with a field named appSecret2 in Team settings -> Connections", "bind it to the Azure member's appSecrets slot"}},
+			[]string{"the secret HOOK reads appSecret2, which names no field of a connection bound to this member's appSecrets slot", "<connection>.<field>", "bind it to the Azure member's appSecrets slot (Connections a deployed app may use) in Team settings -> Connections"}},
 		{runOpts{config: apply(nil)}, "secret=HOOK=appSecret3",
-			[]string{"names no app secret this member holds", "Team settings -> Connections"}},
+			[]string{"names no field of a connection bound to this member's appSecrets slot (none is bound yet)", "Team settings -> Connections"}},
 		{runOpts{config: apply(nil), moved: map[string]string{"appSecret1": secretValue}}, "secret=HOOK=appSecret9",
-			[]string{"names no app secret this member holds"}},
+			[]string{"names no field of a connection"}},
 		{runOpts{config: apply(nil), moved: map[string]string{"appSecret1": secretValue}}, "secret=HOOK=appSecret01",
-			[]string{"names no app secret this member holds"}},
+			[]string{"names no field of a connection"}},
 	} {
 		r := runPlugin(t, c.o, base+c.arg)
 		if r.ok() {
@@ -240,7 +233,7 @@ func TestAnAppSecretNoConnectionHoldsIsRefusedSayingWhereToAddIt(t *testing.T) {
 		assertNoValue(t, r.raw)
 	}
 	r := runPlugin(t, runOpts{config: apply(nil)}, base+"env=API_TOKEN=x"+strings.Repeat("y", 8))
-	mustContain(t, r.text(), "API_TOKEN looks like a secret", "secret=API_TOKEN=https://<vault>.vault.azure.net/secrets/<name>", "secret=API_TOKEN=<name>", "Team settings -> Connections")
+	mustContain(t, r.text(), "API_TOKEN looks like a secret", "secret=API_TOKEN=https://<vault>.vault.azure.net/secrets/<name>", "secret=API_TOKEN=<connection>.<field>", "secret=API_TOKEN=mail.password", "Team settings -> Connections")
 	if len(w.f.writes()) != 0 {
 		t.Fatal("a refused app wrote")
 	}
@@ -251,6 +244,14 @@ func TestAnAppSecretValueIsRedactedWhereverItWouldBeWritten(t *testing.T) {
 	// A value an instruction quotes back is hidden like a token.
 	r := runPlugin(t, runOpts{moved: map[string]string{"appSecret4": secretValue}}, "show "+secretValue)
 	assertNoValue(t, r.raw)
+	// So is every secret field of a connection the new lookup reads: a mailbox's, a login's, an API key's.
+	r = runPlugin(t, runOpts{bound: []map[string]any{mailbox("mail", secretValue), login("shop", "shopbot", otherValue), apiKey("stripe", map[string]string{"key": keyValue})}},
+		"show "+secretValue+" "+otherValue+" "+keyValue)
+	assertNoNamedValue(t, r.raw)
+	// And a refused <connection>.<field> names no value, only names.
+	r = runPlugin(t, runOpts{config: apply(nil), bound: []map[string]any{mailbox("mail", secretValue)}}, appCreateLine("secret=SMTP_PASSWORD=mail.nope"))
+	mustContain(t, r.text(), "Refused", "mail has the fields username, password")
+	assertNoNamedValue(t, r.raw)
 }
 
 func assertNoValue(t *testing.T, raw string) {

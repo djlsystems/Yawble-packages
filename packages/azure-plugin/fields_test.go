@@ -42,16 +42,7 @@ func TestEveryFieldHasItsLabelAndEverySecretItsMasking(t *testing.T) {
 		label            string
 		masked, required bool
 	}
-	secrets := map[string]secret{
-		"appSecret1": {"App secret 1", true, false},
-		"appSecret2": {"App secret 2", true, false},
-		"appSecret3": {"App secret 3", true, false},
-		"appSecret4": {"App secret 4", true, false},
-		"appSecret5": {"App secret 5", true, false},
-		"appSecret6": {"App secret 6", true, false},
-		"appSecret7": {"App secret 7", true, false},
-		"appSecret8": {"App secret 8", true, false},
-	}
+	secrets := map[string]secret{}
 	if len(m.Config) != len(settings) || len(m.Secrets) != len(secrets) {
 		t.Fatalf("%d settings and %d secrets; the labels cover %d and %d", len(m.Config), len(m.Secrets), len(settings), len(secrets))
 	}

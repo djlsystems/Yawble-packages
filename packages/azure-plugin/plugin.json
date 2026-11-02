@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "azure-plugin",
   "name": "Azure",
-  "description": "Builds and runs a team's own Azure resources, signed in as the person: resource groups, Bicep and ARM deployments checked by what-if first, registry builds, Azure SQL databases and SQL, storage blobs, tables and queues, Key Vault, Container Apps with their logs and custom domains, DNS zones, budgets and role assignments for its managed identities. Key Vault and the apps' logs are reached through Azure management, so the Microsoft sign-in asks for Azure management, Azure SQL and Azure Storage only.\n\nIt changes only what it created, which carries the tags yawble-owner and yawble-plugin, plus the shared SQL servers and registries a person lists. It acts with the person's own Azure rights, never more. What-if by default: every changing command says what it would do and changes nothing until a person sets mode to apply. It never reads a key, a connection string or a Key Vault secret's value, and no token reaches its output; an app's secret comes from Key Vault or from an API-key connection bound to its appSecrets slot, set in Team settings -> Connections, and its value is never written out.",
-  "version": "3.0.0",
+  "description": "Builds and runs a team's own Azure resources, signed in as the person: resource groups, Bicep and ARM deployments checked by what-if first, registry builds, Azure SQL databases and SQL, storage blobs, tables and queues, Key Vault, Container Apps with their logs and custom domains, DNS zones, budgets and role assignments for its managed identities. Key Vault and the apps' logs are reached through Azure management, so the Microsoft sign-in asks for Azure management, Azure SQL and Azure Storage only.\n\nIt changes only what it created, which carries the tags yawble-owner and yawble-plugin, plus the shared SQL servers and registries a person lists. It acts with the person's own Azure rights, never more. What-if by default: every changing command says what it would do and changes nothing until a person sets mode to apply. It never reads a key, a connection string or a Key Vault secret's value, and no token reaches its output; an app's secret comes from Key Vault or from a field of one of the connections a deployed app may use, its appSecrets slot, named <connection>.<field> such as mail.password and bound in Team settings -> Connections, and its value is never written out.",
+  "version": "3.1.0",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/azure",
@@ -143,53 +143,6 @@
       "description": "Text put before the name of every resource group the member creates, such as team1-; empty by default."
     }
   },
-  "secrets": {
-    "appSecret1": {
-      "label": "App secret 1",
-      "description": "Moved: from 3.0.0 the app secrets are held by the API-key connections bound to the appSecrets slot, set in Team settings -> Connections. Declared only so an update carries an existing value over into that slot, as a connection field still named appSecret1, so secret=<NAME>=appSecret1 keeps working.",
-      "movedTo": "appSecrets"
-    },
-    "appSecret2": {
-      "label": "App secret 2",
-      "description": "Moved: from 3.0.0 the app secrets are held by the API-key connections bound to the appSecrets slot, set in Team settings -> Connections. Declared only so an update carries an existing value over into that slot, as a connection field still named appSecret2, so secret=<NAME>=appSecret2 keeps working.",
-      "movedTo": "appSecrets"
-    },
-    "appSecret3": {
-      "label": "App secret 3",
-      "description": "Moved: from 3.0.0 the app secrets are held by the API-key connections bound to the appSecrets slot, set in Team settings -> Connections. Declared only so an update carries an existing value over into that slot, as a connection field still named appSecret3, so secret=<NAME>=appSecret3 keeps working.",
-      "movedTo": "appSecrets"
-    },
-    "appSecret4": {
-      "label": "App secret 4",
-      "description": "Moved: from 3.0.0 the app secrets are held by the API-key connections bound to the appSecrets slot, set in Team settings -> Connections. Declared only so an update carries an existing value over into that slot, as a connection field still named appSecret4, so secret=<NAME>=appSecret4 keeps working.",
-      "movedTo": "appSecrets"
-    },
-    "appSecret5": {
-      "label": "App secret 5",
-      "description": "Moved: from 3.0.0 the app secrets are held by the API-key connections bound to the appSecrets slot, set in Team settings -> Connections. Declared only so an update carries an existing value over into that slot, as a connection field still named appSecret5, so secret=<NAME>=appSecret5 keeps working.",
-      "movedTo": "appSecrets"
-    },
-    "appSecret6": {
-      "label": "App secret 6",
-      "description": "Moved: from 3.0.0 the app secrets are held by the API-key connections bound to the appSecrets slot, set in Team settings -> Connections. Declared only so an update carries an existing value over into that slot, as a connection field still named appSecret6, so secret=<NAME>=appSecret6 keeps working.",
-      "movedTo": "appSecrets"
-    },
-    "appSecret7": {
-      "label": "App secret 7",
-      "description": "Moved: from 3.0.0 the app secrets are held by the API-key connections bound to the appSecrets slot, set in Team settings -> Connections. Declared only so an update carries an existing value over into that slot, as a connection field still named appSecret7, so secret=<NAME>=appSecret7 keeps working.",
-      "movedTo": "appSecrets"
-    },
-    "appSecret8": {
-      "label": "App secret 8",
-      "description": "Moved: from 3.0.0 the app secrets are held by the API-key connections bound to the appSecrets slot, set in Team settings -> Connections. Declared only so an update carries an existing value over into that slot, as a connection field still named appSecret8, so secret=<NAME>=appSecret8 keeps working.",
-      "movedTo": "appSecrets"
-    }
-  },
-  "namedSecrets": {
-    "label": "App secrets (old)",
-    "description": "Old: named app secrets set here before 3.0.0, still read by name after the appSecrets connections, so an app that names one keeps working; the name is how the team refers to it. Add new ones as fields of an API-key connection (preset Other) in Team settings -> Connections, bound to the appSecrets slot, and remove the old one here once it is there.",
-    "max": 20
-  },
   "connections": {
     "microsoft": {
       "description": "The Microsoft account that signs in to Azure; the member acts with that account's own Azure rights.",
@@ -207,8 +160,10 @@
       "required": true
     },
     "appSecrets": {
-      "description": "The secrets an app made by containerapp create reads as secret environment variables: API-key connections (preset Other), each field one secret by the name the team refers to it with, through secret=<NAME>=<field name>. Added and assigned to this team in Team settings -> Connections; bind as many as needed. A value is never shown again or written out.",
+      "description": "Connections a deployed app may use: the team's own connections - a mailbox, a username and password, or an API key - whose fields an app made by containerapp create reads as secret environment variables, through secret=<NAME>=<connection>.<field>, such as secret=SMTP_PASSWORD=mail.password for the password of the connection named mail. A mailbox's fields are username, password, imapHost, imapPort, imapSecurity, smtpHost, smtpPort and smtpSecurity; the others' are their own fields. Bind as many as needed in Team settings -> Connections; an Update password on a connection reaches the app at its next containerapp create. A value is never shown again or written out.",
       "providers": [
+        "imap",
+        "login",
         "apikey"
       ],
       "multiple": true,
@@ -355,7 +310,7 @@
       },
       {
         "type": "refused",
-        "summary": "A command was refused: outside what the team owns, a role or principal not allowed, a delete with allowDelete off, a path outside the team's folders, a secret outside Key Vault and this member's app secret connections, or bad arguments.",
+        "summary": "A command was refused: outside what the team owns, a role or principal not allowed, a delete with allowDelete off, a path outside the team's folders, a secret outside Key Vault and the connections bound to this member's appSecrets slot, or bad arguments.",
         "highVolume": false,
         "fields": [
           {
