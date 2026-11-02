@@ -369,8 +369,8 @@ func (f *fake) serveLogsAndBuilds(logLines []string) {
 
 // appListSecrets reports whether a lower-case path is a container app's own listSecrets.
 func appListSecrets(lower string) bool {
-	i := strings.Index(lower, "/providers/microsoft.app/containerapps/")
-	return i > 0 && strings.HasSuffix(lower, "/listsecrets") && strings.Count(lower[i:], "/") == 5
+	i := strings.Index(lower, "/containerapps/")
+	return i > 0 && strings.HasSuffix(lower, "/listsecrets") && strings.Count(lower[i:], "/") == 3
 }
 
 // withoutSecretValues is an app's properties as Azure answers them: each secret's name, Key Vault
