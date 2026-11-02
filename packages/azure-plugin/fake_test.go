@@ -502,11 +502,10 @@ func (f *fake) deployment(w http.ResponseWriter, method, path string, body []byt
 
 type runOpts struct {
 	config    map[string]any
-	moved     map[string]string            // appSecret<N> -> value: the one connection CON 7 makes of 2.x's own values, bound first to appSecrets
-	keys      map[string]map[string]string // further appSecrets connections, by name (bound in name order): field -> value
-	bound     []map[string]any             // further appSecrets connections as the Host sends them (a mailbox, a login), bound last
-	named     map[string]string            // an old Host's namedSecrets: name -> value, which 3.1.0 never reads; nil: none
-	sent      map[string]string            // the request's secrets, which 3.0.0 ignores
+	moved     map[string]string            // appSecret<N> -> value: the one connection CON 7 made of 2.x's own values (name "Azure app secrets", account "Other"), bound first to appSecrets
+	keys      map[string]map[string]string // further appSecrets API keys with the preset Other, by name (bound in name order): field -> value; each one's account is "Other", as the Host sends it
+	bound     []hostObject                 // further appSecrets connections exactly as the Host sends them (mailbox, login, apiKey, website), bound last
+	sent      map[string]string            // the request's secrets, which 3.x ignores
 	noConnect bool                         // no microsoft slot bound
 	tokens    map[string]string            // the slot's tokens map; nil: one per API
 	trees     []string
@@ -527,80 +526,18 @@ func baseConfig(extra map[string]any) map[string]any {
 	return cfg
 }
 
+// runPlugin runs the plugin on a request shaped exactly as Yawble's Host writes it to stdin
+// (PluginMemberRunner.Request, ConnectionNode and Grant at Yawble 2af730c): the same keys in the
+// same order, each connection's name just before its account. TestTheFixtureIsShapedLikeTheHostsRequest
+// pins that order against testdata/host-request-masked.json.
 func runPlugin(t *testing.T, o runOpts, instruction string) *result {
 	t.Helper()
-	cfg := o.config
-	if cfg == nil {
-		cfg = baseConfig(nil)
+	in, err := json.Marshal(hostRequest(t, o, instruction))
+	if err != nil {
+		t.Fatal(err)
 	}
-	conns := map[string]any{}
-	if !o.noConnect {
-		tokens := o.tokens
-		if tokens == nil {
-			tokens = map[string]string{
-				"https://management.azure.com/": tokARM,
-				"https://database.windows.net/": tokSQL,
-				"https://storage.azure.com/":    tokStorage,
-			}
-		}
-		tm := map[string]any{}
-		first := ""
-		for k, v := range tokens {
-			tm[k] = map[string]any{"accessToken": v, "expiresAt": "2026-10-09T16:00:00Z", "scopes": []string{k + "user_impersonation"}}
-			if k == "https://management.azure.com/" {
-				first = v
-			}
-		}
-		conns["microsoft"] = map[string]any{
-			"provider": "microsoft", "account": "person@example.com", "accessToken": first,
-			"expiresAt": "2026-10-09T16:00:00Z", "scopes": []string{"offline_access"}, "tokens": tm,
-		}
-	}
-	var keys []map[string]any
-	if o.moved != nil {
-		keys = append(keys, map[string]any{"kind": "apikey", "account": testTeam + " - Azure", "preset": "other", "fields": o.moved})
-	}
-	accounts := make([]string, 0, len(o.keys))
-	for a := range o.keys {
-		accounts = append(accounts, a)
-	}
-	sort.Strings(accounts)
-	for _, a := range accounts {
-		keys = append(keys, map[string]any{"kind": "apikey", "account": a, "preset": "other", "fields": o.keys[a]})
-	}
-	keys = append(keys, o.bound...)
-	if keys != nil {
-		conns[keySlot] = keys
-	}
-	var trees []map[string]any
-	for _, tr := range o.trees {
-		trees = append(trees, map[string]any{"repo": "my-repo", "path": tr, "clonePath": tr})
-	}
-	req := map[string]any{
-		"protocol":         "harness.member/1",
-		"plugin":           map[string]any{"id": "azure-plugin", "version": "3.1.0"},
-		"member":           map[string]any{"id": testTeam + "/Azure", "team": testTeam, "name": "Azure"},
-		"work":             []map[string]any{{"seq": 1, "instruction": instruction, "payload": map[string]any{"instruction": instruction}}},
-		"config":           cfg,
-		"secrets":          orEmpty(o.sent),
-		"secretKeys":       map[string]string{},
-		"connections":      conns,
-		"workingDirectory": t.TempDir(),
-		"worktrees":        trees,
-		"siteFiles":        []any{},
-		"sites":            []any{},
-	}
-	if o.named != nil {
-		names := make([]string, 0, len(o.named))
-		for n := range o.named {
-			names = append(names, n)
-		}
-		sort.Strings(names)
-		req["namedSecrets"], req["namedSecretNames"] = o.named, names
-	}
-	in, _ := json.Marshal(req)
 	var out bytes.Buffer
-	code := run(bytes.NewReader(in), &out, func() time.Time { return testNow })
+	code := run(bytes.NewReader(append(in, '\n')), &out, func() time.Time { return testNow })
 	r := &result{t: t, raw: out.String(), code: code}
 	for _, line := range strings.Split(strings.TrimSpace(r.raw), "\n") {
 		var rec map[string]any
@@ -615,6 +552,154 @@ func runPlugin(t *testing.T, o runOpts, instruction string) *result {
 		t.Fatalf("the last record is not the result: %v", last)
 	}
 	return r
+}
+
+// hostRequest is the request document the Host writes for o, its keys in the Host's order.
+func hostRequest(t *testing.T, o runOpts, instruction string) hostObject {
+	t.Helper()
+	cfg := o.config
+	if cfg == nil {
+		cfg = baseConfig(nil)
+	}
+	conns := hostObject{}
+	if !o.noConnect {
+		tokens := o.tokens
+		if tokens == nil {
+			tokens = map[string]string{
+				"https://management.azure.com/": tokARM,
+				"https://database.windows.net/": tokSQL,
+				"https://storage.azure.com/":    tokStorage,
+			}
+		}
+		apis := make([]string, 0, len(tokens))
+		for k := range tokens {
+			apis = append(apis, k)
+		}
+		sort.Strings(apis)
+		tm, first := hostObject{}, ""
+		for _, k := range apis {
+			tm = append(tm, kv{k, hostObject{{"accessToken", tokens[k]}, {"expiresAt", "2026-10-09T16:00:00Z"}, {"scopes", []string{k + "user_impersonation"}}}})
+			if k == "https://management.azure.com/" {
+				first = tokens[k]
+			}
+		}
+		conns = append(conns, kv{"microsoft", hostObject{
+			{"provider", "microsoft"}, {"name", "Person's Microsoft"}, {"account", "person@example.com"}, {"accessToken", first},
+			{"expiresAt", "2026-10-09T16:00:00Z"}, {"scopes", []string{"offline_access"}}, {"tokens", tm},
+		}})
+	}
+	var keys []hostObject
+	if o.moved != nil {
+		keys = append(keys, apiKey("Azure app secrets", "Other", "other", o.moved))
+	}
+	names := make([]string, 0, len(o.keys))
+	for a := range o.keys {
+		names = append(names, a)
+	}
+	sort.Strings(names)
+	for _, a := range names {
+		keys = append(keys, apiKey(a, "Other", "other", o.keys[a]))
+	}
+	keys = append(keys, o.bound...)
+	if keys != nil {
+		conns = append(conns, kv{keySlot, keys})
+	}
+	trees := []hostObject{}
+	for _, tr := range o.trees {
+		trees = append(trees, hostObject{{"repo", "my-repo"}, {"path", tr}, {"clonePath", tr}})
+	}
+	return hostObject{
+		{"protocol", "harness.member/1"},
+		{"plugin", hostObject{{"id", "azure-plugin"}, {"version", "3.1.0"}}},
+		{"member", hostObject{{"id", testTeam + "/Azure"}, {"team", testTeam}, {"name", "Azure"}}},
+		{"causation", 1},
+		{"correlation", 1},
+		{"work", []hostObject{{
+			{"seq", 1},
+			{"type", "agentContainer.instruction." + testTeam + "/Azure"},
+			{"source", "1fb5e76015ca4ee4a63b3285bedb021b"},
+			{"correlation", 1},
+			{"payload", hostObject{{"instruction", instruction}, {"subject", instruction}, {"body", ""}, {"card", nil}}},
+			{"instruction", instruction},
+		}}},
+		{"config", cfg},
+		{"secrets", orEmpty(o.sent)},
+		{"secretKeys", map[string]string{}},
+		{"workingDirectory", t.TempDir()},
+		{"worktrees", trees},
+		{"connections", conns},
+		{"siteFiles", []any{}},
+		{"sites", []any{}},
+	}
+}
+
+// kv and hostObject are a JSON object whose keys keep their order, as the Host's JsonObject does.
+type kv struct {
+	k string
+	v any
+}
+
+type hostObject []kv
+
+func (o hostObject) MarshalJSON() ([]byte, error) {
+	var b bytes.Buffer
+	b.WriteByte('{')
+	for i, e := range o {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		k, _ := json.Marshal(e.k)
+		v, err := json.Marshal(e.v)
+		if err != nil {
+			return nil, err
+		}
+		b.Write(k)
+		b.WriteByte(':')
+		b.Write(v)
+	}
+	b.WriteByte('}')
+	return b.Bytes(), nil
+}
+
+// The appSecrets connections as ConnectionNode writes them: kind, name, account, then a mailbox's
+// username, password and servers, or a credential's preset and fields. name is what a person called
+// the connection; account is what the Host derives (a mailbox's address, a login's username, a
+// preset's label such as "Other", a website's host), so each fixture's name differs from its account.
+
+func mailbox(name, account, password string) hostObject {
+	return hostObject{
+		{"kind", "imap"}, {"name", name}, {"account", account}, {"username", mailUser}, {"password", password},
+		{"imap", hostObject{{"host", "imap.example.com"}, {"port", 993}, {"security", "TLS"}}},
+		{"smtp", hostObject{{"host", "smtp.example.com"}, {"port", 587}, {"security", "StartTls"}}},
+	}
+}
+
+func login(name, username, password string) hostObject {
+	return hostObject{{"kind", "login"}, {"name", name}, {"account", username}, {"preset", nil},
+		{"fields", hostObject{{"username", username}, {"password", password}, {"url", "https://ftp.example.test"}}}}
+}
+
+func apiKey(name, account, preset string, fields map[string]string) hostObject {
+	return hostObject{{"kind", "apikey"}, {"name", name}, {"account", account}, {"preset", preset}, {"fields", fields}}
+}
+
+func website(name, password, token string) hostObject {
+	return hostObject{{"kind", "website"}, {"name", name}, {"account", "portal.example.test"}, {"preset", nil},
+		{"fields", hostObject{
+			{"siteUrl", "https://portal.example.test/"}, {"method", "password"}, {"username", "portal-bot"},
+			{"password", password}, {"token", token}, {"tokenHeader", "Authorization"}, {"mayAct", "false"},
+		}}}
+}
+
+// unnamed is c as a Host before CON 15 sends it: no name.
+func unnamed(c hostObject) hostObject {
+	var out hostObject
+	for _, e := range c {
+		if e.k != "name" {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func orEmpty(m map[string]string) map[string]string {

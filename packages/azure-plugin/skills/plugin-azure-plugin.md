@@ -230,17 +230,22 @@ a message. A template refers to it with a Key Vault reference; a container app w
 Secrets User). The member never calls Key Vault for a value.
 
 An app secret can also come from one of the team's own connections, and this is the form to use.
-A person binds the connections an app may use - a mailbox, a username and password, an API key - to
+A person binds the connections an app may use - a mailbox, a username and password, an API key, a
+website - to
 the Azure member's `appSecrets` slot ("Connections a deployed app may use") in
 Team settings -> Connections. `secret=<NAME>=<connection>.<field>` on `containerapp create` puts that field's value
 in the app's own secrets, and the app reads it as `<NAME>`: `secret=SMTP_PASSWORD=mail.password` is
-the password of the connection named `mail`. Names match ignoring case; quote a connection name
+the password of the connection named `mail`. `<connection>` is the connection's name as Team
+settings -> Connections shows it, never its account: two API keys can share an account, such as
+"Other", and are told apart only by name. Names match ignoring case; quote a connection name
 with spaces, `"secret=SHOP_KEY=Shop login.password"`. A mailbox's fields are `username`, `password`,
 `imapHost`, `imapPort`, `imapSecurity`, `smtpHost`, `smtpPort` and `smtpSecurity`; a username and
-password's are `username` and `password`; an API key's are its own, such as `key`. When the app needs
+password's are `username` and `password`; an API key's are its own, such as `key`; a website's
+include `siteUrl`, `username`, `password` and `token`. When the app needs
 a secret no bound connection holds, ask the person to bind the connection that holds it to
 `appSecrets`, or to add the field to one - name the connection and the field, say what it is for, and
 never ask for its value in a message - then run the command again. A connection not bound, or a
 field it lacks, is refused before anything changes, naming the connection, the field and the fields
-it has. The member puts a value in the app's own secrets and nowhere else, and never writes it out.
+it has. A Host too old to send connection names is refused too, saying so; ask the person to
+update Yawble. The member puts a value in the app's own secrets and nowhere else, and never writes it out.
 Never put a secret's value in an instruction.

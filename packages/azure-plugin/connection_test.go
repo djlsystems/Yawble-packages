@@ -49,7 +49,7 @@ func TestAFieldTwoConnectionsHoldWithDifferentValuesIsRefusedNamingBoth(t *testi
 	if r.ok() {
 		t.Fatal("an ambiguous field was accepted")
 	}
-	mustContain(t, r.text(), "Refused: secret=AUTH=ClientSecret is a field of two connections bound to this member's appSecrets slot, the 1st (Blog auth) and the 2nd (Shop auth) connection, which hold fields named clientsecret and ClientSecret with different values", "rename the field in one of them in Team settings -> Connections", "nothing was changed")
+	mustContain(t, r.text(), "Refused: secret=AUTH=ClientSecret is a field of two connections bound to this member's appSecrets slot, the 1st (Blog auth) and the 2nd (Shop auth) connection, which hold fields named clientsecret and ClientSecret with different values", "rename the field in one of them in Team settings -> Connections", "Nothing was changed.")
 	assertNoNamedValue(t, r.raw)
 	if len(w.f.calls) != 0 {
 		t.Fatal("Azure was called")
@@ -61,15 +61,15 @@ func TestAFieldTwoConnectionsHoldWithDifferentValuesIsRefusedNamingBoth(t *testi
 	r = runPlugin(t, runOpts{
 		config: apply(nil),
 		keys: map[string]map[string]string{
-			"Other":   {"appSecret1": secretValue},
-			"Other 2": {"appSecret2": otherValue},
-			"Other 3": {"appSecret1": otherValue},
+			"Stripe old": {"appSecret1": secretValue},
+			"Hooks":      {"appSecret2": otherValue},
+			"Mail old":   {"appSecret1": otherValue},
 		},
 	}, appCreateLine("secret=S_AS1=appSecret1"))
 	if r.ok() {
 		t.Fatal("an ambiguous field was accepted")
 	}
-	mustContain(t, r.text(), "secret=S_AS1=appSecret1 is a field of two connections bound to this member's appSecrets slot, the 1st (Other) and the 3rd (Other 3) connection, which both hold a field named appSecret1 with different values", "nothing was changed")
+	mustContain(t, r.text(), "secret=S_AS1=appSecret1 is a field of two connections bound to this member's appSecrets slot, the 2nd (Mail old) and the 3rd (Stripe old) connection, which both hold a field named appSecret1 with different values", "Nothing was changed.")
 	assertNoNamedValue(t, r.raw)
 	if len(w.f.calls) != 0 {
 		t.Fatal("Azure was called")

@@ -245,11 +245,11 @@ func TestAnAppSecretValueIsRedactedWhereverItWouldBeWritten(t *testing.T) {
 	r := runPlugin(t, runOpts{moved: map[string]string{"appSecret4": secretValue}}, "show "+secretValue)
 	assertNoValue(t, r.raw)
 	// So is every secret field of a connection the new lookup reads: a mailbox's, a login's, an API key's.
-	r = runPlugin(t, runOpts{bound: []map[string]any{mailbox("mail", secretValue), login("shop", "shopbot", otherValue), apiKey("stripe", map[string]string{"key": keyValue})}},
+	r = runPlugin(t, runOpts{bound: []hostObject{mailbox("mail", "bot@example.test", secretValue), login("shop", "shopbot", otherValue), apiKey("stripe live", "Stripe", "stripe", map[string]string{"key": keyValue})}},
 		"show "+secretValue+" "+otherValue+" "+keyValue)
 	assertNoNamedValue(t, r.raw)
 	// And a refused <connection>.<field> names no value, only names.
-	r = runPlugin(t, runOpts{config: apply(nil), bound: []map[string]any{mailbox("mail", secretValue)}}, appCreateLine("secret=SMTP_PASSWORD=mail.nope"))
+	r = runPlugin(t, runOpts{config: apply(nil), bound: []hostObject{mailbox("mail", "bot@example.test", secretValue)}}, appCreateLine("secret=SMTP_PASSWORD=mail.nope"))
 	mustContain(t, r.text(), "Refused", "mail has the fields username, password")
 	assertNoNamedValue(t, r.raw)
 }

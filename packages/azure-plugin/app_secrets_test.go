@@ -10,32 +10,19 @@ import (
 
 // From 3.1.0 a deployed app's secret comes from a connection bound to the appSecrets slot
 // ("Connections a deployed app may use"), named secret=<ENV>=<connection>.<field>: a mailbox, a
-// username and password or an API key. The old named secrets (the "App secrets (old)" block) are gone.
+// username and password, an API key or a website, found by the name the Host sends just before
+// account - never by account. The old named secrets (the "App secrets (old)" block) are gone.
 
-// otherValue and keyValue are further secret values, put together at run time like secretValue.
+// otherValue, keyValue, siteValue and tokenValue are further secret values, put together at run
+// time like secretValue.
 var (
 	otherValue = "other-" + strings.Repeat("K3", 12) + "-value"
 	keyValue   = "key-" + strings.Repeat("W5", 12) + "-value"
+	siteValue  = "site-" + strings.Repeat("Q7", 12) + "-value"
+	tokenValue = "tok-" + strings.Repeat("V4", 12) + "-value"
 )
 
 const mailUser = "bot-mailer@example.com"
-
-// mailbox is an imap connection named name as the Host hands it over: username, password and servers.
-func mailbox(name, password string) map[string]any {
-	return map[string]any{
-		"kind": "imap", "account": name, "username": mailUser, "password": password,
-		"imap": map[string]any{"host": "imap.example.com", "port": 993, "security": "ssl"},
-		"smtp": map[string]any{"host": "smtp.example.com", "port": 587, "security": "starttls"},
-	}
-}
-
-func login(name, username, password string) map[string]any {
-	return map[string]any{"kind": "login", "account": name, "preset": nil, "fields": map[string]string{"username": username, "password": password}}
-}
-
-func apiKey(name string, fields map[string]string) map[string]any {
-	return map[string]any{"kind": "apikey", "account": name, "preset": "stripe", "fields": fields}
-}
 
 func TestTheManifestHasNoAppSecretsSectionOfAnyKind(t *testing.T) {
 	var m map[string]json.RawMessage
@@ -57,7 +44,7 @@ func TestTheManifestHasNoAppSecretsSectionOfAnyKind(t *testing.T) {
 	if !strings.Contains(raw, `"description": "Connections a deployed app may use: `) {
 		t.Error("the appSecrets slot does not say what it is for")
 	}
-	if want := []string{"imap", "login", "apikey"}; strings.Join(keys.Providers, ",") != strings.Join(want, ",") || !keys.Multiple || keys.Required {
+	if want := []string{"imap", "login", "apikey", "website"}; strings.Join(keys.Providers, ",") != strings.Join(want, ",") || !keys.Multiple || keys.Required {
 		t.Fatalf("appSecrets = %+v", keys)
 	}
 }
@@ -135,7 +122,7 @@ func onlyTheAppCarries(t *testing.T, w *world, values ...string) {
 func TestAMailboxConnectionsPasswordGoesIntoTheAppByConnectionAndField(t *testing.T) {
 	w := newWorld(t)
 	line := appCreateLine("secret=SMTP_PASSWORD=mail.password secret=SMTP_USER=Mail.username secret=SMTP_HOST=mail.smtpHost secret=SMTP_PORT=MAIL.SMTPPORT")
-	o := runOpts{bound: []map[string]any{mailbox("mail", secretValue)}}
+	o := runOpts{bound: []hostObject{mailbox("mail", "bot@example.test", secretValue)}}
 
 	r := runPlugin(t, o, line)
 	if !r.ok() {
@@ -165,8 +152,8 @@ func TestAUsernameAndPasswordConnectionAndAnAPIKeyConnectionGoIntoTheApp(t *test
 	w := newWorld(t)
 	r := runPlugin(t, runOpts{
 		config: apply(nil),
-		bound:  []map[string]any{login("Shop login", "shopbot", otherValue), apiKey("stripe", map[string]string{"key": keyValue})},
-	}, appCreateLine(`secret=SHOP_USER="shop login.username" "secret=SHOP_PASSWORD=Shop login.password" secret=STRIPE_KEY=Stripe.KEY`))
+		bound:  []hostObject{login("Shop login", "shopbot", otherValue), apiKey("stripe live", "Stripe", "stripe", map[string]string{"key": keyValue})},
+	}, appCreateLine(`secret=SHOP_USER="shop login.username" "secret=SHOP_PASSWORD=Shop login.password" secret=STRIPE_KEY="Stripe Live.KEY"`))
 	if !r.ok() {
 		t.Fatal(r.text())
 	}
@@ -185,7 +172,7 @@ func TestTheOldAppSecretNFormStillResolvesFromABoundConnection(t *testing.T) {
 	r := runPlugin(t, runOpts{
 		config: apply(nil),
 		moved:  map[string]string{"appSecret1": otherValue},
-		bound:  []map[string]any{mailbox("mail", secretValue)},
+		bound:  []hostObject{mailbox("mail", "bot@example.test", secretValue)},
 	}, appCreateLine("secret=STRIPE_KEY=appSecret1 secret=SMTP_PASSWORD=mail.password"))
 	if !r.ok() {
 		t.Fatal(r.text())
@@ -201,7 +188,7 @@ func TestAConnectionNotBoundIsRefusedNamingItAndChangesNothing(t *testing.T) {
 		o     runOpts
 		bound string
 	}{
-		{runOpts{config: apply(nil), bound: []map[string]any{mailbox("mail", secretValue), apiKey("stripe", map[string]string{"key": keyValue})}}, "(the ones bound are mail, stripe)"},
+		{runOpts{config: apply(nil), bound: []hostObject{mailbox("mail", "bot@example.test", secretValue), apiKey("stripe live", "Stripe", "stripe", map[string]string{"key": keyValue})}}, "(the ones bound are mail, stripe live)"},
 		{runOpts{config: apply(nil)}, "(none is bound yet)"},
 	} {
 		w := newWorld(t)
@@ -224,19 +211,19 @@ func TestAConnectionNotBoundIsRefusedNamingItAndChangesNothing(t *testing.T) {
 
 func TestAFieldTheConnectionLacksIsRefusedNamingItsFieldsAndChangesNothing(t *testing.T) {
 	for _, c := range []struct {
-		bound map[string]any
+		bound hostObject
 		arg   string
 		want  string
 	}{
-		{mailbox("mail", secretValue), "secret=SMTP_PASSWORD=mail.pass",
+		{mailbox("mail", "bot@example.test", secretValue), "secret=SMTP_PASSWORD=mail.pass",
 			"Refused: the secret SMTP_PASSWORD reads mail.pass, the field pass of the connection mail, which that connection does not have or holds no value in; mail has the fields username, password, imapHost, imapPort, imapSecurity, smtpHost, smtpPort, smtpSecurity, so run containerapp create again naming one of them as mail.<field>"},
 		{login("shop", "shopbot", otherValue), "secret=SHOP=shop.apiKey",
-			"the field apiKey of the connection shop, which that connection does not have or holds no value in; shop has the fields password, username,"},
-		{apiKey("stripe", map[string]string{"key": keyValue, "webhook": ""}), "secret=HOOK=stripe.webhook",
+			"the field apiKey of the connection shop, which that connection does not have or holds no value in; shop has the fields password, url, username,"},
+		{apiKey("stripe", "Stripe", "stripe", map[string]string{"key": keyValue, "webhook": ""}), "secret=HOOK=stripe.webhook",
 			"the field webhook of the connection stripe, which that connection does not have or holds no value in; stripe has the fields key,"},
 	} {
 		w := newWorld(t)
-		r := runPlugin(t, runOpts{config: apply(nil), bound: []map[string]any{c.bound}}, appCreateLine(c.arg))
+		r := runPlugin(t, runOpts{config: apply(nil), bound: []hostObject{c.bound}}, appCreateLine(c.arg))
 		if r.ok() {
 			t.Fatalf("%s was accepted", c.arg)
 		}
@@ -250,7 +237,7 @@ func TestAFieldTheConnectionLacksIsRefusedNamingItsFieldsAndChangesNothing(t *te
 
 func TestABareNameNoConnectionHoldsIsRefusedNamingTheConnectionForm(t *testing.T) {
 	w := newWorld(t)
-	r := runPlugin(t, runOpts{config: apply(nil), bound: []map[string]any{mailbox("mail", secretValue)}}, appCreateLine("secret=HOOK=appSecret2"))
+	r := runPlugin(t, runOpts{config: apply(nil), bound: []hostObject{mailbox("mail", "bot@example.test", secretValue)}}, appCreateLine("secret=HOOK=appSecret2"))
 	if r.ok() {
 		t.Fatal("a bare name no connection holds was accepted")
 	}
@@ -262,18 +249,8 @@ func TestABareNameNoConnectionHoldsIsRefusedNamingTheConnectionForm(t *testing.T
 	assertNoNamedValue(t, r.raw)
 }
 
-// A Host that still sends the old namedSecrets: 3.1.0 never reads them.
-func TestOldNamedSecretsInTheRequestAreNeverRead(t *testing.T) {
-	w := newWorld(t)
-	r := runPlugin(t, runOpts{config: apply(nil), named: map[string]string{"MicrosoftClientSecret": secretValue}},
-		appCreateLine("secret=AUTH_MICROSOFT_SECRET=MicrosoftClientSecret"))
-	if r.ok() {
-		t.Fatal("an old named secret was used")
-	}
-	mustContain(t, r.text(), "names no field of a connection bound to this member's appSecrets slot (none is bound yet)", "Nothing was changed.")
-	if len(w.f.calls) != 0 {
-		t.Fatal("Azure was called")
-	}
+// 3.1.0 declares no namedSecrets, so the Host sends none; nor does the plugin read any.
+func TestOldNamedSecretsAreNeverRead(t *testing.T) {
 	for _, name := range []string{"main.go", "containerapp.go"} {
 		if strings.Contains(string(readFile(t, name)), "namedSecrets") {
 			t.Errorf("%s still reads namedSecrets", name)
@@ -300,19 +277,52 @@ func TestASecretsValueTypedWhereItsNameBelongsIsRefusedWithoutWritingItOut(t *te
 }
 
 // Every secret field of every kind of connection is hidden from output, whatever quotes it back;
-// a mailbox's username and password are, its servers are not secrets.
+// a mailbox's username and password are, its servers are not secrets; a website's masked fields and
+// username are, its settings (method "password", mayAct "false") are not, so those words still read.
+// A connection's name is a name, not a secret, and is shown.
 func TestEveryConnectionsSecretFieldsAreHiddenFromOutput(t *testing.T) {
 	newWorld(t)
-	r := runPlugin(t, runOpts{bound: []map[string]any{
-		mailbox("mail", secretValue), login("shop", "shopbot-"+strings.Repeat("J2", 6), otherValue), apiKey("stripe", map[string]string{"key": keyValue}),
-	}}, "show "+secretValue+" "+otherValue+" "+keyValue+" "+mailUser+" shopbot-"+strings.Repeat("J2", 6))
+	shopUser := "shopbot-" + strings.Repeat("J2", 6)
+	r := runPlugin(t, runOpts{bound: []hostObject{
+		mailbox("mail", "bot@example.test", secretValue), login("shop", shopUser, otherValue),
+		apiKey("stripe live", "Stripe", "stripe", map[string]string{"key": keyValue}), website("Customer portal", siteValue, tokenValue),
+	}}, "show "+secretValue+" "+otherValue+" "+keyValue+" "+siteValue+" "+tokenValue+" "+mailUser+" "+shopUser+" portal-bot")
 	assertNoNamedValue(t, r.raw)
-	if strings.Contains(r.raw, mailUser) || strings.Contains(r.raw, strings.Repeat("J2", 6)) {
-		t.Fatalf("a username was written out:\n%s", r.raw)
+	for _, v := range []string{mailUser, strings.Repeat("J2", 6), "portal-bot"} {
+		if strings.Contains(r.raw, v) {
+			t.Fatalf("a username was written out:\n%s", r.raw)
+		}
 	}
-	k := keyConnections(json.RawMessage(mustJSON(t, []any{mailbox("mail", secretValue)})))
-	if len(k) != 1 || k[0].secretField("smtpHost") || !k[0].secretField("password") || !k[0].secretField("username") {
+	k := keyConnections(json.RawMessage(mustJSON(t, []any{mailbox("mail", "bot@example.test", secretValue), website("Customer portal", siteValue, tokenValue)})))
+	if len(k) != 2 || k[0].secretField("smtpHost") || !k[0].secretField("password") || !k[0].secretField("username") {
 		t.Fatal("a mailbox's username and password are not its secret fields")
+	}
+	for f, secret := range map[string]bool{"password": true, "token": true, "username": true, "totpSecret": true, "session": true, "siteUrl": false, "method": false, "mayAct": false, "tokenHeader": false} {
+		if k[1].secretField(f) != secret {
+			t.Errorf("a website's %s: secret = %v", f, !secret)
+		}
+	}
+	if k[0].Name != "mail" || k[1].Name != "Customer portal" {
+		t.Fatalf("names = %q, %q", k[0].Name, k[1].Name)
+	}
+}
+
+// The name lookup hides as the field lookup does: a refusal for a website or two Other keys names
+// connections and fields, never a value, and a run that resolves one writes none out.
+func TestTheNameLookupWritesNoValueOut(t *testing.T) {
+	newWorld(t)
+	o := runOpts{config: apply(nil), keys: map[string]map[string]string{"Shop webhooks": {"key": otherValue}, "Blog webhooks": {"key": keyValue}},
+		bound: []hostObject{website("Customer portal", siteValue, tokenValue)}}
+	for _, line := range []string{
+		appCreateLine(`"secret=PORTAL=Customer portal.secret"`),
+		appCreateLine(`secret=HOOK=Other.key`),
+		appCreateLine(`"secret=PORTAL=customer portal.password" "secret=SHOP=shop webhooks.key"`),
+	} {
+		r := runPlugin(t, o, line)
+		assertNoNamedValue(t, r.raw)
+		if strings.Contains(r.raw, strings.Repeat("Q7", 12)) || strings.Contains(r.raw, strings.Repeat("V4", 12)) {
+			t.Fatalf("a website's value was written out:\n%s", r.raw)
+		}
 	}
 }
 
@@ -329,12 +339,13 @@ func mustJSON(t *testing.T, v any) []byte {
 func assertNoNamedValue(t *testing.T, raw string) {
 	t.Helper()
 	assertNoValue(t, raw)
-	for _, v := range []string{otherValue, keyValue} {
+	for _, v := range []string{otherValue, keyValue, siteValue, tokenValue} {
 		if strings.Contains(strings.ToLower(raw), strings.ToLower(v)) {
 			t.Fatalf("a secret's value was written out:\n%s", raw)
 		}
 	}
-	if strings.Contains(raw, strings.Repeat("K3", 12)) || strings.Contains(raw, strings.Repeat("W5", 12)) {
+	if strings.Contains(raw, strings.Repeat("K3", 12)) || strings.Contains(raw, strings.Repeat("W5", 12)) ||
+		strings.Contains(raw, strings.Repeat("Q7", 12)) || strings.Contains(raw, strings.Repeat("V4", 12)) {
 		t.Fatalf("a secret's value was written out:\n%s", raw)
 	}
 }
@@ -365,9 +376,24 @@ func TestTheDocsShowOnlyTheConnectionFieldForm(t *testing.T) {
 			t.Errorf("the skill still says %q", old)
 		}
 	}
-	start, end := strings.Index(readme, "### Migrating from 3.0.0 or earlier"), strings.Index(readme, "## New in 3.0.0")
+	start, end := strings.Index(readme, "### Migrating from an earlier version"), strings.Index(readme, "## New in 3.0.0")
 	if start < 0 || end < start {
 		t.Fatal("the README has no migration note before New in 3.0.0")
+	}
+	note := readme[start:end]
+	if !strings.Contains(note, "Secret values from 2.x are not carried over to 3.1.0.") || !strings.Contains(note, "secret=STRIPE_KEY=appSecret1") {
+		t.Error("the migration note does not say 2.x values are not carried over, or lost the appSecretN note")
+	}
+	// No migration slot, no route through 3.0.0, nothing about old secrets on the member's settings.
+	for _, gone := range []string{"App secrets (old)", "update to 3.0.0", "3.0.0 first", "App secrets by a name the team chooses, on"} {
+		if strings.Contains(readme, gone) {
+			t.Errorf("the README still says %q", gone)
+		}
+	}
+	for _, want := range []string{"website", "never its account"} {
+		if !strings.Contains(readme, want) || !strings.Contains(skill, want) {
+			t.Errorf("the README or the skill lacks %q", want)
+		}
 	}
 	rest := readme[:start] + readme[end:]
 	for _, old := range []string{"appSecret1", "appSecret<N>", "preset Other", "<app secret name>", "MicrosoftClientSecret"} {

@@ -160,11 +160,12 @@
       "required": true
     },
     "appSecrets": {
-      "description": "Connections a deployed app may use: the team's own connections - a mailbox, a username and password, or an API key - whose fields an app made by containerapp create reads as secret environment variables, through secret=<NAME>=<connection>.<field>, such as secret=SMTP_PASSWORD=mail.password for the password of the connection named mail. A mailbox's fields are username, password, imapHost, imapPort, imapSecurity, smtpHost, smtpPort and smtpSecurity; the others' are their own fields. Bind as many as needed in Team settings -> Connections; an Update password on a connection reaches the app at its next containerapp create. A value is never shown again or written out.",
+      "description": "Connections a deployed app may use: the team's own connections - a mailbox, a username and password, an API key, or a website - whose fields an app made by containerapp create reads as secret environment variables, through secret=<NAME>=<connection>.<field>, such as secret=SMTP_PASSWORD=mail.password for the password of the connection named mail. <connection> is the name the connection has in Team settings -> Connections. A mailbox's fields are username, password, imapHost, imapPort, imapSecurity, smtpHost, smtpPort and smtpSecurity; a website's include siteUrl, username, password and token; the others' are their own fields. Bind as many as needed in Team settings -> Connections; an Update password on a connection reaches the app at its next containerapp create. A value is never shown again or written out.",
       "providers": [
         "imap",
         "login",
-        "apikey"
+        "apikey",
+        "website"
       ],
       "multiple": true,
       "required": false

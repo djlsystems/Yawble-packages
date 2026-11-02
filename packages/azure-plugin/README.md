@@ -17,35 +17,36 @@ until you set `mode` to `apply`.
   connection named `mail`: `secret=<NAME>=<connection>.<field>`, the connection's name and the
   field's matched ignoring case. Bind the connections an app may use to the member's `appSecrets`
   slot, **Connections a deployed app may use**, in **Team settings -> Connections**.
+- **`<connection>` is the name the connection has in Team settings -> Connections**: never its account,
+  so two API keys that share an account, such as "Other", are told apart by their names. It needs a
+  Yawble Host that sends connection names; on an older Host the command is refused, saying the Host is
+  too old to send them, and nothing is changed.
 - **Every kind of credential connection fits that slot:** a mailbox (fields `username`, `password`,
   `imapHost`, `imapPort`, `imapSecurity`, `smtpHost`, `smtpPort`, `smtpSecurity`), a username and
-  password, and an API key. A team binds the mailbox it already has, so the password lives in one
-  place, and an **Update password** on that connection reaches the app at its next `containerapp create`.
-- **No App secrets section any more.** The member's settings show no app secret keys and no
-  **App secrets (old)** table.
+  password, an API key, and a website (fields such as `siteUrl`, `username`, `password` and
+  `token`). A team binds the mailbox it already has, so the password lives in one place, and an
+  **Update password** on that connection reaches the app at its next `containerapp create`.
 - A connection that is not bound, or a field it lacks, is refused before anything changes, naming
   the connection, the field and the fields that connection has - never a value.
 
-### Migrating from 3.0.0 or earlier
+### Migrating from an earlier version
 
-- Named secrets typed under **App secrets (old)** on the member's settings screen are no longer
-  read. Before updating, put each one in a connection - or use the connection that already holds the
-  value, such as the team's mailbox - bind it to `appSecrets`, and change the deploy line to
+- **Secret values from 2.x are not carried over to 3.1.0.** Re-enter each one as a connection in
+  **Team settings -> Connections** - or use the connection that already holds the value, such as the
+  team's mailbox - bind it to `appSecrets`, and change the deploy line to
   `secret=<NAME>=<connection>.<field>`.
-- `appSecret1` to `appSecret8` are no longer declared, so an update from 2.x straight to 3.1.0 carries
-  no value over: update to 3.0.0 first, or add the values to a connection yourself.
-- A 3.0.0 deploy line that names a bare field, such as `secret=STRIPE_KEY=appSecret1`, still works:
-  it resolves against the bound connection that has a field of that name. Change it to
+- A deploy line that names a bare field, such as `secret=STRIPE_KEY=appSecret1`, still works: it
+  resolves against the bound connection that has a field of that name. Change it to
   `<connection>.<field>` when you next touch it.
 
 ## New in 3.0.0
 
 - App secrets moved from the member's own keys to API-key connections bound to the `appSecrets`
-  slot (see Migrating from 3.0.0 or earlier, above, for what still applies).
+  slot (see Migrating from an earlier version, above, for what still applies).
 
 ## New in 2.1.0
 
-- App secrets by a name the team chooses, on the member's settings screen; replaced in 3.1.0 by
+- App secrets by a name the team chooses; replaced in 3.1.0 by
   `secret=<NAME>=<connection>.<field>`.
 
 ## New in 2.0.1

@@ -70,16 +70,20 @@ type apiToken struct {
 const slot = "microsoft"
 
 // keySlot is the manifest's slot of the connections a deployed app may use: a mailbox, a username and
-// password or an API key. It takes several connections ("multiple": true), so stdin carries it as an
+// password, an API key or a website. It takes several connections ("multiple": true), so stdin carries it as an
 // array, one entry per bound connection.
 const keySlot = "appSecrets"
 
-// keyConnection is one connection bound to the appSecrets slot: its name (account) and its fields,
-// each one a value secret=<ENV>=<connection>.<field> may hand an app. A credential connection (API
-// key, username and password) carries its fields by name; a mailbox carries username, password and
-// its servers, which keyConnections turns into the fields mailboxFields names.
+// keyConnection is one connection bound to the appSecrets slot: its name and its fields, each one a
+// value secret=<ENV>=<connection>.<field> may hand an app. The connection is found by Name, the name a
+// person gave it, which the Host sends from CON 15 on just before account; never by Account, which
+// two connections of one kind share (two API keys with the preset Other are both "Other"). A
+// credential connection (API key, username and password, website) carries its fields by name; a
+// mailbox carries username, password and its servers, which keyConnections turns into the fields
+// mailboxFields names.
 type keyConnection struct {
 	Kind     string            `json:"kind"`
+	Name     string            `json:"name"`
 	Account  string            `json:"account"`
 	Preset   string            `json:"preset"`
 	Fields   map[string]string `json:"fields"`
@@ -99,13 +103,23 @@ type mailServer struct {
 // mailboxFields are the fields of a mailbox connection, in the order a refusal lists them.
 var mailboxFields = []string{"username", "password", "imapHost", "imapPort", "imapSecurity", "smtpHost", "smtpPort", "smtpSecurity"}
 
+// websiteSecretFields are the fields of a website connection whose values are hidden from every
+// output: the ones the Host masks, and the username. Its other fields (siteUrl, method, mayAct...)
+// are settings whose values are ordinary words such as "password" or "false", which must not be
+// blanked out of every sentence.
+var websiteSecretFields = map[string]bool{"username": true, "password": true, "totpSecret": true, "token": true, "session": true}
+
 // secretField answers whether a field holds a secret, so its value is hidden from every output: all
-// of a credential connection's fields, and a mailbox's username and password (not its servers).
+// of an API key's or a username and password's fields, a website's websiteSecretFields, and a
+// mailbox's username and password (not its servers).
 func (k keyConnection) secretField(name string) bool {
-	if k.Kind != "imap" {
-		return true
+	switch k.Kind {
+	case "imap":
+		return name == "username" || name == "password"
+	case "website":
+		return websiteSecretFields[name]
 	}
-	return name == "username" || name == "password"
+	return true
 }
 
 // normalise gives a mailbox connection its fields by name.

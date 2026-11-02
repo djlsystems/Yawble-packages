@@ -1,0 +1,112 @@
+{
+ "protocol": "harness.member/1",
+ "plugin": {
+  "id": "lumi-az-probe",
+  "version": "0.0.1"
+ },
+ "member": {
+  "id": "AzTest/probe",
+  "team": "AzTest",
+  "name": "probe"
+ },
+ "causation": 1,
+ "correlation": 1,
+ "work": [
+  {
+   "seq": 1,
+   "type": "agentContainer.instruction.AzTest/probe",
+   "source": "1fb5e76015ca4ee4a63b3285bedb021b",
+   "correlation": 1,
+   "payload": {
+    "instruction": "containerapp create rg1 app1 env1 reg12345.azurecr.io/app:1",
+    "subject": "containerapp create rg1 app1 env1 reg12345.azurecr.io/app:1",
+    "body": "",
+    "card": null
+   },
+   "instruction": "containerapp create rg1 app1 env1 reg12345.azurecr.io/app:1"
+  }
+ ],
+ "config": {
+  "subscription": "",
+  "regions": [
+   "eastus2"
+  ],
+  "mode": "whatif",
+  "allowDelete": false,
+  "sharedSqlServers": [],
+  "sharedContainerRegistries": [],
+  "sharedRegistries": [],
+  "monthlyBudget": 0,
+  "budgetEmails": [],
+  "namePrefix": ""
+ },
+ "secrets": {},
+ "secretKeys": {},
+ "workingDirectory": "/tmp/lumi-b80data/teams/AzTest/workspaces/probe",
+ "worktrees": [],
+ "connections": {
+  "appSecrets": [
+   {
+    "kind": "imap",
+    "name": "mail",
+    "account": "bot@example.test",
+    "username": "<masked: bot@example.test>",
+    "password": "<masked>",
+    "imap": {
+     "host": "localhost",
+     "port": 39931,
+     "security": "TLS"
+    },
+    "smtp": {
+     "host": "localhost",
+     "port": 39932,
+     "security": "TLS"
+    }
+   },
+   {
+    "kind": "login",
+    "name": "FTP upload",
+    "account": "<masked: equals login username ftpuser-LOGINU>",
+    "preset": null,
+    "fields": {
+     "username": "<masked>",
+     "password": "<masked>",
+     "url": "https://ftp.example.test"
+    }
+   },
+   {
+    "kind": "apikey",
+    "name": "Stripe live",
+    "account": "Stripe",
+    "preset": "stripe",
+    "fields": {
+     "key": "<masked>"
+    }
+   },
+   {
+    "kind": "apikey",
+    "name": "Old app secrets",
+    "account": "Other",
+    "preset": "other",
+    "fields": {
+     "appSecret1": "<masked>",
+     "note": "<masked>"
+    }
+   },
+   {
+    "kind": "website",
+    "name": "Customer portal",
+    "account": "portal.example.test",
+    "preset": null,
+    "fields": {
+     "siteUrl": "https://portal.example.test/",
+     "method": "password",
+     "username": "<masked>",
+     "password": "<masked>"
+    }
+   }
+  ]
+ },
+ "siteFiles": [],
+ "sites": []
+}

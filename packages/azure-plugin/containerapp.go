@@ -14,7 +14,7 @@ import (
 
 // Container Apps: an environment whose logs go to its own Log Analytics workspace, and apps in it
 // that pull their image with a managed identity the plugin creates for each, and read their secrets
-// from Key Vault through that identity, or from a field of an API-key connection bound to this
+// from Key Vault through that identity, or from a field of a connection bound to this
 // member's appSecrets slot (added in Team settings -> Connections), named <connection>.<field>. No
 // registry password is ever part of an app, and a
 // secret's value is put only in the app's configuration, never in what the plugin writes out.
@@ -38,13 +38,21 @@ var (
 )
 
 // connectionField answers the field and value secret=<env>=<connection>.<field> names: the field of
-// that name, ignoring case, of the connection of that name, ignoring case, bound to the appSecrets
-// slot. A connection not bound, or a field it lacks or holds no value in, is a refusal naming the
-// connection, the field and the fields that connection has, never a value.
+// that name, ignoring case, of the connection bound to the appSecrets slot whose name - the name a
+// person gave it, sent on stdin as name - is conn, ignoring case. Never its account: two API keys
+// with the preset Other share the account "Other". A connection that arrives with no name (a Host
+// before CON 15) is a refusal saying so, never a guess. A connection not bound, or a field it lacks
+// or holds no value in, is a refusal naming the connection, the field and the fields that
+// connection has, never a value.
 func (p *plugin) connectionField(env, conn, name string) (string, string, error) {
+	for _, k := range p.keys {
+		if strings.TrimSpace(k.Name) == "" {
+			return "", "", refusef("Refused: the secret %s reads %s.%s, the field %s of the connection %s, but the Host did not send the name of every connection bound to this member's appSecrets slot: it is too old to send connection names, and this member finds a connection only by its name, never by guessing, so ask the person to update Yawble, then run containerapp create again. Nothing was changed.", env, conn, name, name, conn)
+		}
+	}
 	var found []keyConnection
 	for _, k := range p.keys {
-		if strings.EqualFold(strings.TrimSpace(k.Account), conn) {
+		if strings.EqualFold(strings.TrimSpace(k.Name), conn) {
 			found = append(found, k)
 		}
 	}
@@ -69,7 +77,16 @@ func (p *plugin) connectionField(env, conn, name string) (string, string, error)
 	if names := k.fieldNames(); len(names) > 0 {
 		has = "the fields " + strings.Join(names, ", ")
 	}
-	return "", "", refusef("Refused: the secret %s reads %s.%s, the field %s of the connection %s, which that connection does not have or holds no value in; %s has %s, so run containerapp create again naming one of them as %s.<field>, or ask the person to add the field %s to it in Team settings -> Connections. Nothing was changed.", env, conn, name, name, k.Account, k.Account, has, k.Account, name)
+	return "", "", refusef("Refused: the secret %s reads %s.%s, the field %s of the connection %s, which that connection does not have or holds no value in; %s has %s, so run containerapp create again naming one of them as %s.<field>, or ask the person to add the field %s to it in Team settings -> Connections. Nothing was changed.", env, conn, name, name, k.Name, k.Name, has, k.Name, name)
+}
+
+// label is how a sentence names a bound connection: its name, or for a Host too old to send one,
+// "unnamed" - never its account.
+func (k keyConnection) label() string {
+	if n := strings.TrimSpace(k.Name); n != "" {
+		return n
+	}
+	return "unnamed"
 }
 
 // fieldNames are the names of a connection's fields that hold a value: a mailbox's in mailboxFields
@@ -97,9 +114,7 @@ func (k keyConnection) fieldNames() []string {
 func (p *plugin) boundNames() string {
 	var names []string
 	for _, k := range p.keys {
-		if k.Account != "" {
-			names = append(names, k.Account)
-		}
+		names = append(names, k.label())
 	}
 	return strings.Join(names, ", ")
 }
@@ -133,10 +148,10 @@ func (p *plugin) connectionSecret(env, name string) (string, string, bool, error
 				if f != field {
 					named = "hold fields named " + field + " and " + f
 				}
-				return "", "", false, refusef("Refused: secret=%s=%s is a field of two connections bound to this member's appSecrets slot, the %s (%s) and the %s (%s) connection, which %s with different values, so ask the person to rename the field in one of them in Team settings -> Connections, then run containerapp create again; nothing was changed.", env, name, ordinal(at+1), from, ordinal(i+1), k.Account, named)
+				return "", "", false, refusef("Refused: secret=%s=%s is a field of two connections bound to this member's appSecrets slot, the %s (%s) and the %s (%s) connection, which %s with different values, so ask the person to rename the field in one of them in Team settings -> Connections, then run containerapp create again. Nothing was changed.", env, name, ordinal(at+1), from, ordinal(i+1), k.label(), named)
 			}
 			if from == "" {
-				field, value, from, at = f, v, k.Account, i
+				field, value, from, at = f, v, k.label(), i
 			}
 		}
 	}
