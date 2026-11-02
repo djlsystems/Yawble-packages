@@ -14,41 +14,138 @@ import (
 
 // Container Apps: an environment whose logs go to its own Log Analytics workspace, and apps in it
 // that pull their image with a managed identity the plugin creates for each, and read their secrets
-// from Key Vault through that identity, or from a field of an API-key connection bound to this
-// member's appSecrets slot (added in Team settings -> Connections), or from one of its old named
-// secrets. No registry password is ever part of an app, and a
+// from Key Vault through that identity, or from a field of a connection bound to this
+// member's appSecrets slot (added in Team settings -> Connections), named <connection>.<field>. No
+// registry password is ever part of an app, and a
 // secret's value is put only in the app's configuration, never in what the plugin writes out.
 // Logs are read through Azure management's query on the workspace resource, or, for an environment
 // whose diagnostic setting archives its logs to a storage account instead, from that account's
 // hourly blobs.
 
 const (
-	diagAPIVersion  = "2021-05-01-preview"
-	logsAPIVersion  = "2017-01-01-preview"
-	maxLogLines     = 500
-	appSecretFields = 8                 // appSecret1 to appSecret8, which 3.0.0 moved to the appSecrets slot
-	clientIDVar     = "AZURE_CLIENT_ID" // the variable Azure's SDKs read for a user-assigned identity
+	diagAPIVersion = "2021-05-01-preview"
+	logsAPIVersion = "2017-01-01-preview"
+	maxLogLines    = 500
+	clientIDVar    = "AZURE_CLIENT_ID" // the variable Azure's SDKs read for a user-assigned identity
 )
 
 var (
 	appName    = regexp.MustCompile(`^[a-z](?:[a-z0-9]|-[a-z0-9]){0,29}[a-z0-9]?$`)
 	envVarName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 	acrImage   = regexp.MustCompile(`^([a-z0-9]{5,50})\.azurecr\.io/(.+)$`)
-	secretName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`) // a named secret's name, as the Host holds it
+	secretName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)  // a bare field name, the 3.0.0 form secret=<ENV>=appSecret1
+	fieldForm  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`) // a connection's field name
 )
 
-// namedSecret answers the name and value of the member's named secret called name. A name is unique
-// per member ignoring case, so it matches ignoring case too.
-func (p *plugin) namedSecret(name string) (string, string, bool) {
-	if v, ok := p.namedSecrets[name]; ok {
-		return name, v, true
-	}
-	for n, v := range p.namedSecrets {
-		if strings.EqualFold(n, name) {
-			return n, v, true
+// connectionField answers the field and value secret=<env>=<connection>.<field> names: the field of
+// that name, ignoring case, of the connection bound to the appSecrets slot whose name - the name a
+// person gave it, sent on stdin as name - is conn, ignoring case. Never its account: two API keys
+// with the preset Other share the account "Other". A connection that arrives with no name (a Host
+// before CON 15) is a refusal saying so, never a guess. A connection not bound, or a field it lacks
+// or holds no value in, is a refusal naming the connection, the field and the fields that
+// connection has, never a value.
+func (p *plugin) connectionField(env, conn, name string) (string, string, error) {
+	for _, k := range p.keys {
+		if strings.TrimSpace(k.Name) == "" {
+			return "", "", refusef("Refused: the secret %s reads %s.%s, the field %s of the connection %s, but the Host did not send the name of every connection bound to this member's appSecrets slot: it is too old to send connection names, and this member finds a connection only by its name, never by guessing, so ask the person to update Yawble, then run containerapp create again. Nothing was changed.", env, conn, name, name, conn)
 		}
 	}
-	return "", "", false
+	var found []keyConnection
+	for _, k := range p.keys {
+		if strings.EqualFold(strings.TrimSpace(k.Name), conn) {
+			found = append(found, k)
+		}
+	}
+	switch len(found) {
+	case 0:
+		bound := "none is bound yet"
+		if names := p.boundNames(); names != "" {
+			bound = "the ones bound are " + names
+		}
+		return "", "", refusef("Refused: the secret %s reads %s.%s, the field %s of the connection %s, which is not bound to this member's appSecrets slot (%s), so ask the person to bind the connection %s to the Azure member's appSecrets slot (Connections a deployed app may use) in Team settings -> Connections, never to send its value in a message, then run containerapp create again. Nothing was changed.", env, conn, name, name, conn, bound, conn)
+	case 1:
+	default:
+		return "", "", refusef("Refused: the secret %s reads %s.%s, the field %s of the connection %s, and %d connections of that name are bound to this member's appSecrets slot, so ask the person to rename one of them in Team settings -> Connections, then run containerapp create again. Nothing was changed.", env, conn, name, name, conn, len(found))
+	}
+	k := found[0]
+	for f, v := range k.Fields {
+		if strings.EqualFold(f, name) && v != "" {
+			return f, v, nil
+		}
+	}
+	names := k.fieldNames()
+	has := "no field with a value"
+	switch len(names) {
+	case 0:
+	case 1:
+		has = "the field " + names[0]
+	default:
+		has = "the fields " + strings.Join(names, ", ")
+	}
+	retry := "so run containerapp create again naming another field as " + k.Name + ".<field>"
+	if len(names) == 1 {
+		retry = "so run containerapp create again naming it as " + k.Name + "." + names[0]
+	} else if len(names) == 0 {
+		retry = "so once it has one, run containerapp create again"
+	}
+	if k.Kind == "website" && strings.EqualFold(name, "session") {
+		// No form or agent types a website's saved session: Sign in on the connection keeps it.
+		return "", "", refusef("Refused: the secret %s reads %s.%s, the saved session of the website connection %s, which it does not hold yet: a person makes it by opening Sign in on that connection in Team settings -> Connections and signing in to the website, and nobody types it. %s has %s, so run containerapp create again once the person has signed in, or naming one of those as %s.<field> instead. Nothing was changed.", env, conn, name, k.Name, k.Name, has, k.Name)
+	}
+	return "", "", refusef("Refused: the secret %s reads %s.%s, the field %s of the connection %s, which that connection does not have or holds no value in; %s has %s, %s, or ask the person to add the field %s to it in Team settings -> Connections. Nothing was changed.", env, conn, name, name, k.Name, k.Name, has, retry, name)
+}
+
+// label is how a sentence names a bound connection: its name, or for a Host too old to send one,
+// "unnamed" - never its account.
+func (k keyConnection) label() string {
+	if n := strings.TrimSpace(k.Name); n != "" {
+		return n
+	}
+	return "unnamed"
+}
+
+// fieldNames are the names of a connection's fields that hold a value: a mailbox's in mailboxFields
+// order, any other's sorted.
+func (k keyConnection) fieldNames() []string {
+	var names []string
+	if k.Kind == "imap" {
+		for _, f := range mailboxFields {
+			if k.Fields[f] != "" {
+				names = append(names, f)
+			}
+		}
+		return names
+	}
+	for f, v := range k.Fields {
+		if v != "" {
+			names = append(names, f)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// boundNames lists the names of the connections bound to the appSecrets slot, in binding order.
+func (p *plugin) boundNames() string {
+	var names []string
+	for _, k := range p.keys {
+		names = append(names, k.label())
+	}
+	return strings.Join(names, ", ")
+}
+
+// fieldRef reads <connection>.<field>: the connection's name is everything before the last period,
+// so a name holding one still reads; the field is a name, never a value.
+func fieldRef(val string) (string, string, bool) {
+	i := strings.LastIndex(val, ".")
+	if i <= 0 || i == len(val)-1 {
+		return "", "", false
+	}
+	conn, field := strings.TrimSpace(val[:i]), val[i+1:]
+	if conn == "" || len(conn) > 100 || !fieldForm.MatchString(field) {
+		return "", "", false
+	}
+	return conn, field, true
 }
 
 // connectionSecret answers the field name and value of the field called name in the connections
@@ -66,10 +163,10 @@ func (p *plugin) connectionSecret(env, name string) (string, string, bool, error
 				if f != field {
 					named = "hold fields named " + field + " and " + f
 				}
-				return "", "", false, refusef("Refused: secret=%s=%s is a field of two connections bound to this member's appSecrets slot, the %s (%s) and the %s (%s) connection, which %s with different values, so ask the person to rename the field in one of them in Team settings -> Connections, then run containerapp create again; nothing was changed.", env, name, ordinal(at+1), from, ordinal(i+1), k.Account, named)
+				return "", "", false, refusef("Refused: secret=%s=%s is a field of two connections bound to this member's appSecrets slot, the %s (%s) and the %s (%s) connection, which %s with different values, so ask the person to rename the field in one of them in Team settings -> Connections, then run containerapp create again. Nothing was changed.", env, name, ordinal(at+1), from, ordinal(i+1), k.label(), named)
 			}
 			if from == "" {
-				field, value, from, at = f, v, k.Account, i
+				field, value, from, at = f, v, k.label(), i
 			}
 		}
 	}
@@ -93,16 +190,20 @@ func ordinal(n int) string {
 	return strconv.Itoa(n) + suffix
 }
 
-// namedRefusal is the sentence for secret=NAME=<name> when no connection bound to appSecrets holds a
-// field by that name: the agent asks the person to add it, never for its value.
-func namedRefusal(env, name string) refusal {
-	return refusef("Refused: secret=%s=%s names no app secret this member holds (secret= takes a Key Vault secret's address or the name of a field of a connection bound to this member's appSecrets slot, never a value), so ask the person to add an API-key connection (preset Other) with a field named %s in Team settings -> Connections, assign it to this team and bind it to the Azure member's appSecrets slot, never to send its value in a message, then run containerapp create again; nothing was changed.", env, name, name)
+// bareRefusal is the sentence for the 3.0.0 form secret=NAME=<field> when no connection bound to
+// appSecrets holds a field by that name: it names the form to use, never a value.
+func (p *plugin) bareRefusal(env, name string) refusal {
+	bound := "none is bound yet"
+	if names := p.boundNames(); names != "" {
+		bound = "bound now: " + names
+	}
+	return refusef("Refused: the secret %s reads %s, which names no field of a connection bound to this member's appSecrets slot (%s). secret= takes a Key Vault secret's address or <connection>.<field>, such as mail.password for the password of the connection named mail, never a value; if the connection is not bound yet, ask the person to bind it to the Azure member's appSecrets slot (Connections a deployed app may use) in Team settings -> Connections, never to send its value in a message, then run containerapp create again. Nothing was changed.", env, name, bound)
 }
 
 func init() {
 	register(
 		command{words: []string{"containerapp", "env", "create"}, usage: "<resource group> <environment>", run: (*plugin).envCreate},
-		command{words: []string{"containerapp", "create"}, usage: "<resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [cpu=<0.25 to 2>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>|<app secret name>]...", run: (*plugin).appCreate},
+		command{words: []string{"containerapp", "create"}, usage: "<resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [cpu=<0.25 to 2>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>|<connection>.<field>]...", run: (*plugin).appCreate},
 		command{words: []string{"containerapp", "show"}, usage: "<app>", run: (*plugin).appShow},
 		command{words: []string{"containerapp", "revisions"}, usage: "<app>", run: (*plugin).appRevisions},
 		command{words: []string{"containerapp", "restart"}, usage: "<app>", run: (*plugin).appRestart},
@@ -165,8 +266,8 @@ func (p *plugin) envCreate(args []string) (string, error) {
 }
 
 // appSecret is one secret=NAME=... argument: an environment variable read from Key Vault (address,
-// vault and secret set), or from an appSecrets connection's field or an old named secret (field set
-// to its name, value its value).
+// vault and secret set), or from an appSecrets connection's field (field set to <connection>.<field>,
+// or the bare field name of the 3.0.0 form; value its value).
 type appSecret struct {
 	env, name, address, vault, secret string
 	field, value                      string
@@ -174,7 +275,7 @@ type appSecret struct {
 
 func (p *plugin) appCreate(args []string) (string, error) {
 	if len(args) < 4 {
-		return "", refusal("Refused: containerapp create takes <resource group> <app> <environment> <registry>.azurecr.io/<image:tag>, then optionally port=<n>, cpu=<0.25 to 2> (its memory is twice that in GiB; 0.5 by default), env=<NAME>=<value> and secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name> or secret=<NAME>=<the name of a field of a connection bound to this member's appSecrets slot>.")
+		return "", refusal("Refused: containerapp create takes <resource group> <app> <environment> <registry>.azurecr.io/<image:tag>, then optionally port=<n>, cpu=<0.25 to 2> (its memory is twice that in GiB; 0.5 by default), env=<NAME>=<value> and secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name> or secret=<NAME>=<connection>.<field>, the field of a connection bound to this member's appSecrets slot, such as secret=SMTP_PASSWORD=mail.password.")
 	}
 	if err := p.needSubscription(); err != nil {
 		return "", err
@@ -220,7 +321,7 @@ func (p *plugin) appCreate(args []string) (string, error) {
 			seen[v] = true
 			if strings.EqualFold(key, "env") {
 				if secretParam.MatchString(v) || credentialShaped[0].MatchString(val) || credentialShaped[1].MatchString(val) {
-					return "", refusef("Refused: %s looks like a secret. App secrets go in Key Vault or in a connection: pass it as secret=%s=https://<vault>.vault.azure.net/secrets/<name> for a Key Vault secret, set by a person or another plugin, or as secret=%s=<name> for the field of that name in an API-key connection a person adds in Team settings -> Connections and binds to this member's appSecrets slot.", v, v, v)
+					return "", refusef("Refused: %s looks like a secret. App secrets go in Key Vault or in a connection: pass it as secret=%s=https://<vault>.vault.azure.net/secrets/<name> for a Key Vault secret, set by a person or another plugin, or as secret=%s=<connection>.<field> for a field of a connection a person binds to this member's appSecrets slot (Connections a deployed app may use) in Team settings -> Connections, such as secret=%s=mail.password.", v, v, v, v)
 				}
 				envs = append(envs, map[string]any{"name": v, "value": val})
 				continue
@@ -230,25 +331,35 @@ func (p *plugin) appCreate(args []string) (string, error) {
 				return "", refusef("Refused: %s would be the app's secret %s, which another secret= already names.", v, sname)
 			}
 			secretSeen[sname] = true
-			field, value, ok, err := p.connectionSecret(v, val)
-			if err != nil {
-				return "", err
+			if sm := secretRefForm.FindStringSubmatch(val); sm != nil {
+				secrets = append(secrets, appSecret{env: v, name: sname, address: val, vault: sm[1], secret: sm[2]})
+				continue
 			}
-			if !ok {
-				field, value, ok = p.namedSecret(val)
+			if p.isHidden(val) {
+				return "", refusef("Refused: secret=%s takes a Key Vault secret's address, https://<vault>.vault.azure.net/secrets/<name>, or <connection>.<field>, the field of a connection bound to this member's appSecrets slot; never a value.", v)
 			}
-			if ok {
+			if conn, fname, ok := fieldRef(val); ok && !strings.HasPrefix(strings.ToLower(val), "https://") {
+				field, value, err := p.connectionField(v, conn, fname)
+				if err != nil {
+					return "", err
+				}
+				secrets = append(secrets, appSecret{env: v, name: sname, field: conn + "." + field, value: value})
+				continue
+			}
+			// The 3.0.0 form, secret=<ENV>=appSecret1: a bare field name, looked up in every bound
+			// connection. Kept so a deploy line from then still works; not offered anywhere.
+			if secretName.MatchString(val) {
+				field, value, ok, err := p.connectionSecret(v, val)
+				if err != nil {
+					return "", err
+				}
+				if !ok {
+					return "", p.bareRefusal(v, val)
+				}
 				secrets = append(secrets, appSecret{env: v, name: sname, field: field, value: value})
 				continue
 			}
-			sm := secretRefForm.FindStringSubmatch(val)
-			if sm == nil {
-				if secretName.MatchString(val) && !p.isHidden(val) {
-					return "", namedRefusal(v, val)
-				}
-				return "", refusef("Refused: secret=%s takes a Key Vault secret's address, https://<vault>.vault.azure.net/secrets/<name>, or the name of a field of a connection bound to this member's appSecrets slot; never a value.", v)
-			}
-			secrets = append(secrets, appSecret{env: v, name: sname, address: val, vault: sm[1], secret: sm[2]})
+			return "", refusef("Refused: secret=%s takes a Key Vault secret's address, https://<vault>.vault.azure.net/secrets/<name>, or <connection>.<field>, the field of a connection bound to this member's appSecrets slot; never a value.", v)
 		default:
 			return "", refusef("Refused: %s is not port=, cpu=, env= or secret=.", a)
 		}

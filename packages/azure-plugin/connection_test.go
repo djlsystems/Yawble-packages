@@ -6,22 +6,13 @@ import (
 	"testing"
 )
 
-// From 3.0.0 the app secrets are held by the API-key connections bound to the multiple appSecrets
-// slot; appSecret1 to appSecret8 are declared only as moved there (CON 7).
+// The app secrets are held by the connections bound to the multiple appSecrets slot. The 3.0.0 form,
+// a bare field name such as appSecret1, still resolves against every bound connection.
 
-func TestEveryAppSecretFieldIsMovedToTheMultipleAPIKeySlot(t *testing.T) {
+func TestTheMicrosoftSlotIsRequired(t *testing.T) {
 	m := readManifest(t)
-	keys, ok := m.Connections[keySlot]
-	if !ok || len(keys.Providers) != 1 || keys.Providers[0] != "apikey" || !keys.Multiple || keys.Required {
-		t.Fatalf("appSecrets = %+v", keys)
-	}
 	if ms, ok := m.Connections[slot]; !ok || !ms.Required || ms.Providers[0] != "microsoft" {
 		t.Fatalf("the microsoft slot = %+v", ms)
-	}
-	for name, s := range m.Secrets {
-		if s.MovedTo != keySlot || s.Required {
-			t.Errorf("secret %s is not moved to %s: %+v", name, keySlot, s)
-		}
 	}
 }
 
@@ -49,22 +40,6 @@ func TestAFieldOfAnyBoundConnectionResolvesByItsNameIgnoringCase(t *testing.T) {
 	}
 }
 
-func TestAConnectionFieldWinsOverAnOldNamedSecretOfTheSameName(t *testing.T) {
-	w := newWorld(t)
-	r := runPlugin(t, runOpts{
-		config: apply(nil),
-		keys:   map[string]map[string]string{"Shop auth": {"MicrosoftClientSecret": secretValue}},
-		named:  map[string]string{"MicrosoftClientSecret": otherValue},
-	}, appCreateLine("secret=AUTH_MICROSOFT_SECRET=MicrosoftClientSecret"))
-	if !r.ok() {
-		t.Fatal(r.text())
-	}
-	assertNoNamedValue(t, r.raw)
-	if s := secretNamed(mustSecrets(t, w), "auth-microsoft-secret"); s == nil || s["value"] != secretValue {
-		t.Fatal("the old named secret won over the connection")
-	}
-}
-
 func TestAFieldTwoConnectionsHoldWithDifferentValuesIsRefusedNamingBoth(t *testing.T) {
 	w := newWorld(t)
 	r := runPlugin(t, runOpts{
@@ -74,7 +49,7 @@ func TestAFieldTwoConnectionsHoldWithDifferentValuesIsRefusedNamingBoth(t *testi
 	if r.ok() {
 		t.Fatal("an ambiguous field was accepted")
 	}
-	mustContain(t, r.text(), "Refused: secret=AUTH=ClientSecret is a field of two connections bound to this member's appSecrets slot, the 1st (Blog auth) and the 2nd (Shop auth) connection, which hold fields named clientsecret and ClientSecret with different values", "rename the field in one of them in Team settings -> Connections", "nothing was changed")
+	mustContain(t, r.text(), "Refused: secret=AUTH=ClientSecret is a field of two connections bound to this member's appSecrets slot, the 1st (Blog auth) and the 2nd (Shop auth) connection, which hold fields named clientsecret and ClientSecret with different values", "rename the field in one of them in Team settings -> Connections", "Nothing was changed.")
 	assertNoNamedValue(t, r.raw)
 	if len(w.f.calls) != 0 {
 		t.Fatal("Azure was called")
@@ -86,15 +61,15 @@ func TestAFieldTwoConnectionsHoldWithDifferentValuesIsRefusedNamingBoth(t *testi
 	r = runPlugin(t, runOpts{
 		config: apply(nil),
 		keys: map[string]map[string]string{
-			"Other":   {"appSecret1": secretValue},
-			"Other 2": {"appSecret2": otherValue},
-			"Other 3": {"appSecret1": otherValue},
+			"Stripe old": {"appSecret1": secretValue},
+			"Hooks":      {"appSecret2": otherValue},
+			"Mail old":   {"appSecret1": otherValue},
 		},
 	}, appCreateLine("secret=S_AS1=appSecret1"))
 	if r.ok() {
 		t.Fatal("an ambiguous field was accepted")
 	}
-	mustContain(t, r.text(), "secret=S_AS1=appSecret1 is a field of two connections bound to this member's appSecrets slot, the 1st (Other) and the 3rd (Other 3) connection, which both hold a field named appSecret1 with different values", "nothing was changed")
+	mustContain(t, r.text(), "secret=S_AS1=appSecret1 is a field of two connections bound to this member's appSecrets slot, the 2nd (Mail old) and the 3rd (Stripe old) connection, which both hold a field named appSecret1 with different values", "Nothing was changed.")
 	assertNoNamedValue(t, r.raw)
 	if len(w.f.calls) != 0 {
 		t.Fatal("Azure was called")
@@ -117,7 +92,7 @@ func TestValuesSentUnderSecretsAreIgnored(t *testing.T) {
 	if r.ok() {
 		t.Fatal("a value under secrets was used")
 	}
-	mustContain(t, r.text(), "names no app secret this member holds", "Team settings -> Connections")
+	mustContain(t, r.text(), "names no field of a connection bound to this member's appSecrets slot", "Team settings -> Connections")
 	if len(w.f.calls) != 0 {
 		t.Fatal("Azure was called")
 	}

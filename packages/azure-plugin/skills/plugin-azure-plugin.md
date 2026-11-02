@@ -151,13 +151,13 @@ Container Apps:
   workspace `<environment>-logs`.
 - `containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag>
   [port=<n>] [cpu=<0.25 to 2>] [env=<NAME>=<value>]... [secret=<NAME>=https://<vault>.vault.azure.net/secrets/<name>]...
-  [secret=<NAME>=<app secret name>]...`
+  [secret=<NAME>=<connection>.<field>]...`
   - in an owned environment, from an owned or shared registry. Creates the identity
   `<app>-id`, grants it AcrPull on the registry and Key Vault Secrets User on each owned vault a
   `secret=` names, then creates or updates the app (0 to 1 replicas, 0.5 CPU and 1 GiB unless `cpu=` names
   another size, which gets twice as many GiB). `port=`
   gives it public HTTPS ingress. Each Key Vault secret must already be in the vault, each other
-  `secret=` must name an app secret this member holds (see Secrets). An `env=` that looks like a secret is
+  `secret=` must name a field of a connection bound to this member's `appSecrets` slot (see Secrets). An `env=` that looks like a secret is
   refused. The app's environment gets `AZURE_CLIENT_ID` set to `<app>-id`'s client id, unless the
   command sets `env=AZURE_CLIENT_ID=...` itself: Azure's SDKs (`DefaultAzureCredential`,
   `ManagedIdentityCredential`) read that variable to pick a user-assigned identity, and without it
@@ -229,20 +229,24 @@ a message. A template refers to it with a Key Vault reference; a container app w
 `secret=<NAME>=<the secret's address>`. The app reads it with its managed identity (Key Vault
 Secrets User). The member never calls Key Vault for a value.
 
-An app secret can also come from a connection, and this is the form to use. A person sets the app
-secrets in Team settings -> Connections: an API-key connection (preset Other) whose fields are the
-secrets, each under a name they choose, such as `MicrosoftClientSecret`, its value typed masked. They
-assign the connection to this team and bind it to the Azure member's `appSecrets` slot, which takes
-as many connections as needed. `secret=<NAME>=<name>` on `containerapp create` puts the value of the
-field of that name (ignoring case) in the app's own secrets, and the app reads it as `<NAME>`:
-`secret=AUTH_MICROSOFT_SECRET=MicrosoftClientSecret`. When the app needs a secret the member does not
-hold, ask the person to add a field named, say, `StripeApiKey` to a connection bound to `appSecrets`
-- name it, say what it is for, and never ask for its value in a message - then run the command
-again. A name no bound connection holds is refused before anything changes, naming it; so is a name
-two bound connections hold with different values.
-
-`appSecret1` to `appSecret8` from before 3.0.0 still resolve: an update carried each value a member
-held into a connection bound to `appSecrets`, as a field of the same name, so
-`secret=<NAME>=appSecret<N>` keeps working. Named secrets set on the member's settings screen before
-3.0.0 are still read too, after the connections. The member puts a value in the app's own secrets
-and nowhere else, and never writes it out. Never put a secret's value in an instruction.
+An app secret can also come from one of the team's own connections, and this is the form to use.
+A person binds the connections an app may use - a mailbox, a username and password, an API key, a
+website - to
+the Azure member's `appSecrets` slot ("Connections a deployed app may use") in
+Team settings -> Connections. `secret=<NAME>=<connection>.<field>` on `containerapp create` puts that field's value
+in the app's own secrets, and the app reads it as `<NAME>`: `secret=SMTP_PASSWORD=mail.password` is
+the password of the connection named `mail`. `<connection>` is the connection's name as Team
+settings -> Connections shows it, never its account: two API keys can share an account, such as
+"Other", and are told apart only by name. Names match ignoring case; quote a connection name
+with spaces, `"secret=SHOP_KEY=Shop login.password"`. A mailbox's fields are `username`, `password`,
+`imapHost`, `imapPort`, `imapSecurity`, `smtpHost`, `smtpPort` and `smtpSecurity`; a username and
+password's are `username`, `password` and `url`; an API key's are its own, such as `key`; a website's
+include `siteUrl`, `username`, `password`, `token` and `session` (kept only by signing in on the
+connection; nobody types it). When the app needs
+a secret no bound connection holds, ask the person to bind the connection that holds it to
+`appSecrets`, or to add the field to one - name the connection and the field, say what it is for, and
+never ask for its value in a message - then run the command again. A connection not bound, or a
+field it lacks, is refused before anything changes, naming the connection, the field and the fields
+it has. A Host too old to send connection names is refused too, saying so; ask the person to
+update Yawble. The member puts a value in the app's own secrets and nowhere else, and never writes it out.
+Never put a secret's value in an instruction.
