@@ -1,4 +1,4 @@
-# Azure 3.2.0
+# Azure 3.3.0
 
 A plugin member that builds and runs a team's own Azure resources: resource groups, deployments
 from Bicep or ARM templates, container registries and image builds, Azure SQL databases and the SQL
@@ -9,6 +9,18 @@ rights**, so it can never do more than you can yourself in the Azure portal.
 
 Everything starts in **whatif**: each changing command says what it would do and changes nothing,
 until you set `mode` to `apply`.
+
+## New in 3.3.0
+
+- **`containerapp secret set <app> secret=<NAME>=<connection>.<field>...` puts connection secrets
+  into an app that already exists**, such as one a Bicep template deployed, and changes nothing
+  else: its scale (minimum and maximum replicas and rules), probes, ingress and custom domains,
+  image, registries, identity, its other secrets and its other environment variables stay exactly
+  as they were. Before 3.3.0 the only way was `containerapp create`, which sets 0 to 1 replicas and
+  a container with no probes. See [Secrets on an app Bicep deployed](#secrets-on-an-app-bicep-deployed).
+- **`deploy ... param=<NAME>=<connection>.<field>`** fills a template's `@secure()` parameter from a
+  connection's field, so a template whose app reads its secrets from secure parameters keeps them on
+  every redeploy.
 
 ## New in 3.2.0
 
@@ -252,7 +264,7 @@ whoami
 list [resource group]
 show <resource id>
 rg create <name> <region>
-deploy <resource group> <template .bicep or .json> [parameters .json]
+deploy <resource group> <template .bicep or .json> [parameters .json] [param=<NAME>=<connection>.<field>]...
 role assign <role> <managed identity id> <scope id>
 role list <scope id>
 dns zone create <resource group> <zone>
@@ -289,6 +301,7 @@ keyvault secrets <vault>
 
 containerapp env create <resource group> <environment>
 containerapp create <resource group> <app> <environment> <registry>.azurecr.io/<image:tag> [port=<n>] [cpu=<0.25 to 2>] [env=<NAME>=<value>]... [secret=<NAME>=<Key Vault secret address>|<connection>.<field>]...
+containerapp secret set <app> secret=<NAME>=<connection>.<field>... [container=<name>]
 containerapp show <app>
 containerapp revisions <app>
 containerapp restart <app>
@@ -418,6 +431,56 @@ writing it out.
 The value goes only to Azure, in the app's configuration: no what-if, answer, event or progress line
 holds it, and every value the member is given is redacted from what it writes. The what-if and the
 answer count these as "secrets from this member's connections", apart from the Key Vault secrets.
+
+### Secrets on an app Bicep deployed
+
+An app whose template sets what `containerapp create` does not - more than one replica, probes,
+scale rules - is deployed with Bicep, then given its connection secrets with
+`containerapp secret set`. The Yawble-cloud app, for example (resource group `yawble-cloud`, app
+`yawble-cloud`, 0 to 2 replicas and a liveness probe in its template):
+
+```
+deploy yawble-cloud infra/main.bicep infra/main.parameters.json
+containerapp secret set yawble-cloud secret=SMTP_USER=mail.username secret=SMTP_PASSWORD=mail.password
+```
+
+`containerapp secret set <app> secret=<NAME>=<connection>.<field>... [container=<name>]` adds each
+secret to the app, or replaces its value when the app already has a secret of that name (`<NAME>`
+in lower case, hyphens for underscores), and points the environment variable `<NAME>` at it. The
+connections, their binding to `appSecrets`, the name-only matching and every refusal are those of
+`containerapp create`, and a connection not bound or a field it lacks is refused, by name, before
+Azure is asked anything. It takes only `<connection>.<field>`: a Key Vault secret goes in with the
+template's `keyVaultUrl` and the app's identity, or with `containerapp create`. The variables go on
+the container named as the app, or the only container; name another with `container=<name>`. Like
+every change it needs `mode` set to `apply`; in whatif it says, by name only, which secrets and
+variables it would add or change and which secrets it keeps.
+
+What it writes: one PATCH of the app holding `configuration.secrets` and `template.containers`, and
+nothing else, so Azure leaves scale, ingress, registries, identity and the rest as they are. Those
+two lists replace the app's own, so both go back whole: every container exactly as Azure answered
+it, probes, image and resources included, with only the named variables added or changed; and every
+secret - a Key Vault one as its address and identity, a value one with its value. Azure never
+answers a secret's value when it is read, and refuses a secret with neither a value nor a Key Vault
+address, so in apply, and only when the app keeps a value secret, the member reads the app's own
+secrets with its `listSecrets`, holds them in memory, redacts them from everything it writes and
+sends them back to that same app in that same PATCH. Variables that now read a new secret start a
+new revision; when every variable already read its secret, the answer says to run
+`containerapp restart <app>` so the running revision reads the new values.
+
+**A later Bicep deploy replaces the app's secrets with the template's.** Run
+`containerapp secret set` again after each deploy, or let the template carry the secrets: declare a
+`@secure()` parameter for each, use it as the secret's value in the template, and deploy with
+`param=<NAME>=<connection>.<field>`:
+
+```
+deploy yawble-cloud infra/main.bicep infra/main.parameters.json param=smtpPassword=mail.password
+```
+
+`param=` fills only a parameter the template declares secure, so Azure keeps the value out of the
+deployment's history, and is refused for a parameter the parameters file already gives. Its
+connection is found, and refused, as for `secret=`. The deployment's name and the sha256 the
+what-if reports come from the template, the parameters file and the `param=` references, never
+from a value.
 
 ## Events
 

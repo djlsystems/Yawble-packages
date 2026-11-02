@@ -21,7 +21,7 @@ import (
 const deployAPIVersion = "2021-04-01"
 
 func init() {
-	register(command{words: []string{"deploy"}, usage: "<resource group> <template .bicep or .json> [parameters .json]", run: (*plugin).deploy})
+	register(command{words: []string{"deploy"}, usage: "<resource group> <template .bicep or .json> [parameters .json] [param=<NAME>=<connection>.<field>]...", run: (*plugin).deploy})
 }
 
 // compileBicep turns a Bicep file into ARM JSON with the pinned bicep compiler. Only tests change it.
@@ -203,13 +203,21 @@ type deployment struct {
 }
 
 func (p *plugin) deploy(args []string) (string, error) {
-	if err := argsExactly(args, 2, 3, "deploy", "<resource group> <template .bicep or .json> [parameters .json]"); err != nil {
+	var files, params []string
+	for _, a := range args {
+		if strings.HasPrefix(strings.ToLower(a), "param=") {
+			params = append(params, a)
+		} else {
+			files = append(files, a)
+		}
+	}
+	if err := argsExactly(files, 2, 3, "deploy", "<resource group> <template .bicep or .json> [parameters .json], then optionally param=<NAME>=<connection>.<field> for each secure parameter filled from a field of a connection bound to this member's appSecrets slot"); err != nil {
 		return "", err
 	}
 	if err := p.needSubscription(); err != nil {
 		return "", err
 	}
-	d, err := p.prepare(args)
+	d, err := p.prepare(files, params)
 	if err != nil {
 		return "", err
 	}
@@ -443,7 +451,7 @@ func operationError(raw json.RawMessage) (code, message string) {
 }
 
 // prepare reads, compiles and checks the template and its parameters.
-func (p *plugin) prepare(args []string) (*deployment, error) {
+func (p *plugin) prepare(args, connParams []string) (*deployment, error) {
 	d := &deployment{rg: args[0]}
 	file, raw, err := p.readAllowed(args[1])
 	if err != nil {
@@ -506,10 +514,21 @@ func (p *plugin) prepare(args []string) (*deployment, error) {
 		}
 		d.parameters, _ = json.Marshal(params.Parameters)
 	}
+	// The sum covers the template, the file's parameters and each param= by its connection and field:
+	// never a connection's value, so the name it gives the deployment says nothing of one.
 	sum := sha256.New()
 	sum.Write(d.template)
 	sum.Write([]byte{0})
 	sum.Write(d.parameters)
+	if len(connParams) > 0 {
+		filled, refs, err := p.connectionParams(args[1], raw, d.parameters, connParams)
+		if err != nil {
+			return nil, err
+		}
+		d.parameters = filled
+		sum.Write([]byte{0})
+		sum.Write([]byte(refs))
+	}
 	d.sum = hex.EncodeToString(sum.Sum(nil))
 	d.name = "yawble-" + d.sum[:16]
 	return d, nil
@@ -702,4 +721,75 @@ func stringMap(v any) map[string]string {
 		out[k] = str(item)
 	}
 	return out
+}
+
+// connectionParams fills a template's secure parameters from the fields of connections bound to the
+// appSecrets slot: param=<NAME>=<connection>.<field>, found by connectionField with the same
+// binding, name-only matching and refusals as containerapp secret set. So a redeploy of a template
+// whose app reads its secrets from secure parameters keeps them, where a template alone cannot name a
+// connection's field. Only a parameter the template declares secure (@secure() in Bicep,
+// securestring in ARM) takes one, so Azure keeps the value out of the deployment's history; and one
+// the parameters file already gives is refused, never overridden. It answers the parameters with the
+// values in, and the param= references in words, for the deployment's sum.
+func (p *plugin) connectionParams(file string, template, fileParams json.RawMessage, args []string) (json.RawMessage, string, error) {
+	var tpl struct {
+		Parameters map[string]struct {
+			Type string `json:"type"`
+		} `json:"parameters"`
+	}
+	_ = json.Unmarshal(template, &tpl)
+	params := map[string]json.RawMessage{}
+	_ = json.Unmarshal(fileParams, &params)
+	var refs []string
+	seen := map[string]bool{}
+	for _, a := range args {
+		_, value, _ := strings.Cut(a, "=")
+		name, val, ok := strings.Cut(value, "=")
+		if !ok || !envVarName.MatchString(name) {
+			return nil, "", refusef("Refused: %s must be param=<NAME>=<connection>.<field>, NAME being the template's secure parameter.", a)
+		}
+		if seen[strings.ToLower(name)] {
+			return nil, "", refusef("Refused: the parameter %s is given twice.", name)
+		}
+		seen[strings.ToLower(name)] = true
+		declared, typ := "", ""
+		for n, d := range tpl.Parameters {
+			if strings.EqualFold(n, name) {
+				declared, typ = n, d.Type
+			}
+		}
+		if declared == "" {
+			return nil, "", refusef("Refused: %s declares no parameter %s for param=%s. Nothing was deployed.", filepath.Base(file), name, name)
+		}
+		if !strings.EqualFold(typ, "securestring") {
+			return nil, "", refusef("Refused: the parameter %s of %s is not secure, so Azure would keep its value in the deployment's history: declare it with @secure() in Bicep (securestring in ARM JSON), then deploy again. Nothing was deployed.", declared, filepath.Base(file))
+		}
+		for n := range params {
+			if strings.EqualFold(n, declared) {
+				return nil, "", refusef("Refused: the parameters file already gives %s, and param=%s would fill it too; give it in one place. Nothing was deployed.", declared, name)
+			}
+		}
+		if p.isHidden(val) || strings.HasPrefix(strings.ToLower(val), "https://") {
+			return nil, "", refusef("Refused: param=%s takes <connection>.<field>, the field of a connection bound to this member's appSecrets slot, such as param=%s=mail.password; never a value.", name, name)
+		}
+		conn, fname, ok := fieldRef(val)
+		if !ok {
+			return nil, "", refusef("Refused: param=%s takes <connection>.<field>, the field of a connection bound to this member's appSecrets slot, such as param=%s=mail.password; never a value.", name, name)
+		}
+		field, v, err := p.connectionField("deploy", name, conn, fname)
+		if err != nil {
+			return nil, "", err
+		}
+		p.hide(v)
+		params[declared] = mustMarshal(map[string]any{"value": v})
+		refs = append(refs, declared+"="+conn+"."+field)
+	}
+	sort.Strings(refs)
+	out, _ := json.Marshal(params)
+	return out, strings.Join(refs, "\n"), nil
+}
+
+func mustMarshal(v any) json.RawMessage {
+	raw, _ := json.Marshal(v)
+	return raw
 }
