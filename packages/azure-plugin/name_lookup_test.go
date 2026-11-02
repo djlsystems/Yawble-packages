@@ -30,7 +30,7 @@ func TestTheFixtureIsShapedLikeTheHostsRequest(t *testing.T) {
 		noConnect: true, // the capture's probe had no microsoft slot
 		moved:     map[string]string{"appSecret1": "x"},
 		bound:     []hostObject{mailbox("mail", "bot@example.test", "x"), login("FTP upload", "ftpuser", "x"), website("Customer portal", "x", "y")},
-	}, "containerapp create rg1 app1 env1 reg12345.azurecr.io/app:1"))
+	}, "containerapp list rg1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestAConnectionIsNeverFoundByItsAccount(t *testing.T) {
 		mailbox("mail", "bot@example.test", secretValue), login("Shop login", "shopbot", otherValue),
 		apiKey("stripe live", "Stripe", "stripe", map[string]string{"key": keyValue}), website("Customer portal", siteValue, tokenValue),
 	}
-	for _, arg := range []string{"secret=A=bot@example.test.password", "secret=A=shopbot.password", "secret=A=Stripe.key", "secret=A=portal.example.test.password"} {
+	for _, arg := range []string{"secret=A=bot@example.test" + ".password" /* the mailbox's account, then a field */, "secret=A=shopbot.password", "secret=A=Stripe.key", "secret=A=portal.example.test.password"} {
 		w := newWorld(t)
 		r := runPlugin(t, runOpts{config: apply(nil), bound: bound}, appCreateLine(arg))
 		if r.ok() {

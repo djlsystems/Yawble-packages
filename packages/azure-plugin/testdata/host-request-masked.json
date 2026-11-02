@@ -18,12 +18,12 @@
    "source": "1fb5e76015ca4ee4a63b3285bedb021b",
    "correlation": 1,
    "payload": {
-    "instruction": "containerapp create rg1 app1 env1 reg12345.azurecr.io/app:1",
-    "subject": "containerapp create rg1 app1 env1 reg12345.azurecr.io/app:1",
+    "instruction": "containerapp list rg1",
+    "subject": "containerapp list rg1",
     "body": "",
     "card": null
    },
-   "instruction": "containerapp create rg1 app1 env1 reg12345.azurecr.io/app:1"
+   "instruction": "containerapp list rg1"
   }
  ],
  "config": {
