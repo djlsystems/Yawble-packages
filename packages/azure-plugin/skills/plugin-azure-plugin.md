@@ -236,8 +236,12 @@ The first `deploy` of a Bicep file downloads the pinned bicep compiler (about 12
 - `plugin.azure-plugin.refused` - `command` and `reason`.
 
 None ever holds a token, key or connection string. Every value the member is given is hidden
-from what it writes, whatever characters it holds; a value under four characters is hidden only
-where it stands as a word of its own in what Azure answers.
+from what it writes, whatever characters it holds. A value under four characters is hidden only
+where it stands as a word of its own in an error text Azure supplies: Azure's error answers, an
+async operation that ends Failed or Canceled, a deployment's own error, a failed deployment
+operation's message, a failed what-if, and an Azure SQL error. It is not hidden in any other text,
+including Azure's 2xx answers, so a short secret can be shown there - use secrets of four
+characters or more.
 
 ## Secrets
 

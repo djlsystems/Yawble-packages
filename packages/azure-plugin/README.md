@@ -24,9 +24,17 @@ until you set `mode` to `apply`.
 - **Redaction finds a value whatever characters it holds.** Each text the member writes is checked
   as its plain text before it is written as JSON, so a password with `&`, `<`, `>`, `"` or `\` that
   Azure quotes back in an error is hidden like any other. Before 3.3.0 such a value was written out
-  in full. A value under four characters is hidden where it stands as a word of its own in what
-  Azure answers - an error quoting it - but not elsewhere, since hiding it everywhere would blank
-  ordinary words.
+  in full. A value under four characters is hidden only where it stands as a word of its own in an
+  error text Azure supplies: Azure's error answers (a non-2xx code and message), an async operation
+  that ends Failed or Canceled, a deployment's own error, each failed deployment operation's
+  message, a failed what-if, and an error Azure SQL answers a batch. It is not hidden in any other
+  text, including Azure's 2xx answers and the member's own text, since hiding it everywhere would
+  blank ordinary words: give secrets of four characters or more.
+- **A value equal to a record's own word stays a well-formed record.** The member's record keys
+  and its `t` and `type` values are never redacted, so a value such as `result` or `error` no
+  longer breaks the record; it is still hidden wherever it stands as data. A value whose lower case
+  has another length (such as one with the Kelvin sign) is hidden in any case and no longer stops
+  the member before it answers.
 
 ## New in 3.2.0
 
