@@ -9,10 +9,12 @@ import (
 // containerapp secret set puts secrets from the team's connections into an app that already exists -
 // one Bicep deployed, say - and points environment variables at them, changing nothing else.
 //
-// THE WRITE IS A PATCH OF configuration.secrets AND template.containers ONLY. Azure merges a PATCH
-// into the app, so scale (min and max replicas, rules), ingress, registries, identity, Dapr and the
-// rest of the configuration are not in the body and stay as they are. The two lists it does send
-// replace the app's whole lists, so both go back complete:
+// THE WRITE IS A PATCH OF configuration.secrets AND template ONLY. Azure merges a PATCH into the
+// app, so ingress, registries, identity, Dapr and the rest of the configuration are not in the body
+// and stay as they are. Of template, scale (min and max replicas, rules), initContainers and volumes
+// go back exactly as the GET answered them - nothing changes under merge, and nothing is reset should
+// Azure take template as a unit. The two lists it changes replace the app's whole lists, so both go
+// back complete:
 //   - every container as Azure answered it - image, probes, resources, volume mounts - with only the
 //     env entries this command names added or changed;
 //   - every secret: the ones named here with their new values, a Key Vault one kept as its address
@@ -239,9 +241,18 @@ func (p *plugin) appSecretSet(args []string) (string, error) {
 		cc["env"] = env
 		outContainers[i] = cc
 	}
+	// scale, initContainers and volumes go back exactly as the GET answered them. Under Azure's merge
+	// semantics they change nothing; should Azure take template as a unit, they keep max replicas,
+	// rules and the app's volumes from being reset.
+	outTemplate := map[string]any{"containers": outContainers}
+	for _, k := range []string{"scale", "initContainers", "volumes"} {
+		if v, ok := tpl[k]; ok && v != nil {
+			outTemplate[k] = v
+		}
+	}
 	body := map[string]any{"properties": map[string]any{
 		"configuration": map[string]any{"secrets": outSecrets},
-		"template":      map[string]any{"containers": outContainers},
+		"template":      outTemplate,
 	}}
 	p.progress("azure: setting secrets on container app " + r.Name + " (a few minutes)")
 	ans, err := p.az.arm(http.MethodPatch, r.ID+"?api-version="+versionOf("Microsoft.App/containerApps"), body, nil)

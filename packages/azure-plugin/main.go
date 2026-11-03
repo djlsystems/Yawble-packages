@@ -29,6 +29,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 type request struct {
@@ -170,6 +172,10 @@ type plugin struct {
 	// hidden holds every value that must never be written out: each API's token and each secret
 	// field's value of the appSecrets connections.
 	hidden []string
+	// short holds the hidden values under minHidden characters. Hiding them everywhere would blank
+	// common words, so they are hidden as whole words in the text Azure answers, where an echoed
+	// value turns up.
+	short []string
 	// tags caches the tags read this run, by lower-case resource id; nil for a resource not found.
 	tags map[string]map[string]string
 }
@@ -203,7 +209,7 @@ func run(in io.Reader, out io.Writer, now func() time.Time) int {
 		}
 		p.hide(c.AccessToken)
 	}
-	p.az = &client{tokens: tokens, progress: p.progress}
+	p.az = &client{tokens: tokens, progress: p.progress, quoted: p.hideShort}
 
 	if raw, ok := req.Connections[keySlot]; ok {
 		p.keys = keyConnections(raw)
@@ -345,11 +351,63 @@ func keyConnections(raw json.RawMessage) []keyConnection {
 	return many
 }
 
+// minHidden is the shortest value hidden wherever it appears; a shorter one is hidden only as a
+// whole word in Azure's answers (hideShort).
+const minHidden = 4
+
 func (p *plugin) hide(value string) {
-	if len(value) >= 4 {
+	switch {
+	case value == "":
+	case len(value) < minHidden:
+		p.short = append(p.short, value)
+	default:
 		p.hidden = append(p.hidden, value)
 		sort.Slice(p.hidden, func(i, j int) bool { return len(p.hidden[i]) > len(p.hidden[j]) })
 	}
+}
+
+// hideShort replaces each short hidden value standing as a word of its own - not inside a longer
+// run of letters and digits - in text Azure answered.
+func (p *plugin) hideShort(text string) string {
+	for _, v := range p.short {
+		var b strings.Builder
+		rest := text
+		for {
+			i := strings.Index(rest, v)
+			if i < 0 {
+				b.WriteString(rest)
+				break
+			}
+			before, after := rest[:i], rest[i+len(v):]
+			startsWord := !wordRune(firstRune(v)) || !wordRune(lastRune(before))
+			endsWord := !wordRune(lastRune(v)) || !wordRune(firstRune(after))
+			if startsWord && endsWord {
+				b.WriteString(before + "[redacted]")
+			} else {
+				b.WriteString(before + v)
+			}
+			rest = after
+		}
+		text = b.String()
+	}
+	return text
+}
+
+func wordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
+
+func firstRune(s string) rune {
+	for _, r := range s {
+		return r
+	}
+	return 0
+}
+
+func lastRune(s string) rune {
+	r, _ := utf8.DecodeLastRuneInString(s)
+	if r == utf8.RuneError {
+		return 0
+	}
+	return r
 }
 
 // isHidden answers whether value is one this run must never write out, such as a secret's value
@@ -370,11 +428,33 @@ var credentialShaped = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(AccountKey|SharedAccessKey|SharedAccessSignature|InstrumentationKey|Password|Pwd|sig)=[^;&"\s\\]+`),
 }
 
-// emit writes one record. Every record goes through scrub first: no token, key or connection string
-// leaves the plugin, whatever text carried it - output, error, progress row or event.
+// emit writes one record. Every string in it goes through scrub first: no token, key or connection
+// string leaves the plugin, whatever text carried it - output, error, progress row or event. Each
+// string is scrubbed as its decoded text, not as JSON wrote it, so a value with characters JSON
+// escapes (& < > " \) is found as surely as any other.
 func (p *plugin) emit(record any) {
 	line, _ := json.Marshal(record)
-	_, _ = p.out.Write(append([]byte(p.scrub(string(line))), '\n'))
+	_, _ = p.out.Write(append(p.scrubJSON(line), '\n'))
+}
+
+// jsonString matches one string in encoded JSON: a key or a value.
+var jsonString = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
+
+// scrubJSON scrubs every string of an encoded JSON document in its decoded form and encodes it
+// again; everything else - keys' order, numbers, layout - is left as it was.
+func (p *plugin) scrubJSON(doc []byte) []byte {
+	return jsonString.ReplaceAllFunc(doc, func(lit []byte) []byte {
+		var s string
+		if json.Unmarshal(lit, &s) != nil {
+			return []byte(`"[redacted]"`)
+		}
+		clean := p.scrub(s)
+		if clean == s {
+			return lit
+		}
+		out, _ := json.Marshal(clean)
+		return out
+	})
 }
 
 func (p *plugin) scrub(text string) string {

@@ -98,7 +98,7 @@ func TestSecretSetKeepsScaleProbesImageIngressAndTheOtherSecretsAndEnv(t *testin
 	mustContain(t, r.text(), "Container app my-app now reads SMTP_PASSWORD from mail.password as secret smtp-password, STRIPE_KEY from stripe live.key as secret stripe-key",
 		"Key Vault secrets queue-conn", "secrets db-conn", "scale, probes, ingress, image, registries and identity are as they were")
 
-	// One PATCH of the app, touching configuration.secrets and template.containers only; no PUT.
+	// One PATCH of the app, touching configuration.secrets and template's containers and scale only; no PUT.
 	if puts := w.f.callsTo(http.MethodPut, "/containerApps/my-app"); len(puts) != 0 {
 		t.Fatalf("the app was PUT %d times", len(puts))
 	}
@@ -127,8 +127,12 @@ func TestSecretSetKeepsScaleProbesImageIngressAndTheOtherSecretsAndEnv(t *testin
 	if got := keys(sub(body, "properties", "configuration")); !reflect.DeepEqual(got, []string{"secrets"}) {
 		t.Fatalf("the PATCH sets configuration %v", got)
 	}
-	if got := keys(sub(body, "properties", "template")); !reflect.DeepEqual(got, []string{"containers"}) {
+	if got := keys(sub(body, "properties", "template")); !reflect.DeepEqual(got, []string{"containers", "scale"}) {
 		t.Fatalf("the PATCH sets template %v", got)
+	}
+	// scale goes back exactly as the GET answered it, so a template taken as a unit keeps 0 to 2.
+	if !reflect.DeepEqual(sub(body, "properties", "template", "scale"), sub(before, "template", "scale")) {
+		t.Fatalf("the PATCH's scale %v is not the GET's %v", sub(body, "properties", "template", "scale"), sub(before, "template", "scale"))
 	}
 	// The kept values were read from the app itself, once, and went nowhere but back to it.
 	if ls := w.f.callsTo(http.MethodPost, "/containerApps/my-app/listSecrets"); len(ls) != 1 {
@@ -190,6 +194,51 @@ func TestSecretSetKeepsScaleProbesImageIngressAndTheOtherSecretsAndEnv(t *testin
 	applied := r.events("applied")
 	if len(applied) != 1 || applied[0]["command"] != "containerapp secret set" {
 		t.Fatalf("applied = %v", applied)
+	}
+}
+
+func TestSecretSetSendsInitContainersAndVolumesBackAsTheGETAnswered(t *testing.T) {
+	w := newWorld(t)
+	app := bicepApp(w)
+	tpl := app.Props["template"].(map[string]any)
+	tpl["initContainers"] = []any{map[string]any{"name": "migrate", "image": acrRef("myregistry", "mig:1"), "args": []any{"--up"}}}
+	tpl["volumes"] = []any{map[string]any{"name": "data", "storageType": "EmptyDir"}}
+	tpl["containers"].([]any)[0].(map[string]any)["volumeMounts"] = []any{map[string]any{"volumeName": "data", "mountPath": "/data"}}
+	before := snapshot(t, app.Props)
+
+	r := runPlugin(t, runOpts{config: apply(nil), bound: setBound()}, setLine)
+	if !r.ok() {
+		t.Fatal(r.text())
+	}
+	patches := w.f.callsTo(http.MethodPatch, "/containerApps/my-app")
+	if len(patches) != 1 {
+		t.Fatalf("the app was patched %d times", len(patches))
+	}
+	var body map[string]any
+	if err := json.Unmarshal(patches[0].Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for k := range sub(body, "properties", "template").(map[string]any) {
+		got = append(got, k)
+	}
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, []string{"containers", "initContainers", "scale", "volumes"}) {
+		t.Fatalf("the PATCH sets template %v", got)
+	}
+	for _, k := range []string{"scale", "initContainers", "volumes"} {
+		if !reflect.DeepEqual(sub(body, "properties", "template", k), sub(before, "template", k)) {
+			t.Fatalf("the PATCH's %s %v is not the GET's %v", k, sub(body, "properties", "template", k), sub(before, "template", k))
+		}
+	}
+	if !reflect.DeepEqual(anyList(sub(body, "properties", "template", "containers"))[0]["volumeMounts"], anyList(sub(before, "template", "containers"))[0]["volumeMounts"]) {
+		t.Fatal("the container's volume mounts changed")
+	}
+	if sub(body, "properties", "configuration", "ingress") != nil || sub(body, "properties", "configuration", "registries") != nil {
+		t.Fatal("the PATCH carries ingress or registries")
+	}
+	if strings.Contains(string(patches[0].Body), "null") {
+		t.Fatal("the PATCH carries a null")
 	}
 }
 

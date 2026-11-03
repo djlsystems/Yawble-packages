@@ -45,6 +45,8 @@ var (
 type client struct {
 	tokens   map[api]string
 	progress func(string)
+	// quoted hides, in text Azure answered, the values too short to hide everywhere; nil hides none.
+	quoted func(string) string
 }
 
 // apiError is an answer other than 2xx. Its text holds Azure's code and message, never a token:
@@ -143,6 +145,9 @@ func (c *client) send(a api, method, url string, body any, headers map[string]st
 			// Azure Storage answers in XML; its message's later lines are request ids.
 			e.code, _, _ = strings.Cut(storage.Code, "\n")
 			e.message, _, _ = strings.Cut(storage.Message, "\n")
+		}
+		if c.quoted != nil {
+			e.code, e.message = c.quoted(e.code), c.quoted(e.message)
 		}
 		return nil, e
 	}
