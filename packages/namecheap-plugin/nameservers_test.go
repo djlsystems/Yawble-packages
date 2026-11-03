@@ -89,7 +89,7 @@ func TestNameserversReadsEachMode(t *testing.T) {
 		want   []string
 	}{
 		{"BasicDNS", true, nil, []string{"example.com is on Namecheap BasicDNS: dns1.registrar-servers.com, dns2.registrar-servers.com.", "Namecheap serves its host records"}},
-		{"other Namecheap DNS", true, []string{"pdns1.example.net", "pdns2.example.net"}, []string{"example.com is on other Namecheap DNS: pdns1.example.net, pdns2.example.net.", "getList does not say which"}},
+		{"other Namecheap DNS", true, []string{"pdns1.example.net", "pdns2.example.net"}, []string{"example.com is on other Namecheap DNS: pdns1.example.net, pdns2.example.net.", "flags it as neither BasicDNS, PremiumDNS nor FreeDNS"}},
 		{"custom", false, []string{"NS1.Example.NET", "ns2.example.net"}, []string{"example.com is on custom nameservers: ns1.example.net, ns2.example.net.", "Namecheap host records are not served"}},
 	}
 	for _, c := range cases {
@@ -360,6 +360,10 @@ func TestNameserverRefusals(t *testing.T) {
 			`"https://ns2.example.net" is not a hostname`},
 		{"a single label", "setcustom example.com ns1.example.net localhost", nil,
 			`"localhost" is not a hostname`},
+		{"a trailing hyphen", "setcustom example.com ns1.example.net ns2.example-", nil,
+			`"ns2.example-" is not a hostname`},
+		{"a trailing hyphen in a middle label", "setcustom example.com ns1.example.net ns2-.example.net", nil,
+			`"ns2-.example.net" is not a hostname`},
 		{"a duplicate by case and trailing dot", "setcustom example.com ns1.example.net NS1.Example.Net.", nil,
 			`ns1.example.net is named twice (as "ns1.example.net" and "NS1.Example.Net.")`},
 		{"does not resolve", "setcustom example.com ns1.example.net ns9.example.net",
@@ -524,4 +528,160 @@ func TestAFailedSendFailsNamingTheBackup(t *testing.T) {
 	r := n.run("setcustom example.com ns1.example.net ns2.example.net")
 	mustContain(t, r.output, "The nameserver change for example.com failed (Namecheap answered error 3050900", "`restore example.com ")
 	noEvents(t, r)
+}
+
+// ---- PremiumDNS and FreeDNS ------------------------------------------------------------------------
+
+// premiumHarness is nsHarness with example.com on Namecheap PremiumDNS: getList answers
+// IsUsingOurDNS="true" IsPremiumDNS="true" with PremiumDNS's nameservers.
+func premiumHarness(t *testing.T) *harness {
+	n := nsHarness(t)
+	n.fake.domains["example.com"].premiumDNS = true
+	n.fake.domains["example.com"].nameservers = []string{"pdns1.example.net", "pdns2.example.net"}
+	return n
+}
+
+// freeHarness is nsHarness with example.com on Namecheap FreeDNS: getList answers 2019166 and
+// getInfo answers ProviderType="FreeDNS" with its nameservers, as the real API does.
+func freeHarness(t *testing.T) *harness {
+	n := nsHarness(t)
+	n.fake.domains["example.com"].freeDNS = true
+	n.fake.domains["example.com"].nameservers = []string{"freedns1.example.net", "freedns2.example.net", "freedns3.example.net", "freedns4.example.net"}
+	return n
+}
+
+func TestNameserversReadsPremiumDNS(t *testing.T) {
+	n := premiumHarness(t)
+	r := n.run("nameservers example.com")
+	if !r.ok {
+		t.Fatalf("read failed: %s", r.output)
+	}
+	mustContain(t, r.output, "example.com is on Namecheap PremiumDNS: pdns1.example.net, pdns2.example.net.", "cannot put it back on PremiumDNS")
+	if strings.Contains(r.output, "does not say which") {
+		t.Errorf("the read still says getList cannot tell them apart:\n%s", r.output)
+	}
+	if n.fake.count("namecheap.domains.getInfo") != 0 {
+		t.Errorf("a PremiumDNS read called getInfo")
+	}
+	noEvents(t, r)
+}
+
+func TestNameserversReadsFreeDNSThroughGetInfo(t *testing.T) {
+	n := freeHarness(t)
+	n.cfg[allowSetting] = false
+	r := n.run("nameservers example.com")
+	if !r.ok {
+		t.Fatalf("read failed: %s", r.output)
+	}
+	mustContain(t, r.output,
+		"example.com is on Namecheap FreeDNS: freedns1.example.net, freedns2.example.net, freedns3.example.net, freedns4.example.net.",
+		"read with domains.getInfo")
+	if strings.Contains(r.output, "not in this Namecheap account") {
+		t.Errorf("a FreeDNS domain read as absent:\n%s", r.output)
+	}
+	info := n.fake.paramsOf("namecheap.domains.getInfo")
+	if len(info) != 1 || info[0]["DomainName"] != "example.com" {
+		t.Errorf("getInfo params %v", info)
+	}
+	if s := n.fake.sent(); len(s) != 0 {
+		t.Errorf("a read sent %v", s)
+	}
+	noEvents(t, r)
+}
+
+func TestAnAbsentDomainIsStillRefusedAfterGetInfo(t *testing.T) {
+	n := nsHarness(t)
+	delete(n.fake.domains, "example.com")
+	r := n.run("nameservers example.com")
+	if r.ok {
+		t.Fatalf("not refused: %s", r.output)
+	}
+	mustContain(t, r.output, "Refused: example.com is not in this Namecheap account", "Nothing was changed.")
+	if n.fake.count("namecheap.domains.getInfo") != 1 {
+		t.Errorf("getInfo was not asked before refusing: %v", n.fake.commands)
+	}
+}
+
+func TestAChangeOffFreeDNSSaysWhatItDoes(t *testing.T) {
+	n := freeHarness(t)
+	n.cfg["mode"] = "dryrun"
+	r := n.run("setdefault example.com")
+	if !r.ok {
+		t.Fatalf("dry run failed: %s", r.output)
+	}
+	mustContain(t, r.output,
+		"from Namecheap FreeDNS: freedns1.example.net",
+		"to   Namecheap BasicDNS",
+		"`restore` cannot put it back there afterwards",
+		"re-selects it in the Namecheap portal")
+	if s := n.fake.sent(); len(s) != 0 {
+		t.Errorf("dry run sent %v", s)
+	}
+	noEvents(t, r)
+}
+
+func TestAChangeOffPremiumDNSWarnsAndItsRestoreIsRefused(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		harness func(*testing.T) *harness
+		mode    string
+	}{
+		{"PremiumDNS", premiumHarness, "Namecheap PremiumDNS"},
+		{"FreeDNS", freeHarness, "Namecheap FreeDNS"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			n := c.harness(t)
+			r := n.run("setcustom example.com ns1.example.net ns2.example.net")
+			if !r.ok {
+				t.Fatalf("setcustom failed: %s", r.output)
+			}
+			id := backupID(t, r)
+			mustContain(t, r.output,
+				"from "+c.mode,
+				"`restore` cannot put the domain back on "+c.mode,
+				"re-selects it in the Namecheap portal")
+			var rid string
+			for _, b := range n.backups("example.com") {
+				if b != id {
+					rid = b
+				}
+			}
+			if rid == "" {
+				t.Fatalf("no record backup beside %s: %v", id, n.backups("example.com"))
+			}
+
+			before := len(n.fake.sent())
+			back := n.run("restore example.com " + id)
+			if back.ok {
+				t.Fatalf("restore not refused: %s", back.output)
+			}
+			mustContain(t, back.output,
+				"Refused: backup "+id+" was taken while example.com was on "+c.mode,
+				"re-selects "+c.mode+" for example.com in the Namecheap portal",
+				"record backup "+rid+": `restore example.com "+rid+"`",
+				"Nothing was changed.")
+			if s := n.fake.sent(); len(s) != before {
+				t.Errorf("a refused restore sent %v", s[before:])
+			}
+			if our, ns := n.fake.delegation("example.com"); our || !reflect.DeepEqual(ns, customNS) {
+				t.Errorf("delegation changed: %t %v", our, ns)
+			}
+			noEvents(t, back)
+		})
+	}
+}
+
+func TestAFreeDNSChangeGoesAheadWhenItsHostRecordsCannotBeRead(t *testing.T) {
+	n := freeHarness(t)
+	n.fake.failGetHosts = true
+	r := n.run("setcustom example.com ns1.example.net ns2.example.net")
+	if !r.ok {
+		t.Fatalf("setcustom failed: %s", r.output)
+	}
+	mustContain(t, r.output, "so no record backup was saved")
+	if len(n.backups("example.com")) != 1 {
+		t.Errorf("backups %v; want only the nameserver backup", n.backups("example.com"))
+	}
+	back := n.run("restore example.com " + backupID(t, r))
+	mustContain(t, back.output, "No record backup was saved with it.")
 }

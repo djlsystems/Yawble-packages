@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// NAMESERVERS. A domain's delegation: Namecheap BasicDNS, other Namecheap DNS, or custom
+// NAMESERVERS. A domain's delegation: Namecheap BasicDNS, PremiumDNS or FreeDNS, or custom
 // nameservers. `nameservers` reads it (domains.dns.getList) in every mode; `setcustom` and
 // `setdefault` change it (domains.dns.setCustom, domains.dns.setDefault) under the same rules as a
 // record change, and only while a person has turned on allowNameserverChanges:
@@ -25,15 +25,19 @@ import (
 //     domain is on Namecheap DNS, its host records as a record backup too;
 //  7. the change is sent, read back and checked; only then is plugin.namecheap-plugin.nameservers
 //     published. `restore <domain> <backup id>` of a nameserver backup puts the delegation back,
-//     whichever way it went.
+//     whichever way it went, except to PremiumDNS or FreeDNS: the API can only set custom
+//     nameservers or BasicDNS, so restoring such a backup is refused and the person re-selects it
+//     in the Namecheap portal.
 
 const (
 	// minNameservers: Namecheap's "How to Change DNS For a Domain" (knowledge base article 767)
 	// asks for at least two nameservers.
 	minNameservers = 2
-	// maxNameservers: Namecheap's API reference for domains.dns.setCustom documents Nameservers
-	// only as a comma-separated string of at most 1200 characters, with no count. The count is
-	// that of the registry interface behind it (eNom's NS1 to NS12); see the README.
+	// maxNameservers is this plugin's own guard, not a documented Namecheap limit: Namecheap's API
+	// reference for domains.dns.setCustom documents Nameservers only as a comma-separated string of
+	// at most 1200 characters, with no count. 12 is the count of the registry interface behind it
+	// (eNom's NS1 to NS12, known only from third-party sources); for registries outside
+	// tldNameserverCap a lower registry limit is left to Namecheap's own error. See the README.
 	maxNameservers = 12
 	// maxNameserverChars is setCustom's documented MaxLength for Nameservers.
 	maxNameserverChars = 1200
@@ -56,32 +60,52 @@ const allowSetting = "allowNameserverChanges"
 
 // The modes a backup records, and how the plugin says them.
 const (
-	nsBasic  = "basicdns"
-	nsOther  = "namecheap"
-	nsCustom = "custom"
+	nsBasic   = "basicdns"
+	nsPremium = "premiumdns"
+	nsFree    = "freedns"
+	nsOther   = "namecheap" // Namecheap's DNS, with neither flag and not BasicDNS's nameservers
+	nsCustom  = "custom"
 )
 
 func modeWords(mode string) string {
 	switch mode {
 	case nsBasic:
 		return "Namecheap BasicDNS"
+	case nsPremium:
+		return "Namecheap PremiumDNS"
+	case nsFree:
+		return "Namecheap FreeDNS"
 	case nsOther:
 		return "other Namecheap DNS"
 	}
 	return "custom nameservers"
 }
 
-// nsState is a domain's delegation as getList answers it.
+// portalOnly says whether a mode can only be selected in the Namecheap portal: the API sets
+// custom nameservers (setCustom) or BasicDNS (setDefault), nothing else.
+func portalOnly(mode string) bool {
+	return mode == nsPremium || mode == nsFree || mode == nsOther
+}
+
+// nsState is a domain's delegation as getList answers it (IsUsingOurDNS, IsPremiumDNS,
+// IsUsingFreeDNS and the nameservers), or getInfo for a FreeDNS domain.
 type nsState struct {
-	OurDNS  bool
-	Servers []string // lower case, no trailing dot, in Namecheap's order
+	OurDNS   bool
+	Premium  bool
+	FreeDNS  bool
+	Servers  []string // lower case, no trailing dot, in Namecheap's order
+	FromInfo bool     // read through domains.getInfo, because getList does not answer for FreeDNS
 }
 
 func (s nsState) mode() string {
-	if !s.OurDNS {
+	switch {
+	case !s.OurDNS:
 		return nsCustom
-	}
-	if len(s.Servers) == 0 || sameServers(s.Servers, basicDNS) {
+	case s.FreeDNS:
+		return nsFree
+	case s.Premium:
+		return nsPremium
+	case len(s.Servers) == 0 || sameServers(s.Servers, basicDNS):
 		return nsBasic
 	}
 	return nsOther
@@ -184,8 +208,15 @@ func (p *plugin) nameservers(args []string) (string, error) {
 	switch s.mode() {
 	case nsBasic:
 		out += fmt.Sprintf("\nNamecheap serves its host records (`list %s` shows them).", domain)
+	case nsPremium:
+		out += fmt.Sprintf("\nNamecheap PremiumDNS serves its host records (`list %s` shows them). This plugin can move it to custom nameservers or BasicDNS, but cannot put it back on PremiumDNS: that is re-selected in the Namecheap portal.", domain)
+	case nsFree:
+		out += ("\nNamecheap FreeDNS serves it. This plugin can move it to custom nameservers or BasicDNS, but cannot put it back on FreeDNS: that is re-selected in the Namecheap portal.")
+		if s.FromInfo {
+			out += " (Namecheap's domains.dns.getList does not answer for a FreeDNS domain, so this was read with domains.getInfo.)"
+		}
 	case nsOther:
-		out += "\nNamecheap's own DNS, but not BasicDNS (such as PremiumDNS or FreeDNS: getList does not say which)."
+		out += "\nNamecheap's own DNS, but getList flags it as neither BasicDNS, PremiumDNS nor FreeDNS and names other nameservers than BasicDNS's."
 	case nsCustom:
 		out += "\nIts Namecheap host records are not served while it is on custom nameservers; the nameservers above answer for it."
 	}
@@ -325,6 +356,14 @@ func (p *plugin) restoreNS(domain string, b *backup) (string, error) {
 	if p.sec.APIUser == "" || p.sec.APIKey == "" {
 		return "", refusal("Refused: no Namecheap API user and API key are bound: " + noKeys + ", then runs setup. Nothing was changed.")
 	}
+	if portalOnly(b.NSMode) {
+		records := " No record backup was saved with it."
+		if b.RecordBackup != "" {
+			records = fmt.Sprintf(" Its host records from before the change are record backup %s: `restore %s %s` puts them back once the domain is on Namecheap DNS again.", b.RecordBackup, domain, b.RecordBackup)
+		}
+		return "", refusal(fmt.Sprintf("Refused: backup %s was taken while %s was on %s (%s). Namecheap's API can only set custom nameservers or BasicDNS, so restoring it would leave the domain on custom nameservers, not on %s. To go back, a person re-selects %s for %s in the Namecheap portal (Domain List, Manage, Nameservers).%s Nothing was changed.",
+			b.ID, domain, modeWords(b.NSMode), strings.Join(b.Nameservers, ", "), modeWords(b.NSMode), modeWords(b.NSMode), domain, records))
+	}
 	to := nsTarget{basic: b.NSMode == nsBasic}
 	if !to.basic {
 		names, err := checkNameservers(domain, b.Nameservers)
@@ -360,12 +399,22 @@ func nsWarnings(domain string, to nsTarget) string {
 	return strings.Join(w, "\n")
 }
 
+// portalNote is what a change off PremiumDNS or FreeDNS says before it is made.
+func portalNote(domain, mode string) string {
+	return fmt.Sprintf("%s is on %s now. `restore` cannot put it back there afterwards: Namecheap's API can only set custom nameservers or BasicDNS, so going back to %s means a person re-selects it in the Namecheap portal (Domain List, Manage, Nameservers). The host records saved as a record backup stay restorable with `restore` once the domain is on Namecheap DNS.", domain, modeWords(mode), modeWords(mode))
+}
+
 // changeNS carries out a planned delegation change, or describes it in dry run.
 func (p *plugin) changeNS(command, domain string, cur *nsState, to nsTarget) (string, error) {
 	warnings := nsWarnings(domain, to)
+	if portalOnly(cur.mode()) {
+		warnings = portalNote(domain, cur.mode()) + "\n" + warnings
+	}
 	if p.cfg.Mode != "apply" {
 		extra := ""
-		if cur.OurDNS {
+		if cur.FreeDNS {
+			extra = "\nIn apply, the host records are saved as a record backup too, before the change, if Namecheap's API answers them for this FreeDNS domain; if it does not, the change goes ahead without a record backup and the answer says so."
+		} else if cur.OurDNS {
 			extra = "\nIn apply, the host records are saved as a record backup too, before the change."
 		}
 		return fmt.Sprintf("Dry run for %s: nothing was changed. The nameservers would change\nfrom %s\nto   %s%s\n%s\nTo make the change, a person sets this member's mode to apply; then send the same command again.",
@@ -373,19 +422,22 @@ func (p *plugin) changeNS(command, domain string, cur *nsState, to nsTarget) (st
 	}
 
 	// The host records, while Namecheap serves them, are kept too: a switch may not carry them.
-	recordsNote := ""
+	recordsNote, rid := "", ""
 	if cur.OurDNS {
 		set, err := p.api.getHosts(domain)
-		if err != nil {
+		switch {
+		case err != nil && cur.FreeDNS:
+			recordsNote = fmt.Sprintf("\nNamecheap's API did not answer %s's FreeDNS host records (%s), so no record backup was saved; FreeDNS keeps them in the Namecheap portal.", domain, errorWords(err))
+		case err != nil:
 			return "", refusal(fmt.Sprintf("Refused: %s's host records could not be read to save them before the nameserver change (%s). Nothing was changed.", domain, errorWords(err)))
+		default:
+			if rid, err = p.saveBackup(domain, command, set); err != nil {
+				return "", err
+			}
+			recordsNote = fmt.Sprintf("\nRecord backup %s holds its %d host records from before the change; `restore %s %s` puts them back while the domain is on Namecheap DNS.", rid, len(set.Records), domain, rid)
 		}
-		rid, err := p.saveBackup(domain, command, set)
-		if err != nil {
-			return "", err
-		}
-		recordsNote = fmt.Sprintf("\nRecord backup %s holds its %d host records from before the change; `restore %s %s` puts them back while the domain is on Namecheap DNS.", rid, len(set.Records), domain, rid)
 	}
-	id, err := p.saveNSBackup(domain, command, cur)
+	id, err := p.saveNSBackup(domain, command, cur, rid)
 	if err != nil {
 		return "", err
 	}
@@ -417,8 +469,12 @@ func (p *plugin) changeNS(command, domain string, cur *nsState, to nsTarget) (st
 		"after":      nonNil(got.Servers),
 		"backupId":   id,
 	})
-	return fmt.Sprintf("%s: nameservers changed\nfrom %s\nto   %s (read back from Namecheap).\nBackup %s holds the nameservers before; `restore %s %s` puts them back in one command.%s\n%s",
-		domain, cur, got, id, domain, id, recordsNote, warnings), nil
+	undo := fmt.Sprintf("Backup %s holds the nameservers before; `restore %s %s` puts them back in one command.", id, domain, id)
+	if portalOnly(cur.mode()) {
+		undo = fmt.Sprintf("Backup %s records the nameservers before, but `restore` cannot put the domain back on %s (see below).", id, modeWords(cur.mode()))
+	}
+	return fmt.Sprintf("%s: nameservers changed\nfrom %s\nto   %s (read back from Namecheap).\n%s%s\n%s",
+		domain, cur, got, undo, recordsNote, warnings), nil
 }
 
 func nonNil(s []string) []string {

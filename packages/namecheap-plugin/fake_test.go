@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-// A fake Namecheap API: getList, getHosts, setHosts and the nameserver calls (dns.getList,
+// A fake Namecheap API: getList, getInfo, getHosts, setHosts and the nameserver calls (dns.getList,
 // dns.setCustom, dns.setDefault) over the account's domains, answered as Namecheap's API reference
 // shows them, with the checks
 // Namecheap makes on every call (API user and key, API access, the allow-list). No test reaches the
@@ -37,6 +37,11 @@ type fakeDomain struct {
 	// nameservers is what dns.getList names: empty means BasicDNS's two when ourDNS, and is the
 	// custom nameservers when not.
 	nameservers []string
+	// premiumDNS is getList's IsPremiumDNS. freeDNS is a domain on Namecheap FreeDNS: as the real
+	// API does (Namecheap's Go SDK, "FreeDNS domain handling"), dns.getList answers it 2019166 and
+	// domains.getInfo answers DnsDetails ProviderType="FreeDNS" with its nameservers.
+	premiumDNS bool
+	freeDNS    bool
 }
 
 type fakeNamecheap struct {
@@ -152,6 +157,9 @@ func (f *fakeNamecheap) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	domain := r.PostForm.Get("SLD") + "." + r.PostForm.Get("TLD")
+	if cmd == "namecheap.domains.getInfo" {
+		domain = r.PostForm.Get("DomainName")
+	}
 	d := f.domains[domain]
 	ok := func(inner string) {
 		fmt.Fprintf(w, `<?xml version="1.0" encoding="utf-8"?>
@@ -233,8 +241,8 @@ func (f *fakeNamecheap) serve(w http.ResponseWriter, r *http.Request) {
 			f.fail(w, "2016166", "Domain is not associated with your account")
 			return
 		}
-		if d == nil {
-			f.fail(w, "2019166", "Domain not found")
+		if d == nil || d.freeDNS {
+			f.fail(w, "2019166", "Domain name not found")
 			return
 		}
 		names := d.nameservers
@@ -242,11 +250,31 @@ func (f *fakeNamecheap) serve(w http.ResponseWriter, r *http.Request) {
 			names = []string{"dns1.registrar-servers.com", "dns2.registrar-servers.com"}
 		}
 		var b strings.Builder
-		fmt.Fprintf(&b, `<DomainDNSGetListResult Domain="%s" IsUsingOurDNS="%t">`, domain, d.ourDNS)
+		fmt.Fprintf(&b, `<DomainDNSGetListResult Domain="%s" IsUsingOurDNS="%t" IsPremiumDNS="%t" IsUsingFreeDNS="false">`, domain, d.ourDNS, d.premiumDNS)
 		for _, n := range names {
 			fmt.Fprintf(&b, "<Nameserver>%s</Nameserver>", xmlEscape(n))
 		}
 		b.WriteString("</DomainDNSGetListResult>")
+		ok(b.String())
+	case "namecheap.domains.getInfo":
+		if d == nil {
+			f.fail(w, "2019166", "Domain not found")
+			return
+		}
+		provider := "CUSTOM"
+		if d.freeDNS {
+			provider = "FreeDNS"
+		} else if d.ourDNS {
+			provider = "ENOM"
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, `<DomainGetInfoResult Status="Ok" ID="1706717" DomainName="%s" OwnerName="%s" IsOwner="true" IsPremium="false"><DomainDetails><CreatedDate>11/26/2021</CreatedDate><ExpiredDate>11/26/2027</ExpiredDate><NumYears>0</NumYears></DomainDetails><LockDetails /><Whoisguard Enabled="NotAlloted"><ID>0</ID></Whoisguard>`, domain, testUser)
+		fmt.Fprintf(&b, `<PremiumDnsSubscription><UseAutoRenew>false</UseAutoRenew><SubscriptionId>-1</SubscriptionId><CreatedDate>0001-01-01T00:00:00</CreatedDate><ExpirationDate>0001-01-01T00:00:00</ExpirationDate><IsActive>%t</IsActive></PremiumDnsSubscription>`, d.premiumDNS)
+		fmt.Fprintf(&b, `<DnsDetails ProviderType="%s" IsUsingOurDNS="%t" HostCount="%d" EmailType="No Email Service" DynamicDNSStatus="false" IsFailover="false">`, provider, d.ourDNS, len(d.hosts))
+		for _, n := range d.nameservers {
+			fmt.Fprintf(&b, "<Nameserver>%s</Nameserver>", xmlEscape(n))
+		}
+		b.WriteString("</DnsDetails><Modificationrights /></DomainGetInfoResult>")
 		ok(b.String())
 	case "namecheap.domains.dns.setCustom", "namecheap.domains.dns.setDefault":
 		if d == nil {
@@ -266,10 +294,10 @@ func (f *fakeNamecheap) serve(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if !f.ignoreSetNS {
-				d.ourDNS, d.nameservers = false, strings.Split(list, ",")
+				d.ourDNS, d.nameservers, d.premiumDNS, d.freeDNS = false, strings.Split(list, ","), false, false
 			}
 		} else if !f.ignoreSetNS {
-			d.ourDNS, d.nameservers = true, nil
+			d.ourDNS, d.nameservers, d.premiumDNS, d.freeDNS = true, nil, false, false
 		}
 		ok(fmt.Sprintf(`<%s Domain="%s" Updated="true" />`, result, domain))
 	default:

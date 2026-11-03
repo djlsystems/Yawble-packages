@@ -30,7 +30,7 @@ type secrets struct {
 // noKeys is what a run says when the namecheap slot has no connection, or one without a user or key.
 const noKeys = "a person binds a Namecheap API-key connection (API user, API key, Whitelisted IP) to this member's `namecheap` slot; the connection is added and assigned to the team in Team settings, Connections"
 
-var domainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}$`)
+var domainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 func normaliseDomain(d string) string {
 	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(d)), ".")

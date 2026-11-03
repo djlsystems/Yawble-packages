@@ -66,8 +66,9 @@ Examples:
 ## Nameservers
 
 - `nameservers <domain>` reads, in every mode and with changes off: `Namecheap BasicDNS`
-  (dns1/dns2.registrar-servers.com), `other Namecheap DNS` (Namecheap's own DNS but not BasicDNS,
-  such as PremiumDNS; Namecheap does not say which), or `custom nameservers`, with the names.
+  (dns1/dns2.registrar-servers.com), `Namecheap PremiumDNS`, `Namecheap FreeDNS` (read through
+  domains.getInfo, because getList does not answer for a FreeDNS domain), or `custom nameservers`,
+  with the names.
 - `setcustom example.com ns1.example.net ns2.example.net` moves the domain to those nameservers;
   `setdefault example.com` moves it back to Namecheap BasicDNS. Both need the person-only setting
   **Allow nameserver changes** (`allowNameserverChanges`). While it is off they are refused even in
@@ -76,7 +77,11 @@ Examples:
   the person, who sets mode to apply; then send the same command again.
 - An applied change answers the backup id and the exact rollback: `restore <domain> <backup id>`.
   It works whichever way the change went (custom to custom, custom to BasicDNS, BasicDNS to
-  custom). Keep the id; send that one command to roll back. When the domain was on Namecheap DNS,
+  custom). Keep the id; send that one command to roll back. **Except from PremiumDNS or FreeDNS:**
+  the API cannot put a domain back on either, so restoring a backup taken there is refused, and the
+  person re-selects PremiumDNS or FreeDNS in the Namecheap portal (Domain List, Manage,
+  Nameservers); the record backup it names still puts the host records back. A change off
+  PremiumDNS or FreeDNS says so in its dry run: tell the person before they apply. When the domain was on Namecheap DNS,
   the answer also names a record backup of its host records.
 - **Say this to the person before applying a move to custom nameservers:** while the domain is on
   custom nameservers its Namecheap host records are no longer served, so every record it needs
@@ -86,10 +91,13 @@ Examples:
   record backup named puts them back.
 - Refused by name, before anything is sent: a domain not in the account or not in `domains`; fewer
   than 2 or more than 12 nameservers (5 for .MX, 4 for .TO, 6 for .CA); a name that is not a
-  hostname; a name given twice (case and a trailing dot ignored); Namecheap BasicDNS's own names
+  hostname (including a label that starts or ends with a hyphen); a name given twice (case and a trailing dot ignored); Namecheap BasicDNS's own names
   (use `setdefault`); a nameserver that does not resolve (fix it at the DNS provider first).
+- 12 is this plugin's guard, not a documented Namecheap limit; for registries outside the
+  .MX/.TO/.CA caps, a lower registry limit shows as Namecheap's own error, after the backup is
+  taken, and nothing changes.
 - The same nameservers again, or `setdefault` on a domain already on BasicDNS, changes nothing and
-  says so.
+  says so. The no-op compares the names as a set, so `setcustom` cannot change only their order.
 - A record command (`list`, `ensure`, `remove`, record `restore`) refuses a domain on custom
   nameservers: its records are served by that provider.
 

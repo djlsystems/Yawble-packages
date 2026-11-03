@@ -28,8 +28,10 @@ type backup struct {
 	Records   []record `json:"records"`
 	// Kind is "nameservers" for a nameserver backup, empty for a record backup.
 	Kind        string   `json:"kind,omitempty"`
-	NSMode      string   `json:"nameserverMode,omitempty"` // basicdns, namecheap or custom
+	NSMode      string   `json:"nameserverMode,omitempty"` // basicdns, premiumdns, freedns, namecheap or custom
 	Nameservers []string `json:"nameservers,omitempty"`
+	// RecordBackup is the record backup taken with a nameserver backup, when there was one.
+	RecordBackup string `json:"recordBackup,omitempty"`
 }
 
 const kindNameservers = "nameservers"
@@ -45,8 +47,8 @@ func (p *plugin) saveBackup(domain, command string, set *hostSet) (string, error
 }
 
 // saveNSBackup writes a domain's delegation before a nameserver change and answers its id.
-func (p *plugin) saveNSBackup(domain, command string, s *nsState) (string, error) {
-	return p.writeBackup(domain, backup{Command: command, Records: []record{}, Kind: kindNameservers, NSMode: s.mode(), Nameservers: nonNil(s.Servers)})
+func (p *plugin) saveNSBackup(domain, command string, s *nsState, recordBackup string) (string, error) {
+	return p.writeBackup(domain, backup{Command: command, Records: []record{}, Kind: kindNameservers, NSMode: s.mode(), Nameservers: nonNil(s.Servers), RecordBackup: recordBackup})
 }
 
 // writeBackup writes b, given its id, domain and time here.

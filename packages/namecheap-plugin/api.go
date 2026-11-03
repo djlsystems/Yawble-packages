@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -88,10 +89,21 @@ type apiResponse struct {
 			IsOurDNS string `xml:"IsOurDNS,attr"`
 		} `xml:"DomainGetListResult>Domain"`
 		Nameservers struct {
-			Domain        string   `xml:"Domain,attr"`
-			IsUsingOurDNS string   `xml:"IsUsingOurDNS,attr"`
-			Nameservers   []string `xml:"Nameserver"`
+			Domain         string   `xml:"Domain,attr"`
+			IsUsingOurDNS  string   `xml:"IsUsingOurDNS,attr"`
+			IsPremiumDNS   string   `xml:"IsPremiumDNS,attr"`
+			IsUsingFreeDNS string   `xml:"IsUsingFreeDNS,attr"`
+			Nameservers    []string `xml:"Nameserver"`
 		} `xml:"DomainDNSGetListResult"`
+		Info struct {
+			DomainName string `xml:"DomainName,attr"`
+			DNS        struct {
+				ProviderType  string   `xml:"ProviderType,attr"`
+				IsUsingOurDNS string   `xml:"IsUsingOurDNS,attr"`
+				Nameservers   []string `xml:"Nameserver"`
+			} `xml:"DnsDetails"`
+			PremiumDNSActive string `xml:"PremiumDnsSubscription>IsActive"`
+		} `xml:"DomainGetInfoResult"`
 		SetCustom struct {
 			Updated string `xml:"Updated,attr"`
 		} `xml:"DomainDNSSetCustomResult"`
@@ -279,21 +291,58 @@ func (c *client) setHosts(domain, emailType string, records []record) error {
 	return nil
 }
 
-// getNameservers reads a domain's delegation (domains.dns.getList).
+// getNameservers reads a domain's delegation (domains.dns.getList). getList answers 2019166
+// ("Domain name not found") for a domain on Namecheap FreeDNS, as Namecheap's own Go SDK notes; on
+// that answer the domain is looked up with domains.getInfo, as the SDK does. A domain getInfo does
+// not find either is not in the account, and getInfo's error is answered.
 func (c *client) getNameservers(domain string) (*nsState, error) {
 	sld, tld := splitDomain(domain)
 	r, err := c.call("namecheap.domains.dns.getList", url.Values{"SLD": {sld}, "TLD": {tld}})
 	if err != nil {
+		var e *apiError
+		if errors.As(err, &e) && e.Number == "2019166" {
+			return c.getInfoNameservers(domain, e)
+		}
 		return nil, err
 	}
 	l := r.CommandResponse.Nameservers
-	s := &nsState{OurDNS: strings.EqualFold(l.IsUsingOurDNS, "true"), Servers: []string{}}
-	for _, n := range l.Nameservers {
-		if n = normaliseDomain(n); n != "" {
-			s.Servers = append(s.Servers, n)
-		}
+	s := &nsState{
+		OurDNS:  strings.EqualFold(l.IsUsingOurDNS, "true"),
+		Premium: strings.EqualFold(l.IsPremiumDNS, "true"),
+		FreeDNS: strings.EqualFold(l.IsUsingFreeDNS, "true"),
+		Servers: normaliseServers(l.Nameservers),
 	}
 	return s, nil
+}
+
+// getInfoNameservers reads a FreeDNS domain's delegation from domains.getInfo, after getList
+// answered listErr (2019166).
+func (c *client) getInfoNameservers(domain string, listErr *apiError) (*nsState, error) {
+	r, err := c.call("namecheap.domains.getInfo", url.Values{"DomainName": {domain}, "HostName": {domain}})
+	if err != nil {
+		return nil, err
+	}
+	info := r.CommandResponse.Info
+	if !strings.EqualFold(info.DNS.ProviderType, "FreeDNS") {
+		return nil, refusal(fmt.Sprintf("Refused: %s is in this Namecheap account (domains.getInfo answers it, DNS provider %q), but domains.dns.getList does not answer for it (%s), so its nameservers could not be read.", domain, info.DNS.ProviderType, listErr.Error()))
+	}
+	return &nsState{
+		OurDNS:   true,
+		FreeDNS:  true,
+		Premium:  strings.EqualFold(info.PremiumDNSActive, "true"),
+		Servers:  normaliseServers(info.DNS.Nameservers),
+		FromInfo: true,
+	}, nil
+}
+
+func normaliseServers(names []string) []string {
+	out := []string{}
+	for _, n := range names {
+		if n = normaliseDomain(n); n != "" {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // setCustom delegates a domain to custom nameservers (domains.dns.setCustom), in the order given.
