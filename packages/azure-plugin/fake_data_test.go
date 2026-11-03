@@ -118,19 +118,57 @@ func (f *fake) armAction(w http.ResponseWriter, method, path string, body []byte
 			f.answer(w, 404, armError("ResourceNotFound", "No app."))
 			return true
 		}
+		// Azure merges a PATCH into the app; a list it is sent replaces the app's whole list.
 		var in struct {
 			Properties struct {
 				Configuration struct {
-					Ingress map[string]any `json:"ingress"`
+					Ingress map[string]any   `json:"ingress"`
+					Secrets []map[string]any `json:"secrets"`
 				} `json:"configuration"`
+				Template struct {
+					Containers []any `json:"containers"`
+				} `json:"template"`
 			} `json:"properties"`
 		}
 		_ = json.Unmarshal(body, &in)
+		for _, s := range in.Properties.Configuration.Secrets {
+			if str(s["value"]) == "" && str(s["keyVaultUrl"]) == "" {
+				f.answer(w, 400, armError("ContainerAppSecretInvalid", "Invalid Request: Container app secret(s) with name(s) '"+str(s["name"])+"' are invalid: value or keyVaultUrl and identity should be provided."))
+				return true
+			}
+		}
+		cfg, _ := r.Props["configuration"].(map[string]any)
+		if cfg == nil {
+			cfg = map[string]any{}
+			r.Props["configuration"] = cfg
+		}
 		if in.Properties.Configuration.Ingress != nil {
-			cfg, _ := r.Props["configuration"].(map[string]any)
 			cfg["ingress"] = in.Properties.Configuration.Ingress
 		}
-		f.answer(w, 200, map[string]any{"id": r.ID, "properties": r.Props})
+		if in.Properties.Configuration.Secrets != nil {
+			var secrets []any
+			for _, s := range in.Properties.Configuration.Secrets {
+				secrets = append(secrets, s)
+			}
+			cfg["secrets"] = secrets
+		}
+		if in.Properties.Template.Containers != nil {
+			tpl, _ := r.Props["template"].(map[string]any)
+			tpl["containers"] = in.Properties.Template.Containers
+		}
+		f.answer(w, 200, map[string]any{"id": r.ID, "properties": withoutSecretValues(r.Props)})
+	case method == http.MethodPost && appListSecrets(lower):
+		r := f.resources[strings.TrimSuffix(lower, "/listsecrets")]
+		if r == nil {
+			f.answer(w, 404, armError("ResourceNotFound", "No app."))
+			return true
+		}
+		cfg, _ := r.Props["configuration"].(map[string]any)
+		var list []map[string]any
+		for _, s := range anyList(cfg["secrets"]) {
+			list = append(list, s)
+		}
+		f.answer(w, 200, map[string]any{"value": list})
 	case method == http.MethodGet && strings.Contains(lower, "/providers/microsoft.keyvault/vaults/") && strings.HasSuffix(lower, "/secrets"):
 		// Azure management's list of a vault's secrets: names and attributes, never a value.
 		id := strings.TrimSuffix(lower, "/secrets")
@@ -327,4 +365,24 @@ func (f *fake) serveLogsAndBuilds(logLines []string) {
 	}
 	f.hosts["acrsource"+".blob.core.windows.net"] = sas
 	f.hosts["acrlogs"+".blob.core.windows.net"] = sas
+}
+
+// appListSecrets reports whether a lower-case path is a container app's own listSecrets.
+func appListSecrets(lower string) bool {
+	i := strings.Index(lower, "/containerapps/")
+	return i > 0 && strings.HasSuffix(lower, "/listsecrets") && strings.Count(lower[i:], "/") == 3
+}
+
+// withoutSecretValues is an app's properties as Azure answers them: each secret's name, Key Vault
+// address and identity, never its value.
+func withoutSecretValues(props map[string]any) map[string]any {
+	raw, _ := json.Marshal(props)
+	var out map[string]any
+	_ = json.Unmarshal(raw, &out)
+	if cfg, ok := out["configuration"].(map[string]any); ok {
+		for _, s := range anyList(cfg["secrets"]) {
+			delete(s, "value")
+		}
+	}
+	return out
 }

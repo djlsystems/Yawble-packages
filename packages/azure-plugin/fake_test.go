@@ -90,6 +90,8 @@ type fake struct {
 	noGrants   bool                  // every role assignment is refused, as for an account that may not assign roles
 	granted    map[string]bool       // lower-case role assignment ids made so far; Azure answers 409 to one again
 	afterPut   func(r *fakeResource) // when set, changes a resource after a PUT, as Azure may
+
+	allowListSecrets bool // a container app's own listSecrets may be called (containerapp secret set's tests)
 }
 
 func newFake(t *testing.T) *fake {
@@ -207,9 +209,12 @@ func (f *fake) serve(w http.ResponseWriter, r *http.Request) {
 	f.calls = append(f.calls, call{Host: host, Method: r.Method, Path: path, Query: r.URL.RawQuery, Token: token, Body: body})
 	f.mu.Unlock()
 
-	// NEVER A KEY: no request of any test asks Azure for a key, a connection string or a secret.
+	// NEVER A KEY: no request of any test asks Azure for a key, a connection string or a secret -
+	// but for one: containerapp secret set, in apply mode, reads an app's own secrets with that
+	// app's listSecrets, to send the ones it keeps back to the same app (containerapp_secret.go).
 	if l := strings.ToLower(path); strings.Contains(l, "listkeys") || strings.Contains(l, "sharedkeys") ||
-		strings.Contains(l, "listconnectionstrings") || strings.Contains(l, "listcredentials") || strings.Contains(l, "listsecrets") {
+		strings.Contains(l, "listconnectionstrings") || strings.Contains(l, "listcredentials") ||
+		(strings.Contains(l, "listsecrets") && !(f.allowListSecrets && r.Method == http.MethodPost && appListSecrets(l))) {
 		f.t.Errorf("the plugin asked for a key: %s %s", r.Method, path)
 	}
 	if h, ok := f.hosts[host]; ok {
@@ -416,6 +421,9 @@ func (f *fake) group(w http.ResponseWriter, method, path string, body []byte) {
 			return
 		}
 		out := map[string]any{"id": r.ID, "type": r.Type, "location": r.Location, "tags": r.Tags, "properties": r.Props}
+		if strings.EqualFold(r.Type, "Microsoft.App/containerApps") {
+			out["properties"] = withoutSecretValues(r.Props) // as Azure answers an app: never a secret's value
+		}
 		if r.Principal != "" {
 			out["identity"] = map[string]any{"type": "SystemAssigned", "principalId": r.Principal}
 		}
@@ -610,7 +618,7 @@ func hostRequest(t *testing.T, o runOpts, instruction string) hostObject {
 	}
 	return hostObject{
 		{"protocol", "harness.member/1"},
-		{"plugin", hostObject{{"id", "azure-plugin"}, {"version", "3.2.0"}}},
+		{"plugin", hostObject{{"id", "azure-plugin"}, {"version", "3.3.0"}}},
 		{"member", hostObject{{"id", testTeam + "/Azure"}, {"team", testTeam}, {"name", "Azure"}}},
 		{"causation", 1},
 		{"correlation", 1},

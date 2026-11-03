@@ -55,7 +55,7 @@ Quote a value with spaces (`"Storage Blob Data Contributor"`).
 - `rg create <name> <region>` - a resource group named `namePrefix` + name, in a region from
   `regions`, tagged for the team, with the monthly budget (alerts at 80% and 100%) when
   `monthlyBudget` is set.
-- `deploy <resource group> <template> [parameters file]` - a Bicep (`.bicep`) or ARM JSON
+- `deploy <resource group> <template> [parameters file] [param=<NAME>=<connection>.<field>]...` - a Bicep (`.bicep`) or ARM JSON
   (`.json`) template from the team's documents folder or a worktree of this run, into a resource
   group the team owns. A relative path is read from the team's documents folder. It always runs a
   what-if first and answers each change. Any change outside what the team owns - a nested
@@ -73,6 +73,11 @@ Quote a value with spaces (`"Storage Blob Data Contributor"`).
   A diagnostic setting that sends an environment's logs to a storage account the team owns gives
   the signed-in account Storage Blob Data Reader there in the same deploy, so `containerapp logs`
   can read them.
+  - `deploy ... param=<NAME>=<connection>.<field>` (any number, after the files) fills the
+  template's secure parameter `<NAME>` (`@secure()` in Bicep) from a field of a connection bound to
+  `appSecrets`, found and refused as for `secret=` (see Secrets), before Azure is asked. A
+  parameter that is not secure, or one the parameters file already gives, is refused. Use it so an
+  app whose template reads its secrets from secure parameters keeps them on every redeploy.
 - `role assign <role> <managed identity id> <scope id>` - grants one of Contributor, Storage
   Blob Data Reader, Storage Blob Data Contributor, Storage Table Data Contributor, Storage Queue Data Contributor, Key Vault
   Secrets Officer, Key Vault Secrets User or AcrPull, on a scope the team owns (or AcrPull on a
@@ -171,6 +176,22 @@ Container Apps:
   and says plainly which one is lost, with the `domain bind` to run again. Pass that line on to the
   person. An app that exists without the team's tags is refused. Its resource events say `changed`
   for the identity, role assignments and app that already existed, `created` only for new ones.
+- `containerapp secret set <app> secret=<NAME>=<connection>.<field>... [container=<name>]` -
+  puts connection fields into an app that already exists as its secrets, with `<NAME>` reading
+  each, and changes nothing else: scale (min and max replicas, rules), probes, ingress, image,
+  registries, identity, other secrets and other env stay as they were. Use it for an app Bicep
+  deployed - for example the Yawble-cloud app: `deploy yawble-cloud infra/main.bicep ...`, then
+  `containerapp secret set yawble-cloud secret=SMTP_PASSWORD=mail.password` - never
+  `containerapp create`, which resets it to 0 to 1 replicas and drops its probes. A secret of the
+  same name has its value replaced. Same connections, matching and refusals as `containerapp
+  create` (see Secrets), all before Azure is asked; Key Vault addresses are refused here. The
+  variables go on the container named as the app or the only one; `container=<name>` picks
+  another. It writes one PATCH of `configuration.secrets` and `template` only (scale, init
+  containers and volumes go back exactly as Azure answered them); to keep
+  the app's other value secrets it reads them with the app's own `listSecrets`, in apply only, and
+  sends them back unchanged, never out. When the answer says to, run `containerapp restart <app>`.
+  A later Bicep deploy replaces the app's secrets: run it again after each deploy, or use
+  `deploy ... param=` (below).
 - `containerapp show <app>`, `containerapp revisions <app>`, `containerapp logs <app> [minutes]`
   (default 30, at most 500 lines) - reads. The logs are queried through Azure management on the
   environment's workspace; the account needs Log Analytics Reader (or Reader) on it. An
@@ -214,11 +235,19 @@ The first `deploy` of a Bicep file downloads the pinned bicep compiler (about 12
   kind's icon, the action and the resource's name.
 - `plugin.azure-plugin.refused` - `command` and `reason`.
 
-None ever holds a token, key or connection string.
+None ever holds a token, key or connection string. Every value the member is given is hidden
+from what it writes, whatever characters it holds. A value under four characters is hidden only
+where it stands as a word of its own in an error text Azure supplies: Azure's error answers, an
+async operation that ends Failed or Canceled, a deployment's own error, a failed deployment
+operation's message, a failed what-if, and an Azure SQL error. It is not hidden in any other text,
+including Azure's 2xx answers, so a short secret can be shown there - use secrets of four
+characters or more.
 
 ## Secrets
 
-The member never reads a key, a connection string or a Key Vault secret value, and creates storage
+The member never reads a key, a connection string or a Key Vault secret value (the one read of
+a secret it makes is `containerapp secret set` reading the app's own secrets back, to send the kept
+ones to the same app unchanged), and creates storage
 accounts with shared key access off. Apps reach storage, Key Vault and SQL with their managed
 identity and a role from the list above.
 
@@ -232,7 +261,8 @@ An app secret can also come from one of the team's own connections, and this is 
 A person binds the connections an app may use - a mailbox, a username and password, an API key, a
 website - to
 the Azure member's `appSecrets` slot ("Connections a deployed app may use") in
-Team settings -> Connections. `secret=<NAME>=<connection>.<field>` on `containerapp create` puts that field's value
+Team settings -> Connections. `secret=<NAME>=<connection>.<field>` on `containerapp create` or
+`containerapp secret set` puts that field's value
 in the app's own secrets, and the app reads it as `<NAME>`: `secret=SMTP_PASSWORD=mail.password` is
 the password of the connection named `mail`. `<connection>` is the connection's name as Team
 settings -> Connections shows it, never its account: two API keys can share an account, such as

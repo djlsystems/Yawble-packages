@@ -45,6 +45,8 @@ var (
 type client struct {
 	tokens   map[api]string
 	progress func(string)
+	// quoted hides, in text Azure answered, the values too short to hide everywhere; nil hides none.
+	quoted func(string) string
 }
 
 // apiError is an answer other than 2xx. Its text holds Azure's code and message, never a token:
@@ -144,9 +146,18 @@ func (c *client) send(a api, method, url string, body any, headers map[string]st
 			e.code, _, _ = strings.Cut(storage.Code, "\n")
 			e.message, _, _ = strings.Cut(storage.Message, "\n")
 		}
+		e.code, e.message = c.quote(e.code), c.quote(e.message)
 		return nil, e
 	}
 	return &answer{status: resp.StatusCode, header: resp.Header, body: raw}, nil
+}
+
+// quote hides, in an error text Azure supplied, the values too short to hide everywhere.
+func (c *client) quote(text string) string {
+	if c.quoted == nil {
+		return text
+	}
+	return c.quoted(text)
 }
 
 // arm sends one request to Azure Resource Manager. path starts with /, and carries its api-version.
@@ -239,7 +250,7 @@ func (c *client) wait(first *answer, what string) ([]byte, error) {
 				}
 				return ans.body, nil
 			case "failed", "canceled":
-				return nil, fmt.Errorf("%s ended %s: %s %s", what, strings.ToLower(st.Status), st.Error.Code, st.Error.Message)
+				return nil, fmt.Errorf("%s ended %s: %s %s", what, strings.ToLower(st.Status), c.quote(st.Error.Code), c.quote(st.Error.Message))
 			}
 			delay = retryAfter(ans.header)
 			continue
