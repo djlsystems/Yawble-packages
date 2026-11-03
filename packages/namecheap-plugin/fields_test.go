@@ -27,11 +27,12 @@ func TestEveryFieldHasItsLabelAndEverySecretItsMasking(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings := map[string]string{
-		"domains":    "Domains",
-		"mode":       "Mode",
-		"defaultTtl": "Default TTL",
-		"clientIp":   "Client IP",
-		"sandbox":    "Use the sandbox",
+		"domains":                "Domains",
+		"mode":                   "Mode",
+		"defaultTtl":             "Default TTL",
+		"clientIp":               "Client IP",
+		"sandbox":                "Use the sandbox",
+		"allowNameserverChanges": "Allow nameserver changes",
 	}
 	type secret struct {
 		label            string

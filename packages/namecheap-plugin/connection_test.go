@@ -29,7 +29,7 @@ func TestTheManifestMovesTheKeysToTheNamecheapSlot(t *testing.T) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
 	}
-	if m.Version != "3.0.0" {
+	if m.Version != "3.1.0" {
 		t.Fatalf("version %q", m.Version)
 	}
 	c, ok := m.Connections[slot]

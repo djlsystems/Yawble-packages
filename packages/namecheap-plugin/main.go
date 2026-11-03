@@ -73,6 +73,8 @@ type plugin struct {
 	time clock
 	// waited is how long this run has waited for name servers so far (live.go), up to liveBudget.
 	waited time.Duration
+	// nsCommand is set while a nameserver command runs: it publishes no refused event.
+	nsCommand bool
 }
 
 func main() {

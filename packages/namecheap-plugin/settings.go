@@ -17,6 +17,8 @@ type settings struct {
 	Sandbox  bool
 	// DefaultTTL is the ttl ensure gives a record it adds when the command names none.
 	DefaultTTL int
+	// AllowNameserverChanges lets setcustom, setdefault and a nameserver restore run (person-only).
+	AllowNameserverChanges bool
 }
 
 // secrets are the namecheap connection's fields. ClientIP is its Whitelisted IP, "" when the
@@ -28,7 +30,7 @@ type secrets struct {
 // noKeys is what a run says when the namecheap slot has no connection, or one without a user or key.
 const noKeys = "a person binds a Namecheap API-key connection (API user, API key, Whitelisted IP) to this member's `namecheap` slot; the connection is added and assigned to the team in Team settings, Connections"
 
-var domainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}$`)
+var domainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 func normaliseDomain(d string) string {
 	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(d)), ".")
@@ -53,6 +55,11 @@ func parseSettings(raw map[string]json.RawMessage) (settings, string) {
 	if v, ok := raw["sandbox"]; ok && string(v) != "null" {
 		if json.Unmarshal(v, &s.Sandbox) != nil {
 			problems = append(problems, "`sandbox` must be on or off")
+		}
+	}
+	if v, ok := raw[allowSetting]; ok && string(v) != "null" {
+		if json.Unmarshal(v, &s.AllowNameserverChanges) != nil {
+			problems = append(problems, "`"+allowSetting+"` must be on or off")
 		}
 	}
 	if v, ok := raw["defaultTtl"]; ok && string(v) != "null" {

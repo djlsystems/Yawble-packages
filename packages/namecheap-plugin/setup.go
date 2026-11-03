@@ -102,7 +102,7 @@ func (p *plugin) setup() string {
 				fmt.Sprintf("Take %s out of the domains setting, or use the API user and key of the Namecheap account that holds it.", d))
 		case !a.OurDNS:
 			miss(d+" is in the account but does not use Namecheap DNS",
-				fmt.Sprintf("In Namecheap, Domain List, %s, Manage, Nameservers, choose Namecheap BasicDNS - only if its records are meant to be served by Namecheap: switching moves where the domain's records come from.", d))
+				fmt.Sprintf("In Namecheap, Domain List, %s, Manage, Nameservers, choose Namecheap BasicDNS (or, with Allow nameserver changes on, send `setdefault %s`) - only if its records are meant to be served by Namecheap: switching moves where the domain's records come from.", d, d))
 		default:
 			ok(d + " is in the account and uses Namecheap DNS")
 		}
@@ -112,6 +112,9 @@ func (p *plugin) setup() string {
 		out = append(out, "mode     apply: changes are made")
 	} else {
 		out = append(out, "mode     dryrun: changes are shown, not made; a person sets mode to apply to make them")
+	}
+	if p.cfg.AllowNameserverChanges {
+		out = append(out, "nameservers on: setcustom and setdefault may change a listed domain's nameservers (setting Allow nameserver changes)")
 	}
 	if p.cfg.Sandbox {
 		out = append(out, "sandbox  on: every call goes to Namecheap's sandbox, with the sandbox account's user and key")
