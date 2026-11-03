@@ -60,6 +60,7 @@ All are set by a person.
 | `mode` | `dryrun` | `dryrun` answers each change as the records before and after and changes nothing; `apply` makes it. |
 | `defaultTtl` (advanced) | `1799` | The TTL in seconds (60 to 60000) `ensure` gives a record it adds when the command names none. 1799 is Namecheap's Automatic. A ttl the command names always wins; a value out of range is refused, naming `defaultTtl`. |
 | `clientIp` (advanced) | empty | Not used with a Namecheap connection: its Whitelisted IP is required and is always the `ClientIp` sent. Used only when the slot holds an Other API-key connection with `apiUser` and `apiKey` fields and no `clientIp` field: then this address is sent as `ClientIp`, and when it is empty too the plugin finds the address by asking `api.ipify.org`. The address must be on the allow-list. |
+| `allowNameserverChanges` ("Allow nameserver changes") | off | Lets `setcustom`, `setdefault` and `restore` of a nameserver backup change a listed domain's nameservers. While off they are refused in dry run and apply alike, naming this setting; `nameservers <domain>` reads at any time. |
 | `sandbox` (advanced) | off | Calls Namecheap's sandbox API (https://www.sandbox.namecheap.com) instead of the real one. The sandbox has its own account, API access page, key and allow-list. |
 
 Connection: `namecheap`, required - a Namecheap API-key connection (API user, API key, Whitelisted
@@ -76,6 +77,13 @@ IP, all three required; the Whitelisted IP is the `ClientIp` sent), set in Team 
   type (`URL`, `URL301` or `FRAME`): `remove example.com URL @` removes the redirect on the domain
   itself, so an app's A record can take its place. Only removal: a redirect is never added or changed.
 - `restore <domain> <backup id>` - puts back the records a backup holds.
+- `nameservers <domain>` - the domain's nameserver mode (Namecheap BasicDNS, other Namecheap DNS,
+  or custom nameservers) and its nameservers, from `domains.dns.getList`, and its newest nameserver
+  backups. It works in every mode and with nameserver changes off.
+- `setcustom <domain> <nameserver> <nameserver> [...]` - delegates the domain to custom nameservers
+  (`domains.dns.setCustom`), names separated by spaces or commas. Needs `allowNameserverChanges`.
+- `setdefault <domain>` - puts the domain back on Namecheap BasicDNS (`domains.dns.setDefault`).
+  Needs `allowNameserverChanges`.
 - `check <domain> <host> <type>` - asks each of the domain's authoritative name servers directly
   what it serves for that name and type (or that it serves nothing), with the TTL, and the zone's
   negative TTL from its SOA: how long a look-up made before the name existed stays cached as "no
@@ -121,19 +129,70 @@ holds records only: never the API user or key.
   removed), `backupId`, `live` (true when the name servers serve this change). One per record a change in apply mode wrote, at most 25 per command; `changed`
   covers the rest. The Monitor shows each as a DNS line such as `TXT _dmarc.example.com`, marked added,
   changed or removed. Never for a list, a dry run or a refusal.
-- `plugin.namecheap-plugin.refused`: `command`, `domain` when one was named, `reason`.
+- `plugin.namecheap-plugin.nameservers`: `domain`, `command` (setcustom, setdefault or restore),
+  `action` (always `changed`), `modeBefore`, `modeAfter`, `before`, `after` (the nameservers),
+  `backupId`. Only for a nameserver change made in apply mode and read back; never for a read, a dry
+  run, a refusal or a no-op. The Monitor shows it as `Nameservers of <domain>: <mode after>`, marked
+  changed.
+- `plugin.namecheap-plugin.refused`: `command`, `domain` when one was named, `reason`. Record
+  commands only: the nameserver commands never publish it.
 
 ## Build and test
 
 ```sh
-packages/namecheap-plugin/build.sh ~/plugins-build/namecheap-plugin/3.0.0   # one installable version
+packages/namecheap-plugin/build.sh ~/plugins-build/namecheap-plugin/3.1.0   # one installable version
 (cd packages/namecheap-plugin && go test ./...)                              # against a fake Namecheap API and fake name servers
 ```
 
-`scripts/build.sh` puts the package zip in `dist/namecheap-plugin-3.0.0.zip`. The tests run the plugin
+`scripts/build.sh` puts the package zip in `dist/namecheap-plugin-3.1.0.zip`. The tests run the plugin
 against a fake Namecheap API, a fake address service and two fake authoritative name servers on the
 test machine's loopback address, with a test clock so no test waits the 60 s; they never reach the
-network.
+network. The nameserver tests replace the resolver too (`resolveHost`), so none uses real DNS.
+
+## New in 3.1.0
+
+- **Nameserver changes.** `nameservers <domain>` reads the domain's mode and nameservers from
+  `domains.dns.getList`, in every mode: **Namecheap BasicDNS** (`IsUsingOurDNS` true and the
+  nameservers `dns1.registrar-servers.com` and `dns2.registrar-servers.com`), **other Namecheap
+  DNS** (`IsUsingOurDNS` true with other nameservers, such as PremiumDNS), or **custom
+  nameservers** (`IsUsingOurDNS` false). `setcustom <domain> <ns> <ns> [...]` sends
+  `domains.dns.setCustom` with `SLD`, `TLD` and `Nameservers` (comma-separated, in the order given);
+  `setdefault <domain>` sends `domains.dns.setDefault` with `SLD` and `TLD`.
+- **A person turns it on.** The new setting **Allow nameserver changes** (`allowNameserverChanges`,
+  set by a person, default off). While it is off, `setcustom`, `setdefault` and a nameserver
+  `restore` are refused in dry run as well as apply, with a sentence naming the setting: the same
+  way a domain missing from `domains` is refused in every mode. Reads still work.
+- **Dry run and apply as for records.** In `dryrun` the answer names the nameservers now and after
+  and sends nothing. In `apply` it saves a backup first, sends the change, reads the nameservers back
+  and checks them, then answers.
+- **One-command rollback.** Before an applied change the plugin saves the domain's mode and
+  nameservers as a backup beside the record backups (`namecheap-backups/<domain>/<id>.json`, with
+  `"kind": "nameservers"`), and the answer names the exact command: `restore <domain> <backup id>`.
+  It puts the domain back the way it was in every direction: a backup taken on BasicDNS is
+  restored with `setDefault`, any other with `setCustom` and the saved nameservers. A restore saves
+  what it replaces first, so it can be undone the same way. When the domain was on Namecheap DNS,
+  its host records are saved as an ordinary record backup too (Namecheap says a nameserver switch
+  may not carry host records over); the answer names it.
+- **What it refuses, by name, before sending anything:** a domain not in the account (`getList`
+  answers 2019166 or 2016166), a domain not in `domains`, fewer than 2 or more than 12
+  nameservers (5 for .MX, 4 for .TO, 6 for .CA), a list over Namecheap's 1200 characters, a name
+  that is not a hostname (an address, a URL, a single label), the same name twice (compared without
+  case and without a trailing dot), BasicDNS's own two names (use `setdefault`), and a custom
+  nameserver that does not resolve. Setting the nameservers the domain already has, in any order,
+  and `setdefault` on a domain already on BasicDNS, are no-ops that say so.
+- **The limit of 12.** Namecheap's API reference for `domains.dns.setCustom` documents
+  `Nameservers` only as a comma-separated string of at most 1200 characters, with no count, and its
+  guide "How to Change DNS For a Domain" asks for at least two and names registry caps for .MX (5),
+  .TO (4) and .CA (6). The 12 is the count of the registry interface behind Namecheap's API (eNom's
+  NS1 to NS12, the backend its setCustom error codes name).
+- **What the answer says plainly.** While a domain is on custom nameservers, its Namecheap host
+  records are no longer served (and Namecheap's URL redirects, email forwarding and Dynamic DNS stop
+  working for it). Delegation changes can take up to 48 hours to spread.
+- **Event.** `plugin.namecheap-plugin.nameservers`, with a Monitor hint (icon `dns`, action
+  `changed`), only for an applied change; never for a read, a dry run, a refusal or a no-op.
+- **What getList cannot tell apart.** It says only whether Namecheap's own DNS is used and which
+  nameservers: PremiumDNS and FreeDNS are both "other Namecheap DNS", and Namecheap Web Hosting DNS
+  (set as nameservers like any provider's) reads as custom.
 
 ## 3.0.0
 

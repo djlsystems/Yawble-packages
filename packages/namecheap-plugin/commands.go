@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const commandList = "setup, list <domain>, ensure <domain> <type> <host> <value> [ttl] [mxpref], remove <domain> <type> <host> [value], restore <domain> <backup id>, check <domain> <host> <type>"
+const commandList = "setup, list <domain>, ensure <domain> <type> <host> <value> [ttl] [mxpref], remove <domain> <type> <host> [value], restore <domain> <backup id>, check <domain> <host> <type>, nameservers <domain>, setcustom <domain> <nameserver> <nameserver> [...], setdefault <domain>"
 
 func unknownCommand(word string) string {
 	if word == "" {
@@ -66,6 +66,7 @@ func (p *plugin) dispatch(text string) (string, error) {
 	cmd, args := strings.ToLower(words[0]), words[1:]
 
 	var out string
+	p.nsCommand = cmd == "nameservers" || cmd == "setcustom" || cmd == "setdefault"
 	switch cmd {
 	case "setup":
 		return p.setup(), nil
@@ -79,10 +80,18 @@ func (p *plugin) dispatch(text string) (string, error) {
 		out, err = p.restore(args)
 	case "check":
 		out, err = p.check(args)
+	case "nameservers":
+		out, err = p.nameservers(args)
+	case "setcustom":
+		out, err = p.setcustom(args)
+	case "setdefault":
+		out, err = p.setdefault(args)
 	default:
 		return "", refusal(unknownCommand(words[0]))
 	}
-	if err != nil {
+	// A nameserver command publishes only its applied change: no refused event (restore of a
+	// nameserver backup sets nsCommand once it knows the backup's kind).
+	if err != nil && !p.nsCommand {
 		domain := ""
 		if len(args) > 0 {
 			domain = normaliseDomain(args[0])
@@ -120,7 +129,7 @@ func (p *plugin) list(args []string) (string, error) {
 		return "", err
 	}
 	s := fmt.Sprintf("%s: %d records on Namecheap DNS (mail setting %s, mode %s).\n%s", domain, len(set.Records), orNone(set.EmailType), p.cfg.Mode, lines(set.Records))
-	if ids := p.recentBackups(domain, 5); len(ids) > 0 {
+	if ids := p.recentBackups(domain, 5, ""); len(ids) > 0 {
 		s += "\nNewest backups: " + strings.Join(ids, ", ") + "."
 	}
 	return s, nil
@@ -221,6 +230,13 @@ func (p *plugin) restore(args []string) (string, error) {
 	b, err := p.loadBackup(domain, args[1])
 	if err != nil {
 		return "", err
+	}
+	if b.Kind == kindNameservers {
+		p.nsCommand = true
+		return p.restoreNS(domain, b)
+	}
+	if b.Kind != "" {
+		return "", refusal(fmt.Sprintf("Refused: backup %s for %s is of a kind this version does not know (%s). Nothing was changed.", b.ID, domain, b.Kind))
 	}
 	set, err := p.readSet(domain)
 	if err != nil {

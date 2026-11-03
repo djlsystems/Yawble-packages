@@ -17,6 +17,8 @@ type settings struct {
 	Sandbox  bool
 	// DefaultTTL is the ttl ensure gives a record it adds when the command names none.
 	DefaultTTL int
+	// AllowNameserverChanges lets setcustom, setdefault and a nameserver restore run (person-only).
+	AllowNameserverChanges bool
 }
 
 // secrets are the namecheap connection's fields. ClientIP is its Whitelisted IP, "" when the
@@ -53,6 +55,11 @@ func parseSettings(raw map[string]json.RawMessage) (settings, string) {
 	if v, ok := raw["sandbox"]; ok && string(v) != "null" {
 		if json.Unmarshal(v, &s.Sandbox) != nil {
 			problems = append(problems, "`sandbox` must be on or off")
+		}
+	}
+	if v, ok := raw[allowSetting]; ok && string(v) != "null" {
+		if json.Unmarshal(v, &s.AllowNameserverChanges) != nil {
+			problems = append(problems, "`"+allowSetting+"` must be on or off")
 		}
 	}
 	if v, ok := raw["defaultTtl"]; ok && string(v) != "null" {

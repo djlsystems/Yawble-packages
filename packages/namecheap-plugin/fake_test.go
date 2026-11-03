@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,7 +18,9 @@ import (
 	"time"
 )
 
-// A fake Namecheap API: getList, getHosts and setHosts over the account's domains, with the checks
+// A fake Namecheap API: getList, getHosts, setHosts and the nameserver calls (dns.getList,
+// dns.setCustom, dns.setDefault) over the account's domains, answered as Namecheap's API reference
+// shows them, with the checks
 // Namecheap makes on every call (API user and key, API access, the allow-list). No test reaches the
 // network.
 
@@ -31,6 +34,9 @@ type fakeDomain struct {
 	ourDNS    bool
 	emailType string
 	hosts     []xmlHost
+	// nameservers is what dns.getList names: empty means BasicDNS's two when ourDNS, and is the
+	// custom nameservers when not.
+	nameservers []string
 }
 
 type fakeNamecheap struct {
@@ -41,10 +47,14 @@ type fakeNamecheap struct {
 	accessOff bool
 	allowed   map[string]bool
 
-	failGetHosts bool   // every getHosts answers an error
-	failSetHosts bool   // every setHosts answers an error
-	dropOnSet    string // a host name setHosts silently loses
-	echoKey      bool   // error answers carry the key, as a careless API might
+	failGetHosts bool                // every getHosts answers an error
+	failSetHosts bool                // every setHosts answers an error
+	failSetNS    bool                // every setCustom and setDefault answers an error
+	ignoreSetNS  bool                // setCustom and setDefault answer Updated="true" and change nothing
+	notOwned     string              // a domain dns.getList says is not associated with the account
+	params       []map[string]string // each call's form, without the global parameters
+	dropOnSet    string              // a host name setHosts silently loses
+	echoKey      bool                // error answers carry the key, as a careless API might
 
 	commands []string    // each call's Command
 	at       []time.Time // each call's time on the test clock
@@ -98,7 +108,7 @@ func (f *fakeNamecheap) fail(w http.ResponseWriter, number, message string) {
 		message += " (key " + testKey + ")"
 	}
 	fmt.Fprintf(w, `<?xml version="1.0" encoding="utf-8"?>
-<ApiResponse Status="ERROR"><Errors><Error Number="%s">%s</Error></Errors><Warnings /><RequestedCommand /></ApiResponse>`, number, xmlEscape(message))
+<ApiResponse xmlns="http://api.namecheap.com/xml.response" Status="ERROR"><Errors><Error Number="%s">%s</Error></Errors><Warnings /><RequestedCommand /></ApiResponse>`, number, xmlEscape(message))
 }
 
 func xmlEscape(s string) string {
@@ -119,6 +129,15 @@ func (f *fakeNamecheap) serve(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	cmd := r.PostForm.Get("Command")
 	f.commands = append(f.commands, cmd)
+	own := map[string]string{}
+	for k := range r.PostForm {
+		switch k {
+		case "ApiUser", "ApiKey", "UserName", "ClientIp", "Command":
+		default:
+			own[k] = r.PostForm.Get(k)
+		}
+	}
+	f.params = append(f.params, own)
 	if f.clock != nil {
 		f.at = append(f.at, f.clock.t)
 	}
@@ -136,7 +155,7 @@ func (f *fakeNamecheap) serve(w http.ResponseWriter, r *http.Request) {
 	d := f.domains[domain]
 	ok := func(inner string) {
 		fmt.Fprintf(w, `<?xml version="1.0" encoding="utf-8"?>
-<ApiResponse Status="OK"><Errors /><Warnings /><RequestedCommand>%s</RequestedCommand><CommandResponse Type="%s">%s</CommandResponse></ApiResponse>`, strings.ToLower(cmd), cmd, inner)
+<ApiResponse xmlns="http://api.namecheap.com/xml.response" Status="OK"><Errors /><Warnings /><RequestedCommand>%s</RequestedCommand><CommandResponse Type="%s">%s</CommandResponse></ApiResponse>`, strings.ToLower(cmd), cmd, inner)
 	}
 
 	switch cmd {
@@ -209,6 +228,50 @@ func (f *fakeNamecheap) serve(w http.ResponseWriter, r *http.Request) {
 			d.emailType = e
 		}
 		ok(fmt.Sprintf(`<DomainDNSSetHostsResult Domain="%s" IsSuccess="true"><Warnings /></DomainDNSSetHostsResult>`, domain))
+	case "namecheap.domains.dns.getList":
+		if domain == f.notOwned {
+			f.fail(w, "2016166", "Domain is not associated with your account")
+			return
+		}
+		if d == nil {
+			f.fail(w, "2019166", "Domain not found")
+			return
+		}
+		names := d.nameservers
+		if d.ourDNS && len(names) == 0 {
+			names = []string{"dns1.registrar-servers.com", "dns2.registrar-servers.com"}
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, `<DomainDNSGetListResult Domain="%s" IsUsingOurDNS="%t">`, domain, d.ourDNS)
+		for _, n := range names {
+			fmt.Fprintf(&b, "<Nameserver>%s</Nameserver>", xmlEscape(n))
+		}
+		b.WriteString("</DomainDNSGetListResult>")
+		ok(b.String())
+	case "namecheap.domains.dns.setCustom", "namecheap.domains.dns.setDefault":
+		if d == nil {
+			f.fail(w, "2019166", "Domain not found")
+			return
+		}
+		if f.failSetNS {
+			f.fail(w, "3050900", "Unknown error from Enom")
+			return
+		}
+		result := "DomainDNSSetDefaultResult"
+		if cmd == "namecheap.domains.dns.setCustom" {
+			result = "DomainDNSSetCustomResult"
+			list := r.PostForm.Get("Nameservers")
+			if list == "" {
+				f.fail(w, "2011166", "Parameter Nameservers is missing")
+				return
+			}
+			if !f.ignoreSetNS {
+				d.ourDNS, d.nameservers = false, strings.Split(list, ",")
+			}
+		} else if !f.ignoreSetNS {
+			d.ourDNS, d.nameservers = true, nil
+		}
+		ok(fmt.Sprintf(`<%s Domain="%s" Updated="true" />`, result, domain))
 	default:
 		f.fail(w, "1010900", "Unknown command")
 	}
@@ -241,6 +304,10 @@ type harness struct {
 	clock *fakeClock
 	cfg   map[string]any
 	sec   map[string]string // the namecheap connection's fields; nil binds no connection
+	// noAddress names the nameservers the fake resolver finds no address for; every other name
+	// resolves. The real resolver is never used.
+	noAddress map[string]bool
+	resolved  []string // each name the fake resolver was asked
 }
 
 func newHarness(t *testing.T) *harness {
@@ -251,11 +318,22 @@ func newHarness(t *testing.T) *harness {
 	oldServers := authServers
 	authServers = func(string) ([]nameServer, error) { return []nameServer{ns1.server(), ns2.server()}, nil }
 	t.Cleanup(func() { authServers = oldServers })
-	return &harness{
+	h := &harness{
 		t: t, fake: f, ns1: ns1, ns2: ns2, dir: t.TempDir(), clock: c,
-		cfg: map[string]any{"domains": []string{"example.com"}, "mode": "apply"},
-		sec: map[string]string{"apiUser": testUser, "apiKey": testKey},
+		cfg:       map[string]any{"domains": []string{"example.com"}, "mode": "apply"},
+		sec:       map[string]string{"apiUser": testUser, "apiKey": testKey},
+		noAddress: map[string]bool{},
 	}
+	oldResolve := resolveHost
+	resolveHost = func(name string) ([]string, error) {
+		h.resolved = append(h.resolved, name)
+		if h.noAddress[name] {
+			return nil, &net.DNSError{Err: "no such host", Name: name, IsNotFound: true}
+		}
+		return []string{"192.0.2.53"}, nil
+	}
+	t.Cleanup(func() { resolveHost = oldResolve })
+	return h
 }
 
 type runResult struct {

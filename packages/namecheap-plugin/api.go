@@ -87,6 +87,17 @@ type apiResponse struct {
 			Name     string `xml:"Name,attr"`
 			IsOurDNS string `xml:"IsOurDNS,attr"`
 		} `xml:"DomainGetListResult>Domain"`
+		Nameservers struct {
+			Domain        string   `xml:"Domain,attr"`
+			IsUsingOurDNS string   `xml:"IsUsingOurDNS,attr"`
+			Nameservers   []string `xml:"Nameserver"`
+		} `xml:"DomainDNSGetListResult"`
+		SetCustom struct {
+			Updated string `xml:"Updated,attr"`
+		} `xml:"DomainDNSSetCustomResult"`
+		SetDefault struct {
+			Updated string `xml:"Updated,attr"`
+		} `xml:"DomainDNSSetDefaultResult"`
 		Paging struct {
 			TotalItems  int `xml:"TotalItems"`
 			CurrentPage int `xml:"CurrentPage"`
@@ -264,6 +275,49 @@ func (c *client) setHosts(domain, emailType string, records []record) error {
 	}
 	if !strings.EqualFold(r.CommandResponse.SetHosts.IsSuccess, "true") {
 		return &apiError{Message: "Namecheap did not confirm the write (IsSuccess was not true)."}
+	}
+	return nil
+}
+
+// getNameservers reads a domain's delegation (domains.dns.getList).
+func (c *client) getNameservers(domain string) (*nsState, error) {
+	sld, tld := splitDomain(domain)
+	r, err := c.call("namecheap.domains.dns.getList", url.Values{"SLD": {sld}, "TLD": {tld}})
+	if err != nil {
+		return nil, err
+	}
+	l := r.CommandResponse.Nameservers
+	s := &nsState{OurDNS: strings.EqualFold(l.IsUsingOurDNS, "true"), Servers: []string{}}
+	for _, n := range l.Nameservers {
+		if n = normaliseDomain(n); n != "" {
+			s.Servers = append(s.Servers, n)
+		}
+	}
+	return s, nil
+}
+
+// setCustom delegates a domain to custom nameservers (domains.dns.setCustom), in the order given.
+func (c *client) setCustom(domain string, servers []string) error {
+	sld, tld := splitDomain(domain)
+	r, err := c.call("namecheap.domains.dns.setCustom", url.Values{"SLD": {sld}, "TLD": {tld}, "Nameservers": {strings.Join(servers, ",")}})
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(r.CommandResponse.SetCustom.Updated, "true") {
+		return &apiError{Message: "Namecheap did not confirm the change (Updated was not true)."}
+	}
+	return nil
+}
+
+// setDefault puts a domain back on Namecheap BasicDNS (domains.dns.setDefault).
+func (c *client) setDefault(domain string) error {
+	sld, tld := splitDomain(domain)
+	r, err := c.call("namecheap.domains.dns.setDefault", url.Values{"SLD": {sld}, "TLD": {tld}})
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(r.CommandResponse.SetDefault.Updated, "true") {
+		return &apiError{Message: "Namecheap did not confirm the change (Updated was not true)."}
 	}
 	return nil
 }

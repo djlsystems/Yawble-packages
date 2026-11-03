@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "namecheap-plugin",
   "name": "Namecheap DNS",
-  "description": "Adds and changes DNS records for the domains you list, registered at Namecheap and using Namecheap DNS, without ever losing an existing record.\n\nIt sets A, AAAA, CNAME, MX, TXT and CAA records: a custom domain's verification and certificate records for a hosted app, or a mailbox's MX, SPF, DKIM and DMARC records. It may also remove a URL redirect record, so an app's A record can take the host's place, but never adds or changes one. Every change reads the domain's current records, changes only the one named, saves the records before the change as a backup that restore puts back, and reads them again after writing to check every earlier record is still there. After each change it asks the domain's own name servers directly, for up to a minute, and says per record whether it is live on them; the check command asks them about any name. Dry run by default: it shows the records before and after and changes nothing until you set mode to apply.\n\nThe setup command checks that API access is on, that this computer's address is on Namecheap's API allow-list (naming the address), and that each listed domain is in the account and on Namecheap DNS.",
-  "version": "3.0.0",
+  "description": "Adds and changes DNS records for the domains you list, registered at Namecheap and using Namecheap DNS, without ever losing an existing record, and, when a person allows it, moves a domain to custom nameservers or back to Namecheap BasicDNS.\n\nIt sets A, AAAA, CNAME, MX, TXT and CAA records: a custom domain's verification and certificate records for a hosted app, or a mailbox's MX, SPF, DKIM and DMARC records. It may also remove a URL redirect record, so an app's A record can take the host's place, but never adds or changes one. Every change reads the domain's current records, changes only the one named, saves the records before the change as a backup that restore puts back, and reads them again after writing to check every earlier record is still there. After each change it asks the domain's own name servers directly, for up to a minute, and says per record whether it is live on them; the check command asks them about any name. Dry run by default: it shows the records before and after and changes nothing until you set mode to apply.\n\nWith Allow nameserver changes on, setcustom and setdefault change a listed domain's nameservers under the same dry run and apply rules, saving the nameservers before as a backup that restore puts back; nameservers reads them at any time.\n\nThe setup command checks that API access is on, that this computer's address is on Namecheap's API allow-list (naming the address), and that each listed domain is in the account and on Namecheap DNS.",
+  "version": "3.1.0",
   "protocol": "harness.member/1",
   "executable": {
     "path": "bin/linux-x64/namecheap",
@@ -52,6 +52,13 @@
       "setBy": "person",
       "description": "Not used with a Namecheap connection, whose required Whitelisted IP is the address sent. Used only when the namecheap slot holds an Other API-key connection with no clientIp field: this computer's public IPv4 address, as on Namecheap's API allow-list. Empty here too: the plugin finds it itself.",
       "advanced": true
+    },
+    "allowNameserverChanges": {
+      "label": "Allow nameserver changes",
+      "type": "bool",
+      "default": false,
+      "setBy": "person",
+      "description": "Lets this member change a listed domain's nameservers: setcustom (custom nameservers), setdefault (back to Namecheap BasicDNS) and restore of a nameserver backup. While off, those are refused in dry run and apply alike; nameservers <domain> still reads. While a domain is on custom nameservers its Namecheap host records are not served."
     },
     "sandbox": {
       "label": "Use the sandbox",
@@ -119,12 +126,32 @@
       },
       {
         "type": "refused",
-        "summary": "A command was refused or failed: the domain is not listed or not on Namecheap DNS, the records could not be read, the arguments were wrong, or a write failed.",
+        "summary": "A record command was refused or failed: the domain is not listed or not on Namecheap DNS, the records could not be read, the arguments were wrong, or a write failed. The nameserver commands (nameservers, setcustom, setdefault, restore of a nameserver backup) never publish it.",
         "highVolume": false,
         "fields": [
           { "name": "command", "kind": "string", "summary": "The command: list, ensure, remove, restore or check." },
           { "name": "domain", "kind": "string", "summary": "The domain the command named, when it named one." },
           { "name": "reason", "kind": "string", "summary": "Why, in the plugin's words." }
+        ]
+      },
+      {
+        "type": "nameservers",
+        "summary": "A domain's nameservers were changed (setcustom, setdefault, or restore of a nameserver backup, in apply mode), sent and read back. Never for a read, a dry run, a refusal or a no-op.",
+        "highVolume": false,
+        "monitor": {
+          "icon": "dns",
+          "action": "changed",
+          "label": "Nameservers of {domain}: {modeAfter}"
+        },
+        "fields": [
+          { "name": "domain", "kind": "string", "summary": "The domain changed." },
+          { "name": "command", "kind": "string", "summary": "setcustom, setdefault or restore." },
+          { "name": "action", "kind": "string", "summary": "Always changed." },
+          { "name": "modeBefore", "kind": "string", "summary": "Namecheap BasicDNS, other Namecheap DNS, or custom nameservers, before the change." },
+          { "name": "modeAfter", "kind": "string", "summary": "The same, after the change, as read back." },
+          { "name": "before", "kind": "list", "summary": "The nameservers before." },
+          { "name": "after", "kind": "list", "summary": "The nameservers after, as read back." },
+          { "name": "backupId", "kind": "string", "summary": "The backup of the nameservers before; restore <domain> <backupId> puts them back." }
         ]
       }
     ]

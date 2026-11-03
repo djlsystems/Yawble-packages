@@ -1,6 +1,6 @@
 ---
 name: plugin-namecheap-plugin
-description: Use when you need to add, change, list or remove DNS records (A, AAAA, CNAME, MX, TXT, CAA), or remove a URL redirect record, for a domain at Namecheap, check whether its name servers serve a record yet, check Namecheap setup, or put back a domain's records from a backup through the Namecheap plugin member - its commands, dry run versus apply, the records a hosted app's custom domain and a mailbox usually need, and what its refusals mean.
+description: Use when you need to add, change, list or remove DNS records (A, AAAA, CNAME, MX, TXT, CAA), or remove a URL redirect record, for a domain at Namecheap, check whether its name servers serve a record yet, check Namecheap setup, put back a domain's records from a backup, or read or change a domain's nameservers (custom nameservers or Namecheap BasicDNS, and their rollback) through the Namecheap plugin member - its commands, dry run versus apply, the records a hosted app's custom domain and a mailbox usually need, and what its refusals mean.
 roles: manager member
 ---
 
@@ -44,6 +44,10 @@ for the domain itself, or the name below it: `www`, `_dmarc`, `selector1._domain
   itself. A redirect is only ever removed, never added or changed.
 - `restore <domain> <backup id>` - puts back the records a backup holds. It saves the records it
   replaces as a new backup first, so a restore can be undone the same way.
+- `nameservers <domain>` - the domain's nameserver mode and nameservers; see Nameservers below.
+- `setcustom <domain> <nameserver> <nameserver> [...]` - delegates the domain to custom
+  nameservers; see Nameservers below.
+- `setdefault <domain>` - puts the domain back on Namecheap BasicDNS; see Nameservers below.
 - `check <domain> <host> <type>` - asks each of the domain's authoritative name servers directly
   what it serves for that name and type, with the TTL, or that it serves nothing (`no such name`,
   or the name exists without that type), and the zone's negative TTL from its SOA. It ends `Served
@@ -58,6 +62,36 @@ Examples:
     remove example.com URL @ https://www.example.net
     restore example.com 20260101T120000Z
     check example.com asuid TXT
+
+## Nameservers
+
+- `nameservers <domain>` reads, in every mode and with changes off: `Namecheap BasicDNS`
+  (dns1/dns2.registrar-servers.com), `other Namecheap DNS` (Namecheap's own DNS but not BasicDNS,
+  such as PremiumDNS; Namecheap does not say which), or `custom nameservers`, with the names.
+- `setcustom example.com ns1.example.net ns2.example.net` moves the domain to those nameservers;
+  `setdefault example.com` moves it back to Namecheap BasicDNS. Both need the person-only setting
+  **Allow nameserver changes** (`allowNameserverChanges`). While it is off they are refused even in
+  dry run, naming the setting: ask the person to turn it on; you cannot.
+- Dry run answers `from <mode>: <names>` and `to <mode>: <names>` and sends nothing. Show it to
+  the person, who sets mode to apply; then send the same command again.
+- An applied change answers the backup id and the exact rollback: `restore <domain> <backup id>`.
+  It works whichever way the change went (custom to custom, custom to BasicDNS, BasicDNS to
+  custom). Keep the id; send that one command to roll back. When the domain was on Namecheap DNS,
+  the answer also names a record backup of its host records.
+- **Say this to the person before applying a move to custom nameservers:** while the domain is on
+  custom nameservers its Namecheap host records are no longer served, so every record it needs
+  (web, mail, verification) must already be at the new DNS provider; Namecheap's URL redirects and
+  email forwarding stop too. Delegation changes can take up to 48 hours to spread. After a move back
+  to BasicDNS, `list` the domain: Namecheap may not keep host records across a switch, and the
+  record backup named puts them back.
+- Refused by name, before anything is sent: a domain not in the account or not in `domains`; fewer
+  than 2 or more than 12 nameservers (5 for .MX, 4 for .TO, 6 for .CA); a name that is not a
+  hostname; a name given twice (case and a trailing dot ignored); Namecheap BasicDNS's own names
+  (use `setdefault`); a nameserver that does not resolve (fix it at the DNS provider first).
+- The same nameservers again, or `setdefault` on a domain already on BasicDNS, changes nothing and
+  says so.
+- A record command (`list`, `ensure`, `remove`, record `restore`) refuses a domain on custom
+  nameservers: its records are served by that provider.
 
 ## Dry run versus apply
 
@@ -143,7 +177,11 @@ refuses it, saying so. Only DKIM (when the provider does not already hold it) an
   `recordType`, `host`, `value` (the public DNS value as written), `action`, `backupId` and `live`. At most 25
   per command; `changed` covers the rest. The Monitor shows each as `<type> <host>.<domain>` marked
   added, changed or removed; a list, a dry run or a refusal shows nothing there.
-- `plugin.namecheap-plugin.refused` - `command`, `domain` when one was named, and `reason`.
+- `plugin.namecheap-plugin.nameservers` - `domain`, `command`, `action` (changed), `modeBefore`,
+  `modeAfter`, `before`, `after`, `backupId`. Only for a nameserver change made in apply; never for
+  a read, a dry run, a refusal or a no-op.
+- `plugin.namecheap-plugin.refused` - `command`, `domain` when one was named, and `reason`. Record
+  commands only; the nameserver commands never publish it.
 
 ## Refusals and failures
 
