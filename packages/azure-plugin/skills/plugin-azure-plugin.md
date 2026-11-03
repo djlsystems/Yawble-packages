@@ -186,7 +186,8 @@ Container Apps:
   same name has its value replaced. Same connections, matching and refusals as `containerapp
   create` (see Secrets), all before Azure is asked; Key Vault addresses are refused here. The
   variables go on the container named as the app or the only one; `container=<name>` picks
-  another. It writes one PATCH of `configuration.secrets` and `template.containers` only; to keep
+  another. It writes one PATCH of `configuration.secrets` and `template` only (scale, init
+  containers and volumes go back exactly as Azure answered them); to keep
   the app's other value secrets it reads them with the app's own `listSecrets`, in apply only, and
   sends them back unchanged, never out. When the answer says to, run `containerapp restart <app>`.
   A later Bicep deploy replaces the app's secrets: run it again after each deploy, or use
@@ -234,7 +235,9 @@ The first `deploy` of a Bicep file downloads the pinned bicep compiler (about 12
   kind's icon, the action and the resource's name.
 - `plugin.azure-plugin.refused` - `command` and `reason`.
 
-None ever holds a token, key or connection string.
+None ever holds a token, key or connection string. Every value the member is given is hidden
+from what it writes, whatever characters it holds; a value under four characters is hidden only
+where it stands as a word of its own in what Azure answers.
 
 ## Secrets
 

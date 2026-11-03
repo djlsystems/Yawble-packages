@@ -21,6 +21,12 @@ until you set `mode` to `apply`.
 - **`deploy ... param=<NAME>=<connection>.<field>`** fills a template's `@secure()` parameter from a
   connection's field, so a template whose app reads its secrets from secure parameters keeps them on
   every redeploy.
+- **Redaction finds a value whatever characters it holds.** Each text the member writes is checked
+  as its plain text before it is written as JSON, so a password with `&`, `<`, `>`, `"` or `\\` that
+  Azure quotes back in an error is hidden like any other. Before 3.3.0 such a value was written out
+  in full. A value under four characters is hidden where it stands as a word of its own in what
+  Azure answers - an error quoting it - but not elsewhere, since hiding it everywhere would blank
+  ordinary words.
 
 ## New in 3.2.0
 
@@ -455,9 +461,11 @@ the container named as the app, or the only container; name another with `contai
 every change it needs `mode` set to `apply`; in whatif it says, by name only, which secrets and
 variables it would add or change and which secrets it keeps.
 
-What it writes: one PATCH of the app holding `configuration.secrets` and `template.containers`, and
-nothing else, so Azure leaves scale, ingress, registries, identity and the rest as they are. Those
-two lists replace the app's own, so both go back whole: every container exactly as Azure answered
+What it writes: one PATCH of the app holding `configuration.secrets` and `template`, and nothing
+else, so Azure leaves ingress, registries, identity and the rest as they are. Of `template`, the
+scale (minimum and maximum replicas, rules), init containers and volumes go back exactly as Azure
+answered them: that changes nothing, and keeps them should Azure ever take the template as a whole.
+The secrets and containers lists replace the app's own, so both go back whole: every container exactly as Azure answered
 it, probes, image and resources included, with only the named variables added or changed; and every
 secret - a Key Vault one as its address and identity, a value one with its value. Azure never
 answers a secret's value when it is read, and refuses a secret with neither a value nor a Key Vault
