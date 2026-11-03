@@ -232,6 +232,9 @@ func (p *plugin) runSQL(server, db string, list []string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("batch %d: %w", i+1, err)
 		}
+		for j := range out.errors {
+			out.errors[j] = p.az.quote(out.errors[j])
+		}
 		text := describe(out)
 		if len(out.errors) > 0 {
 			done := ""

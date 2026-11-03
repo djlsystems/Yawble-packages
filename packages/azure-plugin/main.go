@@ -20,6 +20,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -440,21 +441,59 @@ func (p *plugin) emit(record any) {
 // jsonString matches one string in encoded JSON: a key or a value.
 var jsonString = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
 
-// scrubJSON scrubs every string of an encoded JSON document in its decoded form and encodes it
-// again; everything else - keys' order, numbers, layout - is left as it was.
+// scrubJSON scrubs every string value of an encoded record in its decoded form and encodes it
+// again; everything else - keys' order, numbers, layout - is left as it was. The record's shape is
+// the plugin's own and is never scrubbed: every object key (no record carries an object Azure
+// supplied, so every key is one the plugin wrote) and the record's top-level t and type values. A
+// hidden value equal to "result" or "error" so still leaves a well-formed record.
 func (p *plugin) scrubJSON(doc []byte) []byte {
-	return jsonString.ReplaceAllFunc(doc, func(lit []byte) []byte {
-		var s string
-		if json.Unmarshal(lit, &s) != nil {
-			return []byte(`"[redacted]"`)
+	var out []byte
+	depth, last := 0, 0
+	key := "" // the top-level key whose value comes next, if any
+	for _, m := range jsonString.FindAllIndex(doc, -1) {
+		between := doc[last:m[0]]
+		for _, ch := range between {
+			switch ch {
+			case '{', '[':
+				depth++
+			case '}', ']':
+				depth--
+			}
 		}
-		clean := p.scrub(s)
-		if clean == s {
-			return lit
+		out = append(out, between...)
+		lit := doc[m[0]:m[1]]
+		last = m[1]
+		isKey := len(bytes.TrimLeft(doc[m[1]:], " \t\r\n")) > 0 && bytes.TrimLeft(doc[m[1]:], " \t\r\n")[0] == ':'
+		ownType := !isKey && depth == 1 && (key == "t" || key == "type") && bytes.Equal(bytes.TrimSpace(between), []byte(":"))
+		key = ""
+		if isKey {
+			if depth == 1 {
+				_ = json.Unmarshal(lit, &key)
+			}
+			out = append(out, lit...)
+			continue
 		}
-		out, _ := json.Marshal(clean)
-		return out
-	})
+		if ownType {
+			out = append(out, lit...)
+			continue
+		}
+		out = append(out, p.scrubLiteral(lit)...)
+	}
+	return append(out, doc[last:]...)
+}
+
+// scrubLiteral scrubs one encoded JSON string as its decoded text.
+func (p *plugin) scrubLiteral(lit []byte) []byte {
+	var s string
+	if json.Unmarshal(lit, &s) != nil {
+		return []byte(`"[redacted]"`)
+	}
+	clean := p.scrub(s)
+	if clean == s {
+		return lit
+	}
+	out, _ := json.Marshal(clean)
+	return out
 }
 
 func (p *plugin) scrub(text string) string {
@@ -465,23 +504,66 @@ func (p *plugin) scrub(text string) string {
 	return credentialShaped[1].ReplaceAllString(text, "$1=[redacted]")
 }
 
-// replaceFold replaces every occurrence of old in s, in any case.
+// replaceFold replaces every occurrence of old in s, in any case. It lowers both a rune at a time
+// and keeps, for each byte of the lowered text, where its rune starts and ends in s, so a rune whose
+// lower case has another length (the Kelvin sign lowers to an ASCII k) cannot put a slice out of
+// range; a match is widened to whole runes of s.
 func replaceFold(s, old, with string) string {
-	lower, needle := strings.ToLower(s), strings.ToLower(old)
-	if len(lower) != len(s) || !strings.Contains(lower, needle) {
-		return strings.ReplaceAll(s, old, with)
+	needle, _, _ := lowerMap(old, false)
+	if needle == "" {
+		return s
+	}
+	lower, start, end := lowerMap(s, true)
+	if !strings.Contains(lower, needle) {
+		return s
 	}
 	var b strings.Builder
-	for {
-		i := strings.Index(lower, needle)
-		if i < 0 {
-			b.WriteString(s)
-			return b.String()
+	done := 0 // bytes of s already written
+	for i := 0; i <= len(lower)-len(needle); {
+		j := strings.Index(lower[i:], needle)
+		if j < 0 {
+			break
 		}
-		b.WriteString(s[:i])
+		i += j
+		from, to := start[i], end[i+len(needle)-1]
+		if from < done {
+			from = done
+		}
+		b.WriteString(s[done:from])
 		b.WriteString(with)
-		s, lower = s[i+len(old):], lower[i+len(old):]
+		done = to
+		i += len(needle)
 	}
+	b.WriteString(s[done:])
+	return b.String()
+}
+
+// lowerMap lowers s a rune at a time. With offsets it also answers, for each byte of the result,
+// the byte offsets in s where the rune it came from starts and ends. A byte that is not UTF-8 is
+// kept as it is.
+func lowerMap(s string, offsets bool) (string, []int, []int) {
+	var b strings.Builder
+	b.Grow(len(s))
+	var start, end []int
+	if offsets {
+		start, end = make([]int, 0, len(s)), make([]int, 0, len(s))
+	}
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		n := b.Len()
+		if r == utf8.RuneError && size <= 1 {
+			b.WriteByte(s[i])
+		} else {
+			b.WriteRune(unicode.ToLower(r))
+		}
+		if offsets {
+			for k := n; k < b.Len(); k++ {
+				start, end = append(start, i), append(end, i+size)
+			}
+		}
+		i += size
+	}
+	return b.String(), start, end
 }
 
 func (p *plugin) progress(status string) {

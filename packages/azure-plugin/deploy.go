@@ -286,7 +286,7 @@ func (p *plugin) deploy(args []string) (string, error) {
 		return "", err
 	}
 	if !strings.EqualFold(result.Properties.ProvisioningState, "Succeeded") {
-		return "", p.whyDeploymentFailed(rgID, d.name, fmt.Errorf("the deployment %s ended %s: %s %s", d.name, result.Properties.ProvisioningState, result.Properties.Error.Code, result.Properties.Error.Message))
+		return "", p.whyDeploymentFailed(rgID, d.name, fmt.Errorf("the deployment %s ended %s: %s %s", d.name, result.Properties.ProvisioningState, p.az.quote(result.Properties.Error.Code), p.az.quote(result.Properties.Error.Message)))
 	}
 	// Each resource's action is what the what-if said of it; a resource the what-if did not name as
 	// a create or a change gets no resource event.
@@ -399,7 +399,7 @@ func (p *plugin) whyDeploymentFailed(rgID, name string, failed error) error {
 			what = "an operation naming no resource"
 		}
 		code, message := operationError(op.Properties.StatusMessage)
-		lines = append(lines, fmt.Sprintf("- %s: %s: %s", what, code, message))
+		lines = append(lines, fmt.Sprintf("- %s: %s: %s", p.az.quote(what), p.az.quote(code), p.az.quote(message)))
 	})
 	if err != nil {
 		return fmt.Errorf("%w\nIts operations could not be read to say which failed: %v", failed, err)
@@ -569,7 +569,7 @@ func (p *plugin) whatIf(d *deployment) ([]whatIfChange, error) {
 		return nil, fmt.Errorf("the what-if's answer could not be read")
 	}
 	if result.Error.Code != "" || strings.EqualFold(result.Status, "Failed") {
-		return nil, fmt.Errorf("the what-if failed: %s %s", result.Error.Code, result.Error.Message)
+		return nil, fmt.Errorf("the what-if failed: %s %s", p.az.quote(result.Error.Code), p.az.quote(result.Error.Message))
 	}
 	return result.Properties.Changes, nil
 }
