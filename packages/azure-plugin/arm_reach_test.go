@@ -217,9 +217,9 @@ func TestAnAppSecretNoConnectionHoldsIsRefusedSayingWhereToAddIt(t *testing.T) {
 		want []string
 	}{
 		{runOpts{config: apply(nil), moved: map[string]string{"appSecret1": secretValue}}, "secret=HOOK=appSecret2",
-			[]string{"the secret HOOK reads appSecret2, which names no field of a connection bound to this member's appSecrets slot", "<connection>.<field>", "bind it to the Azure member's appSecrets slot (Connections a deployed app may use) in Team settings -> Connections"}},
+			[]string{"the secret HOOK reads appSecret2, which names no field of a connection bound to this member's appSecrets slot", "<connection>.<field>", "ask the person to add it to the team in Team settings -> Connections if it is not there yet, then bind it to the Azure member's appSecrets slot (Connections a deployed app may use) in that member's Member settings"}},
 		{runOpts{config: apply(nil)}, "secret=HOOK=appSecret3",
-			[]string{"names no field of a connection bound to this member's appSecrets slot (none is bound yet)", "Team settings -> Connections"}},
+			[]string{"names no field of a connection bound to this member's appSecrets slot (none is bound yet)", "add it to the team in Team settings -> Connections if it is not there yet, then bind it", "in that member's Member settings"}},
 		{runOpts{config: apply(nil), moved: map[string]string{"appSecret1": secretValue}}, "secret=HOOK=appSecret9",
 			[]string{"names no field of a connection"}},
 		{runOpts{config: apply(nil), moved: map[string]string{"appSecret1": secretValue}}, "secret=HOOK=appSecret01",
@@ -233,7 +233,7 @@ func TestAnAppSecretNoConnectionHoldsIsRefusedSayingWhereToAddIt(t *testing.T) {
 		assertNoValue(t, r.raw)
 	}
 	r := runPlugin(t, runOpts{config: apply(nil)}, base+"env=API_TOKEN=x"+strings.Repeat("y", 8))
-	mustContain(t, r.text(), "API_TOKEN looks like a secret", "secret=API_TOKEN=https://<vault>.vault.azure.net/secrets/<name>", "secret=API_TOKEN=<connection>.<field>", "secret=API_TOKEN=mail.password", "Team settings -> Connections")
+	mustContain(t, r.text(), "API_TOKEN looks like a secret", "secret=API_TOKEN=https://<vault>.vault.azure.net/secrets/<name>", "secret=API_TOKEN=<connection>.<field>", "secret=API_TOKEN=mail.password", "a connection a person adds to the team in Team settings -> Connections and binds to this member's appSecrets slot (Connections a deployed app may use) in its Member settings")
 	if len(w.f.writes()) != 0 {
 		t.Fatal("a refused app wrote")
 	}

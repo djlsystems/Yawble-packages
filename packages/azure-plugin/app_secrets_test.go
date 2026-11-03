@@ -44,6 +44,21 @@ func TestTheManifestHasNoAppSecretsSectionOfAnyKind(t *testing.T) {
 	if !strings.Contains(raw, `"description": "Connections a deployed app may use: `) {
 		t.Error("the appSecrets slot does not say what it is for")
 	}
+	// Each connection step names its own screen: added to the team in Team settings, bound to this
+	// slot in the member's own Member settings.
+	for _, want := range []string{
+		"Add each to the team in Team settings -> Connections, then bind as many as needed here, in this member's Member settings;",
+		"added to the team in Team settings -> Connections and bound in the Azure member's Member settings",
+	} {
+		if !strings.Contains(raw, want) {
+			t.Errorf("the manifest lacks %q", want)
+		}
+	}
+	for _, old := range []string{"Bind as many as needed in Team settings -> Connections", "and bound in Team settings -> Connections"} {
+		if strings.Contains(raw, old) {
+			t.Errorf("the manifest still says %q", old)
+		}
+	}
 	if want := []string{"imap", "login", "apikey", "website"}; strings.Join(keys.Providers, ",") != strings.Join(want, ",") || !keys.Multiple || keys.Required {
 		t.Fatalf("appSecrets = %+v", keys)
 	}
@@ -197,7 +212,7 @@ func TestAConnectionNotBoundIsRefusedNamingItAndChangesNothing(t *testing.T) {
 			t.Fatal("a connection not bound was accepted")
 		}
 		mustContain(t, r.text(), "Refused: the secret SMTP_PASSWORD reads mailbox.password, the field password of the connection mailbox, which is not bound to this member's appSecrets slot "+c.bound,
-			"ask the person to bind the connection mailbox to the Azure member's appSecrets slot (Connections a deployed app may use) in Team settings -> Connections",
+			"ask the person to add the connection mailbox to the team in Team settings -> Connections if it is not there yet, then bind it to the Azure member's appSecrets slot (Connections a deployed app may use) in that member's Member settings",
 			"never to send its value in a message", "Nothing was changed.")
 		if len(w.f.calls) != 0 {
 			t.Fatalf("Azure was called %d times", len(w.f.calls))
@@ -216,7 +231,7 @@ func TestAFieldTheConnectionLacksIsRefusedNamingItsFieldsAndChangesNothing(t *te
 		want  string
 	}{
 		{mailbox("mail", "bot@example.test", secretValue), "secret=SMTP_PASSWORD=mail.pass",
-			"Refused: the secret SMTP_PASSWORD reads mail.pass, the field pass of the connection mail, which that connection does not have or holds no value in; mail has the fields username, password, imapHost, imapPort, imapSecurity, smtpHost, smtpPort, smtpSecurity, so run containerapp create again naming another field as mail.<field>, or ask the person to add the field pass to it in Team settings -> Connections."},
+			"Refused: the secret SMTP_PASSWORD reads mail.pass, the field pass of the connection mail, which that connection does not have or holds no value in; mail has the fields username, password, imapHost, imapPort, imapSecurity, smtpHost, smtpPort, smtpSecurity, so run containerapp create again naming another field as mail.<field>, or ask the person to add the field pass to it in Admin -> Connections, where the connection is edited."},
 		{login("shop", "shopbot", otherValue), "secret=SHOP=shop.apiKey",
 			"the field apiKey of the connection shop, which that connection does not have or holds no value in; shop has the fields password, url, username,"},
 		{apiKey("stripe", "Stripe", "stripe", map[string]string{"key": keyValue, "webhook": ""}), "secret=HOOK=stripe.webhook",

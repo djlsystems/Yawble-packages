@@ -158,7 +158,7 @@ func TestAWebsiteConnectionsFieldsGoIntoTheApp(t *testing.T) {
 }
 
 // A website's saved session is never typed - Sign in on the connection keeps it - so a refusal for
-// one it does not hold yet says how it comes to exist, never to add it in Team settings.
+// one it does not hold yet says how it comes to exist, never to add it, and points at Admin -> Connections where Sign in is.
 func TestAWebsiteSessionNotYetKeptIsRefusedSayingSignInMakesIt(t *testing.T) {
 	w := newWorld(t)
 	r := runPlugin(t, runOpts{config: apply(nil), bound: []hostObject{website("Customer portal", siteValue, tokenValue)}},
@@ -167,9 +167,9 @@ func TestAWebsiteSessionNotYetKeptIsRefusedSayingSignInMakesIt(t *testing.T) {
 		t.Fatal("a session the website does not hold was accepted")
 	}
 	mustContain(t, r.text(),
-		"Refused: the secret PORTAL_SESSION reads customer portal.Session, the saved session of the website connection Customer portal, which it does not hold yet: a person makes it by opening Sign in on that connection in Team settings -> Connections and signing in to the website, and nobody types it.",
+		"Refused: the secret PORTAL_SESSION reads customer portal.Session, the saved session of the website connection Customer portal, which it does not hold yet: a person makes it by opening Sign in on that connection in Admin -> Connections and signing in to the website, and nobody types it.",
 		"Customer portal has the fields mayAct, method, password, siteUrl, token, tokenHeader, username, so run containerapp create again once the person has signed in, or naming one of those as Customer portal.<field> instead. Nothing was changed.")
-	mustNotContain(t, r.text(), "add the field", "[redacted]")
+	mustNotContain(t, r.text(), "add the field", "[redacted]", "Team settings")
 	if len(w.f.calls) != 0 {
 		t.Fatalf("Azure was called %d times", len(w.f.calls))
 	}

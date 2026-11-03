@@ -204,7 +204,7 @@ func TestTheDocsSayToReEnterTheRegistries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustContain(t, string(readme), "# Azure 3.3.0", "### Upgrading to 3.2.0",
+	mustContain(t, string(readme), "# Azure 3.3.1", "### Upgrading to 3.2.0",
 		"- Registries listed under `sharedRegistries`, the setting's former name, must be re-entered under **Shared container registries**.")
 	if strings.Count(string(readme), staleKey) != 1 {
 		t.Fatalf("the README names %s outside its upgrade note", staleKey)

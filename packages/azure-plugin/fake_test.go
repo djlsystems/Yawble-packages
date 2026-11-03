@@ -618,7 +618,7 @@ func hostRequest(t *testing.T, o runOpts, instruction string) hostObject {
 	}
 	return hostObject{
 		{"protocol", "harness.member/1"},
-		{"plugin", hostObject{{"id", "azure-plugin"}, {"version", "3.3.0"}}},
+		{"plugin", hostObject{{"id", "azure-plugin"}, {"version", "3.3.1"}}},
 		{"member", hostObject{{"id", testTeam + "/Azure"}, {"team", testTeam}, {"name", "Azure"}}},
 		{"causation", 1},
 		{"correlation", 1},

@@ -15,7 +15,7 @@ import (
 // Container Apps: an environment whose logs go to its own Log Analytics workspace, and apps in it
 // that pull their image with a managed identity the plugin creates for each, and read their secrets
 // from Key Vault through that identity, or from a field of a connection bound to this
-// member's appSecrets slot (added in Team settings -> Connections), named <connection>.<field>. No
+// member's appSecrets slot (added to the team in Team settings -> Connections, bound in the Azure member's Member settings), named <connection>.<field>. No
 // registry password is ever part of an app, and a
 // secret's value is put only in the app's configuration, never in what the plugin writes out.
 // Logs are read through Azure management's query on the workspace resource, or, for an environment
@@ -62,10 +62,10 @@ func (p *plugin) connectionField(cmd, env, conn, name string) (string, string, e
 		if names := p.boundNames(); names != "" {
 			bound = "the ones bound are " + names
 		}
-		return "", "", refusef("Refused: the secret %s reads %s.%s, the field %s of the connection %s, which is not bound to this member's appSecrets slot (%s), so ask the person to bind the connection %s to the Azure member's appSecrets slot (Connections a deployed app may use) in Team settings -> Connections, never to send its value in a message, then run "+cmd+" again. Nothing was changed.", env, conn, name, name, conn, bound, conn)
+		return "", "", refusef("Refused: the secret %s reads %s.%s, the field %s of the connection %s, which is not bound to this member's appSecrets slot (%s), so ask the person to add the connection %s to the team in Team settings -> Connections if it is not there yet, then bind it to the Azure member's appSecrets slot (Connections a deployed app may use) in that member's Member settings, never to send its value in a message, then run "+cmd+" again. Nothing was changed.", env, conn, name, name, conn, bound, conn)
 	case 1:
 	default:
-		return "", "", refusef("Refused: the secret %s reads %s.%s, the field %s of the connection %s, and %d connections of that name are bound to this member's appSecrets slot, so ask the person to rename one of them in Team settings -> Connections, then run "+cmd+" again. Nothing was changed.", env, conn, name, name, conn, len(found))
+		return "", "", refusef("Refused: the secret %s reads %s.%s, the field %s of the connection %s, and %d connections of that name are bound to this member's appSecrets slot, so ask the person to rename one of them in Admin -> Connections, then run "+cmd+" again. Nothing was changed.", env, conn, name, name, conn, len(found))
 	}
 	k := found[0]
 	for f, v := range k.Fields {
@@ -90,9 +90,9 @@ func (p *plugin) connectionField(cmd, env, conn, name string) (string, string, e
 	}
 	if k.Kind == "website" && strings.EqualFold(name, "session") {
 		// No form or agent types a website's saved session: Sign in on the connection keeps it.
-		return "", "", refusef("Refused: the secret %s reads %s.%s, the saved session of the website connection %s, which it does not hold yet: a person makes it by opening Sign in on that connection in Team settings -> Connections and signing in to the website, and nobody types it. %s has %s, so run "+cmd+" again once the person has signed in, or naming one of those as %s.<field> instead. Nothing was changed.", env, conn, name, k.Name, k.Name, has, k.Name)
+		return "", "", refusef("Refused: the secret %s reads %s.%s, the saved session of the website connection %s, which it does not hold yet: a person makes it by opening Sign in on that connection in Admin -> Connections and signing in to the website, and nobody types it. %s has %s, so run "+cmd+" again once the person has signed in, or naming one of those as %s.<field> instead. Nothing was changed.", env, conn, name, k.Name, k.Name, has, k.Name)
 	}
-	return "", "", refusef("Refused: the secret %s reads %s.%s, the field %s of the connection %s, which that connection does not have or holds no value in; %s has %s, %s, or ask the person to add the field %s to it in Team settings -> Connections. Nothing was changed.", env, conn, name, name, k.Name, k.Name, has, retry, name)
+	return "", "", refusef("Refused: the secret %s reads %s.%s, the field %s of the connection %s, which that connection does not have or holds no value in; %s has %s, %s, or ask the person to add the field %s to it in Admin -> Connections, where the connection is edited. Nothing was changed.", env, conn, name, name, k.Name, k.Name, has, retry, name)
 }
 
 // label is how a sentence names a bound connection: its name, or for a Host too old to send one,
@@ -163,7 +163,7 @@ func (p *plugin) connectionSecret(env, name string) (string, string, bool, error
 				if f != field {
 					named = "hold fields named " + field + " and " + f
 				}
-				return "", "", false, refusef("Refused: secret=%s=%s is a field of two connections bound to this member's appSecrets slot, the %s (%s) and the %s (%s) connection, which %s with different values, so ask the person to rename the field in one of them in Team settings -> Connections, then run containerapp create again. Nothing was changed.", env, name, ordinal(at+1), from, ordinal(i+1), k.label(), named)
+				return "", "", false, refusef("Refused: secret=%s=%s is a field of two connections bound to this member's appSecrets slot, the %s (%s) and the %s (%s) connection, which %s with different values, so ask the person to rename the field in one of them in Admin -> Connections, where the connection is edited, then run containerapp create again. Nothing was changed.", env, name, ordinal(at+1), from, ordinal(i+1), k.label(), named)
 			}
 			if from == "" {
 				field, value, from, at = f, v, k.label(), i
@@ -197,7 +197,7 @@ func (p *plugin) bareRefusal(env, name string) refusal {
 	if names := p.boundNames(); names != "" {
 		bound = "bound now: " + names
 	}
-	return refusef("Refused: the secret %s reads %s, which names no field of a connection bound to this member's appSecrets slot (%s). secret= takes a Key Vault secret's address or <connection>.<field>, such as mail.password for the password of the connection named mail, never a value; if the connection is not bound yet, ask the person to bind it to the Azure member's appSecrets slot (Connections a deployed app may use) in Team settings -> Connections, never to send its value in a message, then run containerapp create again. Nothing was changed.", env, name, bound)
+	return refusef("Refused: the secret %s reads %s, which names no field of a connection bound to this member's appSecrets slot (%s). secret= takes a Key Vault secret's address or <connection>.<field>, such as mail.password for the password of the connection named mail, never a value; if the connection is not bound yet, ask the person to add it to the team in Team settings -> Connections if it is not there yet, then bind it to the Azure member's appSecrets slot (Connections a deployed app may use) in that member's Member settings, never to send its value in a message, then run containerapp create again. Nothing was changed.", env, name, bound)
 }
 
 func init() {
@@ -370,7 +370,7 @@ func (p *plugin) appCreate(args []string) (string, error) {
 			seen[v] = true
 			if strings.EqualFold(key, "env") {
 				if secretParam.MatchString(v) || credentialShaped[0].MatchString(val) || credentialShaped[1].MatchString(val) {
-					return "", refusef("Refused: %s looks like a secret. App secrets go in Key Vault or in a connection: pass it as secret=%s=https://<vault>.vault.azure.net/secrets/<name> for a Key Vault secret, set by a person or another plugin, or as secret=%s=<connection>.<field> for a field of a connection a person binds to this member's appSecrets slot (Connections a deployed app may use) in Team settings -> Connections, such as secret=%s=mail.password.", v, v, v, v)
+					return "", refusef("Refused: %s looks like a secret. App secrets go in Key Vault or in a connection: pass it as secret=%s=https://<vault>.vault.azure.net/secrets/<name> for a Key Vault secret, set by a person or another plugin, or as secret=%s=<connection>.<field> for a field of a connection a person adds to the team in Team settings -> Connections and binds to this member's appSecrets slot (Connections a deployed app may use) in its Member settings, such as secret=%s=mail.password.", v, v, v, v)
 				}
 				envs = append(envs, map[string]any{"name": v, "value": val})
 				continue

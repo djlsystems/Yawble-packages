@@ -40,6 +40,22 @@ func TestAFieldOfAnyBoundConnectionResolvesByItsNameIgnoringCase(t *testing.T) {
 	}
 }
 
+// Two bound connections of one name: renaming one is done where the connection is edited.
+func TestTwoConnectionsOfOneNameAreRefusedSayingRenameInAdmin(t *testing.T) {
+	w := newWorld(t)
+	r := runPlugin(t, runOpts{config: apply(nil), bound: []hostObject{mailbox("mail", "bot@example.test", secretValue), login("Mail", "shopbot", otherValue)}},
+		appCreateLine("secret=SMTP_PASSWORD=mail.password"))
+	if r.ok() {
+		t.Fatal("two connections of one name were accepted")
+	}
+	mustContain(t, r.text(), "Refused: the secret SMTP_PASSWORD reads mail.password, the field password of the connection mail, and 2 connections of that name are bound to this member's appSecrets slot, so ask the person to rename one of them in Admin -> Connections, then run containerapp create again. Nothing was changed.")
+	mustNotContain(t, r.text(), "Team settings")
+	assertNoNamedValue(t, r.raw)
+	if len(w.f.calls) != 0 {
+		t.Fatal("Azure was called")
+	}
+}
+
 func TestAFieldTwoConnectionsHoldWithDifferentValuesIsRefusedNamingBoth(t *testing.T) {
 	w := newWorld(t)
 	r := runPlugin(t, runOpts{
@@ -49,7 +65,8 @@ func TestAFieldTwoConnectionsHoldWithDifferentValuesIsRefusedNamingBoth(t *testi
 	if r.ok() {
 		t.Fatal("an ambiguous field was accepted")
 	}
-	mustContain(t, r.text(), "Refused: secret=AUTH=ClientSecret is a field of two connections bound to this member's appSecrets slot, the 1st (Blog auth) and the 2nd (Shop auth) connection, which hold fields named clientsecret and ClientSecret with different values", "rename the field in one of them in Team settings -> Connections", "Nothing was changed.")
+	mustContain(t, r.text(), "Refused: secret=AUTH=ClientSecret is a field of two connections bound to this member's appSecrets slot, the 1st (Blog auth) and the 2nd (Shop auth) connection, which hold fields named clientsecret and ClientSecret with different values", "rename the field in one of them in Admin -> Connections, where the connection is edited", "Nothing was changed.")
+	mustNotContain(t, r.text(), "in Team settings -> Connections")
 	assertNoNamedValue(t, r.raw)
 	if len(w.f.calls) != 0 {
 		t.Fatal("Azure was called")
@@ -92,7 +109,7 @@ func TestValuesSentUnderSecretsAreIgnored(t *testing.T) {
 	if r.ok() {
 		t.Fatal("a value under secrets was used")
 	}
-	mustContain(t, r.text(), "names no field of a connection bound to this member's appSecrets slot", "Team settings -> Connections")
+	mustContain(t, r.text(), "names no field of a connection bound to this member's appSecrets slot", "add it to the team in Team settings -> Connections if it is not there yet", "in that member's Member settings")
 	if len(w.f.calls) != 0 {
 		t.Fatal("Azure was called")
 	}
@@ -101,10 +118,10 @@ func TestValuesSentUnderSecretsAreIgnored(t *testing.T) {
 func TestTheSkillAndReadmeSayWhereTheAppSecretsAreSet(t *testing.T) {
 	for _, name := range []string{"README.md", "skills/plugin-azure-plugin.md"} {
 		text := string(readFile(t, name))
-		if !strings.Contains(text, "Team settings -> Connections") || !strings.Contains(text, "appSecrets") {
-			t.Errorf("%s does not say the app secrets are set in Team settings -> Connections", name)
+		if !strings.Contains(text, "Team settings -> Connections") || !strings.Contains(text, "appSecrets") || !strings.Contains(text, "Member settings") {
+			t.Errorf("%s does not say a connection is added in Team settings -> Connections and bound to appSecrets in Member settings", name)
 		}
-		for _, old := range []string{"binds the field to a key", "binds it to a key", "sets that key on the screen", "under App secrets on the"} {
+		for _, old := range []string{"(\"Connections a deployed app may use\") in\nTeam settings -> Connections", "slot, **Connections a deployed app may use**, in **Team settings -> Connections**", "binds the field to a key", "binds it to a key", "sets that key on the screen", "under App secrets on the"} {
 			if strings.Contains(text, old) {
 				t.Errorf("%s still says %q", name, old)
 			}

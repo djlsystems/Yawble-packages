@@ -26,7 +26,7 @@ func TestSetupNotSignedInSaysToSignIn(t *testing.T) {
 	if !r.ok() {
 		t.Fatalf("setup failed: %s", r.text())
 	}
-	mustContain(t, r.text(), "- signed in: no", "Next:", "Sign in with Microsoft on this member's microsoft connection slot")
+	mustContain(t, r.text(), "- signed in: no", "Next:", "Sign in with Microsoft on this member's microsoft connection slot (Member settings, Connection for microsoft)")
 	if len(f.calls) != 0 {
 		t.Fatalf("setup called Azure with no sign-in: %v", f.calls)
 	}

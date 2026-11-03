@@ -1,4 +1,4 @@
-# Azure 3.3.0
+# Azure 3.3.1
 
 A plugin member that builds and runs a team's own Azure resources: resource groups, deployments
 from Bicep or ARM templates, container registries and image builds, Azure SQL databases and the SQL
@@ -9,6 +9,14 @@ rights**, so it can never do more than you can yourself in the Azure portal.
 
 Everything starts in **whatif**: each changing command says what it would do and changes nothing,
 until you set `mode` to `apply`.
+
+## New in 3.3.1
+
+- **Each connection step names the screen it is done on.** A connection is added to the team in
+  **Team settings -> Connections**; it is bound to the `appSecrets` slot, **Connections a deployed
+  app may use**, in the Azure member's **Member settings**; a field is added or renamed, a
+  connection renamed or a website signed in to in **Admin -> Connections**. Before 3.3.1 the
+  member's answers and this page sent every one of those steps to Team settings -> Connections.
 
 ## New in 3.3.0
 
@@ -51,8 +59,9 @@ until you set `mode` to `apply`.
 - **A deployed app's secrets come from the team's own connections, by name.**
   `containerapp create ... secret=SMTP_PASSWORD=mail.password` gives the app the password of the
   connection named `mail`: `secret=<NAME>=<connection>.<field>`, the connection's name and the
-  field's matched ignoring case. Bind the connections an app may use to the member's `appSecrets`
-  slot, **Connections a deployed app may use**, in **Team settings -> Connections**.
+  field's matched ignoring case. Add the connections an app may use to the team in
+  **Team settings -> Connections**, then bind them to the Azure member's `appSecrets` slot,
+  **Connections a deployed app may use**, in that member's **Member settings**.
 - **`<connection>` is the name the connection has in Team settings -> Connections**: never its account,
   so two API keys that share an account, such as "Other", are told apart by their names. It needs a
   Yawble Host that sends connection names; on an older Host the command is refused, saying the Host is
@@ -69,7 +78,7 @@ until you set `mode` to `apply`.
 
 - **Secret values from 2.x are not carried over to 3.1.0.** Re-enter each one as a connection in
   **Team settings -> Connections** - or use the connection that already holds the value, such as the
-  team's mailbox - bind it to `appSecrets`, and change the deploy line to
+  team's mailbox - bind it to `appSecrets` in the Azure member's **Member settings**, and change the deploy line to
   `secret=<NAME>=<connection>.<field>`.
 - A deploy line that names a bare field, such as `secret=STRIPE_KEY=appSecret1`, still works: it
   resolves against the bound connection that has a field of that name. Change it to
@@ -414,7 +423,7 @@ app's identity.
 An app's secret can also come from one of the team's own connections, set in
 **Team settings -> Connections**: a mailbox, a username and password, an API key or a website the team already has. Bind each one
 an app may use to the Azure member's `appSecrets` slot, **Connections a deployed app may use** (when
-adding the member, or in its settings); the slot takes as many connections as you need. Then
+adding the member, or in its **Member settings**); the slot takes as many connections as you need. Then
 
 ```
 containerapp create my-project-rg my-app my-project-env <registry>.azurecr.io/my-app:1.0 secret=SMTP_USER=mail.username secret=SMTP_PASSWORD=mail.password
