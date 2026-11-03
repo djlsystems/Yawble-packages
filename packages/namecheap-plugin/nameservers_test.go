@@ -639,7 +639,11 @@ func TestAChangeOffPremiumDNSWarnsAndItsRestoreIsRefused(t *testing.T) {
 			mustContain(t, r.output,
 				"from "+c.mode,
 				"`restore` cannot put the domain back on "+c.mode,
-				"re-selects it in the Namecheap portal")
+				"example.com was on "+c.mode+" before this change. `restore` cannot put it back there",
+				"a person re-selects "+c.mode+" for example.com in the Namecheap portal")
+			if strings.Contains(r.output, "is on "+c.mode+" now") {
+				t.Errorf("the apply answer says the domain is still on %s:\n%s", c.mode, r.output)
+			}
 			var rid string
 			for _, b := range n.backups("example.com") {
 				if b != id {
@@ -684,4 +688,111 @@ func TestAFreeDNSChangeGoesAheadWhenItsHostRecordsCannotBeRead(t *testing.T) {
 	}
 	back := n.run("restore example.com " + backupID(t, r))
 	mustContain(t, back.output, "No record backup was saved with it.")
+}
+
+// otherHarness is nsHarness with example.com on Namecheap DNS with neither flag set and
+// nameservers that are not BasicDNS's: "other Namecheap DNS".
+func otherHarness(t *testing.T) *harness {
+	n := nsHarness(t)
+	n.fake.domains["example.com"].nameservers = []string{"pdns1.example.net", "pdns2.example.net"}
+	return n
+}
+
+func TestTheDryRunAndApplyAnswersOffFreeDNSUseTheirOwnTense(t *testing.T) {
+	n := freeHarness(t)
+	n.cfg["mode"] = "dryrun"
+	dry := n.run("setcustom example.com ns1.example.net ns2.example.net")
+	mustContain(t, dry.output,
+		"example.com is on Namecheap FreeDNS now. `restore` cannot put it back there afterwards",
+		"re-selects it in the Namecheap portal")
+	if strings.Contains(dry.output, "before this change") {
+		t.Errorf("the dry run uses the apply wording:\n%s", dry.output)
+	}
+	n.cfg["mode"] = "apply"
+	r := n.run("setcustom example.com ns1.example.net ns2.example.net")
+	if !r.ok {
+		t.Fatalf("setcustom failed: %s", r.output)
+	}
+	mustContain(t, r.output,
+		"to   custom nameservers: ns1.example.net, ns2.example.net",
+		"example.com was on Namecheap FreeDNS before this change. `restore` cannot put it back there",
+		"a person re-selects Namecheap FreeDNS for example.com in the Namecheap portal")
+	if strings.Contains(r.output, "is on Namecheap FreeDNS now") {
+		t.Errorf("the apply answer says the domain is still on FreeDNS:\n%s", r.output)
+	}
+}
+
+func TestAFailedChangeOffAPortalOnlyModeDoesNotOfferTheRefusedRestore(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		harness func(*testing.T) *harness
+		mode    string
+		fail    string
+		says    string
+	}{
+		{"PremiumDNS failed send", premiumHarness, "Namecheap PremiumDNS", "fail", "The nameserver change for example.com failed"},
+		{"PremiumDNS not read back", premiumHarness, "Namecheap PremiumDNS", "ignore", "Namecheap now answers Namecheap PremiumDNS"},
+		{"FreeDNS failed send", freeHarness, "Namecheap FreeDNS", "fail", "The nameserver change for example.com failed"},
+		{"FreeDNS not read back", freeHarness, "Namecheap FreeDNS", "ignore", "Namecheap now answers Namecheap FreeDNS"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			n := c.harness(t)
+			if c.fail == "fail" {
+				n.fake.failSetNS = true
+			} else {
+				n.fake.ignoreSetNS = true
+			}
+			r := n.run("setcustom example.com ns1.example.net ns2.example.net")
+			if r.ok {
+				t.Fatalf("succeeded: %s", r.output)
+			}
+			ids := n.backups("example.com")
+			if len(ids) != 2 {
+				t.Fatalf("backups %v; want the nameserver backup and the record backup", ids)
+			}
+			var id, rid string
+			for _, b := range ids {
+				raw, err := os.ReadFile(filepath.Join(n.dir, backupFolder, "example.com", b+".json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var b0 map[string]any
+				if err := json.Unmarshal(raw, &b0); err != nil {
+					t.Fatal(err)
+				}
+				if b0["kind"] == "nameservers" {
+					id = b
+				} else {
+					rid = b
+				}
+			}
+			if id == "" || rid == "" {
+				t.Fatalf("could not tell the backups apart: %v", ids)
+			}
+			mustContain(t, r.output, c.says,
+				"Backup "+id+" records the nameservers before, but `restore` cannot put the domain back on "+c.mode,
+				"a person re-selects "+c.mode+" for example.com in the Namecheap portal",
+				"record backup "+rid+": `restore example.com "+rid+"`")
+			if strings.Contains(r.output, "`restore example.com "+id+"`") {
+				t.Errorf("the answer offers the refused nameserver restore %s:\n%s", id, r.output)
+			}
+			noEvents(t, r)
+		})
+	}
+}
+
+func TestAnOtherNamecheapDNSBackupNamesAModeAPersonCanPick(t *testing.T) {
+	n := otherHarness(t)
+	r := n.run("setcustom example.com ns1.example.net ns2.example.net")
+	if !r.ok {
+		t.Fatalf("setcustom failed: %s", r.output)
+	}
+	back := n.run("restore example.com " + backupID(t, r))
+	if back.ok {
+		t.Fatalf("restore not refused: %s", back.output)
+	}
+	mustContain(t, back.output, "a person re-selects the Namecheap DNS option example.com used before (BasicDNS, PremiumDNS or FreeDNS) in the Namecheap portal")
+	if strings.Contains(back.output, "re-selects other Namecheap DNS") {
+		t.Errorf("the refusal asks for a mode nobody can pick:\n%s", back.output)
+	}
 }

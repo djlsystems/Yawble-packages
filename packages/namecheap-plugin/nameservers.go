@@ -357,12 +357,8 @@ func (p *plugin) restoreNS(domain string, b *backup) (string, error) {
 		return "", refusal("Refused: no Namecheap API user and API key are bound: " + noKeys + ", then runs setup. Nothing was changed.")
 	}
 	if portalOnly(b.NSMode) {
-		records := " No record backup was saved with it."
-		if b.RecordBackup != "" {
-			records = fmt.Sprintf(" Its host records from before the change are record backup %s: `restore %s %s` puts them back once the domain is on Namecheap DNS again.", b.RecordBackup, domain, b.RecordBackup)
-		}
-		return "", refusal(fmt.Sprintf("Refused: backup %s was taken while %s was on %s (%s). Namecheap's API can only set custom nameservers or BasicDNS, so restoring it would leave the domain on custom nameservers, not on %s. To go back, a person re-selects %s for %s in the Namecheap portal (Domain List, Manage, Nameservers).%s Nothing was changed.",
-			b.ID, domain, modeWords(b.NSMode), strings.Join(b.Nameservers, ", "), modeWords(b.NSMode), modeWords(b.NSMode), domain, records))
+		return "", refusal(fmt.Sprintf("Refused: backup %s was taken while %s was on %s (%s). Namecheap's API can only set custom nameservers or BasicDNS, so restoring it would leave the domain on custom nameservers, not on %s. %s Nothing was changed.",
+			b.ID, domain, modeWords(b.NSMode), strings.Join(b.Nameservers, ", "), modeWords(b.NSMode), portalSteps(domain, b.NSMode, b.RecordBackup)))
 	}
 	to := nsTarget{basic: b.NSMode == nsBasic}
 	if !to.basic {
@@ -404,13 +400,55 @@ func portalNote(domain, mode string) string {
 	return fmt.Sprintf("%s is on %s now. `restore` cannot put it back there afterwards: Namecheap's API can only set custom nameservers or BasicDNS, so going back to %s means a person re-selects it in the Namecheap portal (Domain List, Manage, Nameservers). The host records saved as a record backup stay restorable with `restore` once the domain is on Namecheap DNS.", domain, modeWords(mode), modeWords(mode))
 }
 
+// portalNoteAfter is what an applied change off PremiumDNS or FreeDNS says: the domain was on
+// that mode before the change, and restore cannot put it back there.
+func portalNoteAfter(domain, mode string) string {
+	return fmt.Sprintf("%s was on %s before this change. `restore` cannot put it back there: Namecheap's API can only set custom nameservers or BasicDNS, so going back means %s", domain, modeWords(mode), lowerFirst(portalSelect(domain, mode)))
+}
+
+// portalSelect is the portal step that puts a domain back on a mode only the portal selects.
+// "Other Namecheap DNS" is not a mode anyone can pick, so for it the person picks the
+// Namecheap DNS option the domain used before.
+func portalSelect(domain, mode string) string {
+	if mode == nsOther {
+		return fmt.Sprintf("A person re-selects the Namecheap DNS option %s used before (BasicDNS, PremiumDNS or FreeDNS) in the Namecheap portal (Domain List, Manage, Nameservers).", domain)
+	}
+	return fmt.Sprintf("A person re-selects %s for %s in the Namecheap portal (Domain List, Manage, Nameservers).", modeWords(mode), domain)
+}
+
+// portalSteps is how a domain goes back to a mode only the portal selects: the portal step, then
+// the record backup saved with the change and its restore command, if there is one.
+func portalSteps(domain, mode, recordBackup string) string {
+	records := " No record backup was saved with it."
+	if recordBackup != "" {
+		records = fmt.Sprintf(" Its host records from before the change are record backup %s: `restore %s %s` puts them back once the domain is on Namecheap DNS again.", recordBackup, domain, recordBackup)
+	}
+	return "To go back, " + lowerFirst(portalSelect(domain, mode)) + records
+}
+
+func lowerFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToLower(s[:1]) + s[1:]
+}
+
+// nsUndo is how a failed or unconfirmed change says the nameservers before go back: `restore`
+// with the nameserver backup, or, off a mode only the portal selects, the portal step.
+func nsUndo(domain, id, recordBackup, mode string) string {
+	if portalOnly(mode) {
+		return fmt.Sprintf("Backup %s records the nameservers before, but `restore` cannot put the domain back on %s: Namecheap's API can only set custom nameservers or BasicDNS. %s", id, modeWords(mode), portalSteps(domain, mode, recordBackup))
+	}
+	return ""
+}
+
 // changeNS carries out a planned delegation change, or describes it in dry run.
 func (p *plugin) changeNS(command, domain string, cur *nsState, to nsTarget) (string, error) {
 	warnings := nsWarnings(domain, to)
-	if portalOnly(cur.mode()) {
-		warnings = portalNote(domain, cur.mode()) + "\n" + warnings
-	}
 	if p.cfg.Mode != "apply" {
+		if portalOnly(cur.mode()) {
+			warnings = portalNote(domain, cur.mode()) + "\n" + warnings
+		}
 		extra := ""
 		if cur.FreeDNS {
 			extra = "\nIn apply, the host records are saved as a record backup too, before the change, if Namecheap's API answers them for this FreeDNS domain; if it does not, the change goes ahead without a record backup and the answer says so."
@@ -448,15 +486,28 @@ func (p *plugin) changeNS(command, domain string, cur *nsState, to nsTarget) (st
 	} else {
 		err = p.api.setCustom(domain, to.servers)
 	}
+	portal := nsUndo(domain, id, rid, cur.mode())
 	if err != nil {
+		if portal != "" {
+			return "", fmt.Errorf("The nameserver change for %s failed (%s). `nameservers %s` shows what it has now. %s", domain, err.Error(), domain, portal)
+		}
 		return "", fmt.Errorf("The nameserver change for %s failed (%s). The nameservers before are saved as backup %s; `nameservers %s` shows what it has now and `restore %s %s` puts them back.", domain, err.Error(), id, domain, domain, id)
 	}
 	got, err := p.api.getNameservers(domain)
 	if err != nil {
+		if portal != "" {
+			return "", fmt.Errorf("%s's nameserver change was sent, but reading it back failed (%s), so it is not known what the domain is on now; check with `nameservers %s`. %s", domain, err.Error(), domain, portal)
+		}
 		return "", fmt.Errorf("%s's nameserver change was sent, but reading it back failed (%s), so it is not known what the domain is on now. The nameservers before are backup %s; check with `nameservers %s` and put them back with `restore %s %s`.", domain, err.Error(), id, domain, domain, id)
 	}
 	if !to.holds(*got) {
+		if portal != "" {
+			return "", fmt.Errorf("%s's nameserver change was sent, but Namecheap now answers %s, not %s. %s", domain, got, to, portal)
+		}
 		return "", fmt.Errorf("%s's nameserver change was sent, but Namecheap now answers %s, not %s. The nameservers before are backup %s; `restore %s %s` puts them back.", domain, got, to, id, domain, id)
+	}
+	if portalOnly(cur.mode()) {
+		warnings = portalNoteAfter(domain, cur.mode()) + "\n" + warnings
 	}
 
 	p.publish("nameservers", map[string]any{
