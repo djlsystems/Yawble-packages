@@ -22,7 +22,7 @@ until you set `mode` to `apply`.
   connection's field, so a template whose app reads its secrets from secure parameters keeps them on
   every redeploy.
 - **Redaction finds a value whatever characters it holds.** Each text the member writes is checked
-  as its plain text before it is written as JSON, so a password with `&`, `<`, `>`, `"` or `\\` that
+  as its plain text before it is written as JSON, so a password with `&`, `<`, `>`, `"` or `\` that
   Azure quotes back in an error is hidden like any other. Before 3.3.0 such a value was written out
   in full. A value under four characters is hidden where it stands as a word of its own in what
   Azure answers - an error quoting it - but not elsewhere, since hiding it everywhere would blank
