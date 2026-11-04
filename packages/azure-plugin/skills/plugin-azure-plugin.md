@@ -261,7 +261,7 @@ An app secret can also come from one of the team's own connections, and this is 
 A person binds the connections an app may use - a mailbox, a username and password, an API key, a
 website - to
 the Azure member's `appSecrets` slot ("Connections a deployed app may use") in
-Team settings -> Connections. `secret=<NAME>=<connection>.<field>` on `containerapp create` or
+that member's Member settings, once each is added to the team in Team settings -> Connections. `secret=<NAME>=<connection>.<field>` on `containerapp create` or
 `containerapp secret set` puts that field's value
 in the app's own secrets, and the app reads it as `<NAME>`: `secret=SMTP_PASSWORD=mail.password` is
 the password of the connection named `mail`. `<connection>` is the connection's name as Team

@@ -294,7 +294,7 @@ func TestSecretSetRefusesAConnectionNotBoundByNameWithNoARMWrite(t *testing.T) {
 		t.Fatal("a connection not bound was accepted")
 	}
 	mustContain(t, r.text(), "Refused: the secret SMTP_PASSWORD reads mailbox.password, the field password of the connection mailbox, which is not bound to this member's appSecrets slot (the ones bound are mail, stripe live)",
-		"ask the person to bind the connection mailbox to the Azure member's appSecrets slot (Connections a deployed app may use) in Team settings -> Connections",
+		"ask the person to add the connection mailbox to the team in Team settings -> Connections if it is not there yet, then bind it to the Azure member's appSecrets slot (Connections a deployed app may use) in that member's Member settings",
 		"then run containerapp secret set again. Nothing was changed.")
 	assertNoSetValue(t, r.raw)
 	noARM(t, w)

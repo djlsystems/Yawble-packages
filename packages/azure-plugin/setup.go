@@ -94,7 +94,7 @@ func (p *plugin) setup(args []string) (string, error) {
 	// SIGNED IN.
 	if !p.az.has(apiARM) {
 		say("signed in: no")
-		step("Sign in with Microsoft on this member's microsoft connection slot (Member settings, Connections): open the link it shows, enter the code, and accept every API it asks for. Then run setup again.")
+		step("Sign in with Microsoft on this member's microsoft connection slot (Member settings, Connection for microsoft): open the link it shows, enter the code, and accept every API it asks for. Then run setup again.")
 		return finish()
 	}
 	account := p.account
